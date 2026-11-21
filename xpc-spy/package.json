@@ -1,0 +1,74 @@
+{
+  "name": "xpc-spy",
+  "displayName": "XPC Spy",
+  "version": "1.0.0",
+  "main": "main.ts",
+  "luma": {
+    "icon": { "kind": "symbolic", "value": "antenna" },
+    "compatibility": { "platforms": ["darwin"] },
+    "features": [
+      {
+        "id": "services",
+        "name": "Only services matching",
+        "schema": { "kind": "regex", "default": "^com\\.apple\\." },
+        "optional": true,
+        "enabledByDefault": false
+      },
+      {
+        "id": "backtraces",
+        "name": "Capture sender backtraces",
+        "schema": { "kind": "boolean", "default": false },
+        "optional": false,
+        "enabledByDefault": true
+      },
+      {
+        "id": "dataLimit",
+        "name": "Bytes kept per data value",
+        "schema": { "kind": "uint", "default": 4096, "min": 0, "max": 1048576 },
+        "optional": false,
+        "enabledByDefault": true
+      }
+    ],
+    "widgets": [
+      {
+        "id": "services",
+        "name": "Services",
+        "kind": {
+          "kind": "table",
+          "config": {
+            "columns": [
+              { "id": "service", "name": "Service", "alignment": "leading" },
+              { "id": "peer", "name": "Peer PID", "alignment": "trailing" },
+              { "id": "sent", "name": "Sent", "alignment": "trailing" },
+              { "id": "received", "name": "Received", "alignment": "trailing" },
+              { "id": "seen", "name": "Last seen", "alignment": "leading" },
+              { "id": "last", "name": "Last message", "alignment": "leading" }
+            ],
+            "actions": [],
+            "maxRows": 1000
+          }
+        },
+        "persistence": "session"
+      },
+      {
+        "id": "messages",
+        "name": "Recent messages",
+        "kind": {
+          "kind": "console",
+          "config": {
+            "prompt": "#",
+            "placeholder": "Message number to inspect",
+            "runButtonLabel": "Inspect",
+            "maxEntries": 500
+          }
+        },
+        "persistence": "none"
+      }
+    ],
+    "store": {
+      "summary": "The XPC messages a process sends and receives, per service: requests, replies and events as expandable values, with NSXPC selectors and optional sender backtraces.",
+      "category": "ipc",
+      "access": { "kind": "free" }
+    }
+  }
+}
