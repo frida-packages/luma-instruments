@@ -101,10 +101,35 @@ gcc -O2 -rdynamic -I/tmp/vulkan-headers/include -I/tmp/vulkan-build -o /tmp/vulk
 python3 test/mesh-finder/run.py $! /tmp/meshes/vulkan
 ```
 
-`-rdynamic` exports `mesh_finder_expectations` for the harness. Mesa keeps
-a shader cache in `~/.cache` unless `MESA_SHADER_CACHE_DIR` says otherwise.
-On Linux the harness resolves the Vulkan driver's functions the way the
+`/tmp/vulkan-target 300` draws 1800 meshes a frame and prints how long
+recording them took.
+
+## OpenGL and OpenGL ES, on Linux
+
+`egl-target.c` draws the scene of `opengl-target.c` through EGL with no
+window: in a surfaceless desktop OpenGL 3.3 core context, or in an OpenGL ES
+3 context current on a pbuffer. The sphere's positions and indices are
+copied into their buffers with `glCopyBufferSubData` from staging buffers.
+It takes its functions from the library's exports, as a program linked
+against it would call them, or from `eglGetProcAddress`, as glad does, and
+the two are different functions:
+
+```sh
+gcc -O2 -rdynamic -o /tmp/egl-target test/mesh-finder/egl-target.c -lEGL -ldl -lm
+for variant in "gl exports" "gl proc-address" "gles exports" "gles proc-address"; do
+    /tmp/egl-target $variant &
+    python3 test/mesh-finder/run.py $! /tmp/meshes/egl
+    kill $!
+done
+```
+
+A number after the variant, `/tmp/egl-target gles proc-address 300`, draws the
+scene that many times a frame.
+
+Both Linux targets are built with `-rdynamic`, which exports
+`mesh_finder_expectations` for the harness. Mesa keeps a shader cache in
+`~/.cache` unless `MESA_SHADER_CACHE_DIR` says otherwise. On Linux the
+harness resolves the Vulkan driver's and OpenGL's functions the way the
 instrument does, and checks that they are back to their original bytes after
-dispose. `/tmp/vulkan-target 300` draws 1800 meshes a frame and prints how
-long recording them took.
+dispose.
 

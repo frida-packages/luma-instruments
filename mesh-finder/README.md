@@ -6,8 +6,9 @@ OBJ file. Attach to a running game, add the instrument, and the meshes it has
 loaded show up in a table: characters, props, level geometry, along with
 whatever else the game draws.
 
-It works with Metal and with desktop OpenGL on macOS, and with Vulkan on
-Linux. It needs Luma 3.0.0 or later for its 3D view.
+It works with Metal and with desktop OpenGL on macOS, and with Vulkan,
+desktop OpenGL and OpenGL ES on Linux. It needs Luma 3.0.0 or later for its
+3D view.
 
 ## How it finds them
 
@@ -65,6 +66,16 @@ uploaded.
 
 Live buffers are found by asking OpenGL which buffer names exist, on the next
 frame the process draws.
+
+On Linux, a game may call OpenGL through `libGL`, `libOpenGL` or `libGLESv2`,
+or through pointers it got from `eglGetProcAddress` or `glXGetProcAddressARB`,
+as loaders such as glad do, and these are different functions that each lead
+into the driver. Mesh Finder hooks all of them, including those of libraries
+loaded after it was added. The current EGL or GLX context tells draws apart.
+OpenGL ES contexts are read back with `glMapBufferRange`, since they have no
+`glGetBufferSubData`, and their meshes are listed as OpenGL ES. Contexts that
+share their objects are told apart all the same, so a buffer uploaded in one
+and drawn in another may be listed twice.
 
 ### Vulkan
 
@@ -165,7 +176,7 @@ than without, and 1800 OpenGL draws a frame about 3.4 ms longer to submit,
 second, apart from a handful of frames of up to 70 ms while its meshes were
 first read. On a Core i9-12900K with Intel's Mesa driver, 1800 Vulkan draws a
 frame took 1.6 ms longer to record, about 0.9 µs a draw with five Vulkan
-calls each.
+calls each, and 1800 OpenGL or OpenGL ES draws a frame 1 ms longer to submit.
 
 ## What it does not find
 
@@ -188,7 +199,8 @@ calls each.
   whose counts come from a buffer, mesh shaders, device-generated commands,
   and Vulkan in 32-bit processes.
 
-It was tested on macOS 27 on Apple Silicon, and with Vulkan on x86_64 Linux
-with Mesa 26 on Intel graphics, including Chromium drawing WebGL through
-ANGLE's Vulkan backend. It has not been tried on Intel Macs, iOS, Windows or
-Android, or with other Vulkan drivers.
+It was tested on macOS 27 on Apple Silicon, and on x86_64 Linux with Mesa 26
+on Intel graphics: Vulkan, and desktop OpenGL and OpenGL ES through EGL, both
+in test programs and in Chromium drawing WebGL through ANGLE's Vulkan and
+OpenGL backends. It has not been tried on Intel Macs, iOS, Windows or
+Android, with GLX, or with other drivers.

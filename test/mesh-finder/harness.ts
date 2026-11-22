@@ -1,8 +1,10 @@
 /// <reference path="./luma.d.ts" />
 
 import { instrument } from "../../mesh-finder/main.js";
-import { vulkanLibraries } from "../../mesh-finder/graphics-libraries.js";
+import { glTapEntryPointNames } from "../../mesh-finder/gl-tap.js";
+import { openGLLibraries, vulkanLibraries } from "../../mesh-finder/graphics-libraries.js";
 import { classesConformingTo, implementationOf } from "../../mesh-finder/objc.js";
+import { LinuxGLPlatform } from "../../mesh-finder/opengl-linux.js";
 import { findVulkanDrivers } from "../../mesh-finder/vulkan-driver.js";
 import { pipelineEntryPointNames } from "../../mesh-finder/vulkan-pipelines.js";
 import { tapEntryPointNames } from "../../mesh-finder/vulkan-tap.js";
@@ -198,6 +200,11 @@ function hookCandidates(): NativePointer[] {
         }
     }
     const modules = Process.enumerateModules();
+    if (Process.platform === "linux" && modules.some(module => openGLLibraries.linux.triggers.test(module.name))) {
+        const platform = new LinuxGLPlatform();
+        candidates.push(...glTapEntryPointNames.flatMap(name => platform.hookTargets(name)));
+        platform.dispose();
+    }
     if (modules.some(module => vulkanLibraries.loader.test(module.name))) {
         for (const driver of findVulkanDrivers([...tapEntryPointNames, ...pipelineEntryPointNames])) {
             candidates.push(...driver.entryPoints.values());
