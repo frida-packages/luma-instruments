@@ -2,7 +2,7 @@
 
 import { instrument } from "../../mesh-finder/main.js";
 import { glTapEntryPointNames } from "../../mesh-finder/gl-tap.js";
-import { openGLLibraries, vulkanLibraries } from "../../mesh-finder/graphics-libraries.js";
+import { direct3D11Libraries, openGLLibraries, vulkanLibraries } from "../../mesh-finder/graphics-libraries.js";
 import { classesConformingTo, implementationOf } from "../../mesh-finder/objc.js";
 import { LinuxGLPlatform } from "../../mesh-finder/opengl-linux.js";
 import { findVulkanDrivers } from "../../mesh-finder/vulkan-driver.js";
@@ -15,6 +15,7 @@ interface Expectation {
     vertices: number;
     triangles: number;
     contents: "cpu-visible" | "gpu-only" | "unlocated";
+    presence: "listed" | "absent";
     min: number[];
     max: number[];
     first: number[][];
@@ -24,6 +25,17 @@ interface ViewState {
     value: { vertices: number; triangles: number; title: string };
     data: ArrayBuffer;
 }
+
+interface Target {
+    uploadLateMesh(): void;
+    enter(phase: Phase): void;
+}
+
+interface HarnessParameters {
+    observeSeconds?: number;
+}
+
+type Phase = "attached" | "disposed";
 
 interface Row {
     id: string;
@@ -42,9 +54,11 @@ const COMPARED_BYTES = 16;
 const LATE_UPLOAD_MS = 500;
 const TOLERANCE = 1e-4;
 const LEFT_BY_EARLIER_INSTANCE = "left-by-an-earlier-instance";
+const phases: Record<Phase, number> = { attached: 1, disposed: 2 };
 
 const rows = new Map<string, Row>();
 const pristineCode = new Map<string, ArrayBuffer>();
+const pristineRanges = new Map<string, string>();
 let lastOutput = "";
 let lastViewState: ViewState | null = null;
 
@@ -85,37 +99,78 @@ const quietReply = {
 
 const config: CustomInstrumentConfig = { features: { watchDraws: true, guessUndrawn: true, minimumConfidence: 60, minimumVertices: 3 } };
 
-const raise = new NativeFunction(Module.getGlobalExportByName("raise"), "int", ["int"]);
-
 rpc.exports = {
-    async run(out: string): Promise<number> {
-        const expectations = JSON.parse(`[${Module.getGlobalExportByName("mesh_finder_expectations").readUtf8String()}]`) as Expectation[];
-        recordHookedCode();
-        rows.set(LEFT_BY_EARLIER_INSTANCE, { id: LEFT_BY_EARLIER_INSTANCE, cells: {} });
-        const started = Date.now();
-        const handle = await instrument.create(ctx, config, {} as CustomInstrumentRestoredState);
-        console.log(`created in ${Date.now() - started} ms`);
-        await new Promise(resolve => setTimeout(resolve, SETTLE_MS / 2));
-        raise(SIGUSR1);
-        await new Promise(resolve => setTimeout(resolve, LATE_UPLOAD_MS));
-        handle.onConsoleInput!({ widget: "viewer", entryId: "scan", text: "scan" }, quietReply);
-        await new Promise(resolve => setTimeout(resolve, SETTLE_MS / 2));
-        const failures = check(handle, expectations, out);
-        const changed = changedHookedCode();
-        console.log((changed.length === 0)
-            ? `all ${pristineCode.size} hooked functions are back to their original bytes`
-            : `CHANGED after dispose: ${changed.join(", ")}`);
-        return failures + changed.length;
+    run(out: string): Promise<number> {
+        return run(out, targetOf(Process.platform));
+    },
+    init(_stage: string, parameters: HarnessParameters) {
+        run(null, targetOf(Process.platform), (parameters.observeSeconds ?? 0) * 1000).then(
+            failures => finish(failures),
+            error => {
+                console.log(`harness failed: ${(error as Error).stack}`);
+                finish(1);
+            });
     },
 };
+
+async function run(out: string | null, target: Target, observeMs = 0): Promise<number> {
+    const expectations = JSON.parse(`[${Module.getGlobalExportByName("mesh_finder_expectations").readUtf8String()}]`) as Expectation[];
+    recordHookedCode();
+    rows.set(LEFT_BY_EARLIER_INSTANCE, { id: LEFT_BY_EARLIER_INSTANCE, cells: {} });
+    const started = Date.now();
+    const handle = await instrument.create(ctx, config, {} as CustomInstrumentRestoredState);
+    console.log(`created in ${Date.now() - started} ms`);
+    target.enter("attached");
+    await new Promise(resolve => setTimeout(resolve, SETTLE_MS / 2 + observeMs));
+    target.uploadLateMesh();
+    await new Promise(resolve => setTimeout(resolve, LATE_UPLOAD_MS));
+    handle.onConsoleInput!({ widget: "viewer", entryId: "scan", text: "scan" }, quietReply);
+    await new Promise(resolve => setTimeout(resolve, SETTLE_MS / 2));
+    const failures = check(handle, expectations, out);
+    target.enter("disposed");
+    const changed = changedHookedCode();
+    const snapshots = pristineCode.size + pristineRanges.size;
+    console.log((changed.length === 0)
+        ? `all ${snapshots} snapshots of hooked code and tables are back to their original bytes`
+        : `CHANGED after dispose: ${changed.join(", ")}`);
+    return failures + changed.length;
+}
+
+function targetOf(platform: Platform): Target {
+    return (platform === "windows") ? windowsTarget() : signalledTarget();
+}
+
+function signalledTarget(): Target {
+    const raise = new NativeFunction(Module.getGlobalExportByName("raise"), "int", ["int"]);
+    return {
+        uploadLateMesh: () => raise(SIGUSR1),
+        enter() {
+        },
+    };
+}
+
+function windowsTarget(): Target {
+    return {
+        uploadLateMesh: () => Module.getGlobalExportByName("mesh_finder_late_upload_requested").writeS32(1),
+        enter: phase => Module.getGlobalExportByName("mesh_finder_phase").writeS32(phases[phase]),
+    };
+}
+
+function finish(failures: number): void {
+    Module.getGlobalExportByName("mesh_finder_failures").writeS32(failures);
+    Module.getGlobalExportByName("mesh_finder_finish_requested").writeS32(1);
+}
 
 function recordHookedCode(): void {
     for (const address of hookCandidates()) {
         pristineCode.set(address.toString(), address.readByteArray(COMPARED_BYTES)!);
     }
+    for (const [name, digest] of readOnlyDirect3D11()) {
+        pristineRanges.set(name, digest);
+    }
 }
 
-function check(handle: CustomInstrumentHandle, expectations: Expectation[], out: string): number {
+function check(handle: CustomInstrumentHandle, expectations: Expectation[], out: string | null): number {
     console.log(`\n${rows.size} rows in the table:`);
     const exported = new Map<string, ParsedObj | null>();
     for (const row of rows.values()) {
@@ -131,6 +186,14 @@ function check(handle: CustomInstrumentHandle, expectations: Expectation[], out:
         console.log("FAIL a row left in the table by an earlier instance is still there");
     }
     for (const expected of expectations) {
+        if (expected.presence === "absent") {
+            const found = [...rows.values()].find(row => spans(expected, exported.get(row.id)!));
+            failures += (found !== undefined) ? 1 : 0;
+            console.log((found !== undefined)
+                ? `FAIL ${expected.name} (${expected.how}) is listed as ${found.cells.mesh}: ${found.cells.learned}`
+                : `PASS ${expected.name} (${expected.how}) is not listed`);
+            continue;
+        }
         const match = [...rows.values()].find(row => matches(expected, row, exported.get(row.id)!));
         if (match === undefined) {
             failures++;
@@ -139,7 +202,7 @@ function check(handle: CustomInstrumentHandle, expectations: Expectation[], out:
             continue;
         }
         const obj = exported.get(match.id)!;
-        if (obj !== null) {
+        if (obj !== null && out !== null) {
             send({ type: "obj", path: `${out}/${expected.name}.obj`, text: obj.text });
         }
         const listings = [...rows.values()].filter(row => matches(expected, row, exported.get(row.id)!)).length;
@@ -164,18 +227,21 @@ function check(handle: CustomInstrumentHandle, expectations: Expectation[], out:
         image: () => {},
     });
     handle.dispose!();
-    console.log(`\n${expectations.length - failures} of ${expectations.length} expected meshes found; OBJ files are in ${out}`);
+    const written = (out !== null) ? `; OBJ files are in ${out}` : "";
+    console.log(`\n${expectations.length - failures} of ${expectations.length} expected meshes found${written}`);
     return failures;
 }
 
 function changedHookedCode(): string[] {
+    const current = readOnlyDirect3D11();
+    const ranges = [...pristineRanges].filter(([name, digest]) => current.get(name) !== digest).map(([name]) => name);
     const addresses = [...pristineCode.keys()].map(key => ptr(key)).sort((a, b) => a.compare(b));
-    return addresses.filter((address, i) => {
+    return [...ranges, ...addresses.filter((address, i) => {
         const next = addresses[i + 1];
         const length = (next !== undefined) ? Math.min(COMPARED_BYTES, next.sub(address).toUInt32()) : COMPARED_BYTES;
         const original = hexOf(pristineCode.get(address.toString())!.slice(0, length));
         return hexOf(address.readByteArray(length)!) !== original;
-    }).map(address => `${address} (${DebugSymbol.fromAddress(address)})`);
+    }).map(address => `${address} (${DebugSymbol.fromAddress(address)})`)];
 }
 
 function hookCandidates(): NativePointer[] {
@@ -213,6 +279,16 @@ function hookCandidates(): NativePointer[] {
     return [...new Map(candidates.map(address => [address.toString(), address])).values()];
 }
 
+function readOnlyDirect3D11(): Map<string, string> {
+    const ranges = new Map<string, string>();
+    const d3d11 = Process.enumerateModules().find(module => direct3D11Libraries.runtime.test(module.name));
+    for (const range of d3d11?.enumerateRanges("r--").filter(range => !range.protection.includes("w")) ?? []) {
+        const kind = range.protection.includes("x") ? "code" : "read-only data, with its vtables,";
+        ranges.set(`${d3d11!.name} ${kind} at ${range.base}`, digestOf(range.base.readByteArray(range.size)!));
+    }
+    return ranges;
+}
+
 function parseObj(text: string): ParsedObj {
     const vertices: number[][] = [];
     let faces = 0;
@@ -224,6 +300,14 @@ function parseObj(text: string): ParsedObj {
         }
     }
     return { vertices, faces, text };
+}
+
+function spans(expected: Expectation, obj: ParsedObj | null): boolean {
+    if (obj === null || obj.vertices.length === 0) {
+        return false;
+    }
+    const [min, max] = boundsOf(obj);
+    return close(min, expected.min) && close(max, expected.max);
 }
 
 function matches(expected: Expectation, row: Row, obj: ParsedObj | null): boolean {
@@ -268,6 +352,14 @@ function problemShowing(handle: CustomInstrumentHandle, expected: Expectation, r
 
 function hexOf(bytes: ArrayBuffer): string {
     return Array.from(new Uint8Array(bytes), byte => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function digestOf(bytes: ArrayBuffer): string {
+    let hash = 0x811c9dc5;
+    for (const word of new Uint32Array(bytes, 0, bytes.byteLength >> 2)) {
+        hash = Math.imul(hash ^ word, 0x01000193);
+    }
+    return `${(hash >>> 0).toString(16)}x${bytes.byteLength}`;
 }
 
 function boundsOf(obj: ParsedObj): [number[], number[]] {

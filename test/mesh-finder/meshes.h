@@ -22,10 +22,15 @@ typedef enum { CONTENTS_GPU_ONLY, CONTENTS_CPU_VISIBLE, CONTENTS_UNLOCATED } Con
 
 static const char *const contents_names[] = { "gpu-only", "cpu-visible", "unlocated" };
 
+typedef enum { PRESENCE_LISTED, PRESENCE_ABSENT } Presence;
+
+static const char *const presence_names[] = { "listed", "absent" };
+
 char mesh_finder_expectations[16384];
 
 static Mesh mesh_alloc(const char *name, uint32_t vertex_count, uint32_t index_count);
 static void set_vertex(Vertex *v, float x, float y, float z, float nx, float ny, float nz, float u, float t);
+static void record_expectation(const Mesh *mesh, const char *how, uint32_t triangle_count, Contents contents, Presence presence);
 
 static Mesh make_cube(const char *name, float cx, float cy, float cz)
 {
@@ -175,6 +180,11 @@ static uint16_t *indices16(const Mesh *mesh)
     return narrow;
 }
 
+static void expect(const Mesh *mesh, const char *how, uint32_t triangle_count, Contents contents)
+{
+    record_expectation(mesh, how, triangle_count, contents, PRESENCE_LISTED);
+}
+
 static Mesh mesh_alloc(const char *name, uint32_t vertex_count, uint32_t index_count)
 {
     Mesh mesh = { name, calloc(vertex_count, sizeof(Vertex)), vertex_count, calloc(index_count ? index_count : 1, 4), index_count };
@@ -188,7 +198,7 @@ static void set_vertex(Vertex *v, float x, float y, float z, float nx, float ny,
     v->uv[0] = u; v->uv[1] = t;
 }
 
-static void expect(const Mesh *mesh, const char *how, uint32_t triangle_count, Contents contents)
+static void record_expectation(const Mesh *mesh, const char *how, uint32_t triangle_count, Contents contents, Presence presence)
 {
     uint32_t first = 0, last = mesh->vertex_count - 1;
     if (mesh->index_count != 0) {
@@ -209,8 +219,8 @@ static void expect(const Mesh *mesh, const char *how, uint32_t triangle_count, C
     size_t used = strlen(mesh_finder_expectations);
     const float *a = mesh->vertices[first].position, *b = mesh->vertices[first + 1].position, *c = mesh->vertices[first + 2].position;
     snprintf(mesh_finder_expectations + used, sizeof(mesh_finder_expectations) - used,
-        "%s{\"name\":\"%s\",\"how\":\"%s\",\"vertices\":%u,\"triangles\":%u,\"contents\":\"%s\","
+        "%s{\"name\":\"%s\",\"how\":\"%s\",\"vertices\":%u,\"triangles\":%u,\"contents\":\"%s\",\"presence\":\"%s\","
         "\"min\":[%g,%g,%g],\"max\":[%g,%g,%g],\"first\":[[%g,%g,%g],[%g,%g,%g],[%g,%g,%g]]}",
-        used == 0 ? "" : ",", mesh->name, how, last - first + 1, triangle_count, contents_names[contents],
+        used == 0 ? "" : ",", mesh->name, how, last - first + 1, triangle_count, contents_names[contents], presence_names[presence],
         lo[0], lo[1], lo[2], hi[0], hi[1], hi[2], a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2]);
 }

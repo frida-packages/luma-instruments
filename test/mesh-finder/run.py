@@ -8,6 +8,9 @@ repository = here.parent.parent
 
 
 def main():
+    if sys.argv[1] == "--bundle":
+        Path(sys.argv[2]).write_text(build("harness.ts"))
+        return
     pid, out = int(sys.argv[1]), sys.argv[2]
     exploring = len(sys.argv) > 3
     bundle = build("explore.ts" if exploring else "harness.ts")

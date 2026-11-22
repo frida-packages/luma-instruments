@@ -1,3 +1,7 @@
+export const direct3D11Libraries = {
+    runtime: /^d3d11\.dll$/i,
+};
+
 export const metalLibraries = {
     framework: /^Metal$/,
 };

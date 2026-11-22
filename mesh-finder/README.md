@@ -6,9 +6,9 @@ OBJ file. Attach to a running game, add the instrument, and the meshes it has
 loaded show up in a table: characters, props, level geometry, along with
 whatever else the game draws.
 
-It works with Metal and with desktop OpenGL on macOS, and with Vulkan,
-desktop OpenGL and OpenGL ES on Linux. It needs Luma 3.0.0 or later for its
-3D view.
+It works with Direct3D 11 on Windows, with Metal and desktop OpenGL on
+macOS, and with Vulkan, desktop OpenGL and OpenGL ES on Linux. It needs Luma
+3.0.0 or later for its 3D view.
 
 ## How it finds them
 
@@ -30,6 +30,32 @@ Two ways, and both run at once:
   buffers left over are looked at as point clouds, so that a process with
   thousands of buffers is sorted through in seconds; until it is, the
   console says every two seconds how many buffers are left.
+
+### Direct3D 11
+
+Draws are learned from the device context: the input layout, vertex buffers,
+index buffer and topology bound for each `Draw`, `DrawIndexed`, their
+instanced variants and their indirect ones, whose arguments are read from
+their buffer. This covers deferred contexts too, with their command lists
+read when the immediate context runs. An input layout created after the
+instrument was added says exactly where positions are, by their `POSITION`
+element, in floats, half floats or normalized integers. For input layouts
+made before that, the layout is worked out from the bound buffers, as for
+Metal.
+
+Buffers are read back on the thread that draws, by copying them on the
+immediate context into a staging buffer, so every buffer can be read, the
+immutable ones too, and those made before the instrument was added. Live
+buffers are found by scanning the process's memory for instances of
+`d3d11.dll`'s buffer class, and freed ones are told apart and left alone.
+Buffers created afterwards are read once they have settled. Each buffer's
+debug name, where the game set one, is its label.
+
+To learn `d3d11.dll`'s classes, the instrument makes a Direct3D 11 device of
+its own when it starts, without rendering, and lets it go again. Calls into
+`d3d11.dll` are hooked where they are implemented, rather than in each
+context's function table, since a context switches between tables as it
+runs.
 
 ### Metal
 
@@ -153,9 +179,9 @@ buffer with others comes out on its own.
 ## Settings
 
 - **Learn meshes from draw calls**: turn off to stop following Metal draws.
-  OpenGL keeps its hooks, since buffers can only be read on the thread that
-  draws, and so does Vulkan, since its buffers are only known from them, but
-  both stop learning meshes from draws.
+  Direct3D 11 and OpenGL keep their hooks, since buffers can only be read on
+  the thread that draws, and so does Vulkan, since its buffers are only known
+  from them, but all three stop learning meshes from draws.
 - **Guess meshes in buffers never drawn**: turn off to list only meshes seen
   drawn.
 - **Lowest confidence shown for guessed meshes**: meshes found only in
@@ -177,6 +203,13 @@ second, apart from a handful of frames of up to 70 ms while its meshes were
 first read. On a Core i9-12900K with Intel's Mesa driver, 1800 Vulkan draws a
 frame took 1.6 ms longer to record, about 0.9 µs a draw with five Vulkan
 calls each, and 1800 OpenGL or OpenGL ES draws a frame 1 ms longer to submit.
+On Windows 11, with Direct3D 11's software rasterizer in a virtual machine,
+1800 draws a frame took about 1.9 ms longer to submit, which is about 1 µs a
+draw with the calls that set up its buffers. The first frame after the
+instrument is added, when every mesh is read, took up to 160 ms.
+In a process holding 4000 vertex buffers, they were found and read 512 a
+frame, no frame took longer than 232 ms while they were, and guessing which
+of them are meshes took about 20 s.
 
 ## What it does not find
 
@@ -186,6 +219,12 @@ calls each, and 1800 OpenGL or OpenGL ES draws a frame 1 ms longer to submit.
 - Positions that are not 32-bit floats, when they have to be guessed. A
   layout declared by the API is read in half floats and normalized integers
   too.
+- Direct3D 11 draws whose input layout was made before the instrument was
+  added have their layout guessed, since an input layout keeps no names.
+  Draws that fetch their own vertices from shader resources, stream output
+  (`DrawAuto`), and meshes generated on the GPU are not followed.
+- Direct3D 9, 10 and 12, and Direct3D 11 running on top of 12 through
+  `D3D11On12`.
 - Draws through Metal 4's `MTL4RenderCommandEncoder`, indirect command
   buffers and mesh shaders. Indirect draws are followed when their arguments
   are in CPU-visible memory, though this has not been tried.
@@ -199,8 +238,11 @@ calls each, and 1800 OpenGL or OpenGL ES draws a frame 1 ms longer to submit.
   whose counts come from a buffer, mesh shaders, device-generated commands,
   and Vulkan in 32-bit processes.
 
-It was tested on macOS 27 on Apple Silicon, and on x86_64 Linux with Mesa 26
+It was tested on macOS 27 on Apple Silicon; on x86_64 Linux with Mesa 26
 on Intel graphics: Vulkan, and desktop OpenGL and OpenGL ES through EGL, both
 in test programs and in Chromium drawing WebGL through ANGLE's Vulkan and
-OpenGL backends. It has not been tried on Intel Macs, iOS, Windows or
-Android, with GLX, or with other drivers.
+OpenGL backends; and on Windows 11 25H2, 64-bit and 32-bit, with the WARP
+software rasterizer and the Microsoft Basic Render Driver. It has not been
+tried on Intel Macs, iOS, other versions of Windows or Android, with GLX,
+with a GPU vendor's Direct3D driver, with the Direct3D debug layer, or with
+other drivers.
