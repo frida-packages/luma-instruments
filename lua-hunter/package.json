@@ -1,0 +1,70 @@
+{
+  "name": "lua-hunter",
+  "displayName": "Lua Hunter",
+  "version": "1.0.0",
+  "main": "main.ts",
+  "luma": {
+    "icon": { "kind": "symbolic", "value": "scope" },
+    "compatibility": { "platforms": ["darwin", "linux", "windows"] },
+    "features": [
+      {
+        "id": "scanMemory",
+        "name": "Find idle interpreters in memory",
+        "schema": { "kind": "boolean", "default": true },
+        "optional": false,
+        "enabledByDefault": true
+      },
+      {
+        "id": "entriesPerTable",
+        "name": "Entries shown per table",
+        "schema": { "kind": "uint", "default": 100, "min": 1, "max": 10000 },
+        "optional": false,
+        "enabledByDefault": true
+      }
+    ],
+    "widgets": [
+      {
+        "id": "interpreters",
+        "name": "Interpreters",
+        "kind": {
+          "kind": "table",
+          "config": {
+            "columns": [
+              { "id": "number", "name": "#", "alignment": "trailing" },
+              { "id": "lua", "name": "Lua", "alignment": "leading" },
+              { "id": "code", "name": "Code in", "alignment": "leading" },
+              { "id": "state", "name": "Main lua_State", "alignment": "leading" },
+              { "id": "thread", "name": "Thread", "alignment": "trailing" },
+              { "id": "globals", "name": "Globals", "alignment": "leading" },
+              { "id": "console", "name": "Console", "alignment": "leading" }
+            ],
+            "actions": [
+              { "id": "use", "name": "Use in Console" }
+            ],
+            "maxRows": 256
+          }
+        },
+        "persistence": "none"
+      },
+      {
+        "id": "console",
+        "name": "Lua",
+        "kind": {
+          "kind": "console",
+          "config": {
+            "prompt": ">",
+            "placeholder": "Lua to run in the interpreter in use, or :help",
+            "runButtonLabel": "Run",
+            "maxEntries": 1000
+          }
+        },
+        "persistence": "none"
+      }
+    ],
+    "store": {
+      "summary": "Find the Lua interpreters embedded in a process (Lua 5.1 to 5.4 and LuaJIT, exported, with symbols or stripped) and run Lua in any of them, on its own thread, from a console.",
+      "category": "runtime",
+      "access": { "kind": "free" }
+    }
+  }
+}
