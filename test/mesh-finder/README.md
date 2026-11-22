@@ -58,7 +58,53 @@ python3 test/mesh-finder/run.py $! /tmp/meshes/opengl
 behind. To explore another process for 10 seconds, add the number of
 seconds: `python3 test/mesh-finder/run.py <pid> /tmp/meshes/other 10`.
 
-Both targets take a number of times to draw their scene each frame, and print
-their frame times every two seconds; `/tmp/metal-target 300` draws 2100
-meshes a frame, for measuring what the hooks cost.
+The Metal and OpenGL targets take a number of times to draw their scene each
+frame, and print their frame times every two seconds; `/tmp/metal-target 300`
+draws 2100 meshes a frame, for measuring what the hooks cost.
+
+## Vulkan, on Linux
+
+`vulkan-target.c` draws the same six meshes with Vulkan, offscreen, with no
+surface or window: dynamic rendering into an image of its own. Every buffer
+is made before the harness attaches, so those draws come out with their
+triangle counts and no contents. On `SIGUSR1` the target reloads the scene
+from new buffers, shifted 10 along x, the way a game loads a level, and
+those are expected with their contents:
+
+| Mesh | Vulkan |
+| --- | --- |
+| cube | interleaved position, normal and uv in host-visible memory, 16-bit indices; mapped, written and unmapped |
+| sphere | positions alone at an offset, normals in a second binding, 32-bit indices at an offset; all staged into device-local memory |
+| torus | `vkCmdSetVertexInputEXT` where the driver has it; persistently mapped, 32-bit indices |
+| ribbon | triangle strip, `vkCmdDraw`, staged into device-local memory |
+| octahedron | not indexed, four floats per position, stride from `vkCmdBindVertexBuffers2` |
+| pyramid | `vkCmdDraw` from vertex 24 of the octahedron's buffer |
+| torus | persistently mapped before attach, never drawn |
+| sphere | staged into device-local memory after `SIGUSR1`, never drawn |
+
+The sphere's and the ribbon's pipelines are made again every two seconds,
+with their shader modules, so their vertex input and SPIR-V input names are
+seen; the others keep pipelines made before attach.
+
+Vulkan's headers are not part of every system; any checkout of
+[Vulkan-Headers](https://github.com/KhronosGroup/Vulkan-Headers) does. With
+`glslc`, from the repository root, building outside it:
+
+```sh
+git clone --depth 1 https://github.com/KhronosGroup/Vulkan-Headers /tmp/vulkan-headers
+mkdir -p /tmp/vulkan-build
+for shader in test/mesh-finder/vulkan-*.vert test/mesh-finder/vulkan-*.frag; do
+    glslc -mfmt=c -o /tmp/vulkan-build/$(basename $shader).inc $shader
+done
+gcc -O2 -rdynamic -I/tmp/vulkan-headers/include -I/tmp/vulkan-build -o /tmp/vulkan-target test/mesh-finder/vulkan-target.c -lvulkan -lm
+/tmp/vulkan-target &
+python3 test/mesh-finder/run.py $! /tmp/meshes/vulkan
+```
+
+`-rdynamic` exports `mesh_finder_expectations` for the harness. Mesa keeps
+a shader cache in `~/.cache` unless `MESA_SHADER_CACHE_DIR` says otherwise.
+On Linux the harness resolves the Vulkan driver's functions the way the
+instrument does, and checks that they are back to their original bytes after
+dispose. `/tmp/vulkan-target 300` draws 1800 meshes a frame and prints how
+long recording them took.
 

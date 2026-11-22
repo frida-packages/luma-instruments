@@ -6,7 +6,7 @@
   "engines": { "luma": ">=3.0.0" },
   "luma": {
     "icon": { "kind": "symbolic", "value": "magnifyingglass" },
-    "compatibility": { "platforms": ["darwin"] },
+    "compatibility": { "platforms": ["darwin", "linux"] },
     "features": [
       {
         "id": "watchDraws",
@@ -85,7 +85,7 @@
       }
     ],
     "store": {
-      "summary": "Find the 3D meshes a game or app holds in its Metal and OpenGL buffers, with exact layouts learned from its draw calls, and export any of them as OBJ.",
+      "summary": "Find the 3D meshes a game or app holds in its Metal, Vulkan and OpenGL buffers, with exact layouts learned from its draw calls, and export any of them as OBJ.",
       "category": "ui",
       "access": { "kind": "free" }
     }

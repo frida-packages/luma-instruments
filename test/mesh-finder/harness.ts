@@ -1,7 +1,11 @@
 /// <reference path="./luma.d.ts" />
 
 import { instrument } from "../../mesh-finder/main.js";
+import { vulkanLibraries } from "../../mesh-finder/graphics-libraries.js";
 import { classesConformingTo, implementationOf } from "../../mesh-finder/objc.js";
+import { findVulkanDrivers } from "../../mesh-finder/vulkan-driver.js";
+import { pipelineEntryPointNames } from "../../mesh-finder/vulkan-pipelines.js";
+import { tapEntryPointNames } from "../../mesh-finder/vulkan-tap.js";
 
 interface Expectation {
     name: string;
@@ -31,7 +35,7 @@ interface ParsedObj {
 }
 
 const SETTLE_MS = 5000;
-const SIGUSR1 = 30;
+const SIGUSR1 = (Process.platform === "darwin") ? 30 : 10;
 const COMPARED_BYTES = 16;
 const LATE_UPLOAD_MS = 500;
 const TOLERANCE = 1e-4;
@@ -191,6 +195,12 @@ function hookCandidates(): NativePointer[] {
             if (address !== null) {
                 candidates.push(address);
             }
+        }
+    }
+    const modules = Process.enumerateModules();
+    if (modules.some(module => vulkanLibraries.loader.test(module.name))) {
+        for (const driver of findVulkanDrivers([...tapEntryPointNames, ...pipelineEntryPointNames])) {
+            candidates.push(...driver.entryPoints.values());
         }
     }
     return [...new Map(candidates.map(address => [address.toString(), address])).values()];
