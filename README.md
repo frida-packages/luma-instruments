@@ -15,6 +15,14 @@ Each folder is one instrument: TypeScript sources beside a `package.json`
 whose `luma` object carries its icon, compatibility, features, widgets and
 store listing. Its `README.md` is its description in the store.
 
+## Writing one
+
+[docs/instruments.md](docs/instruments.md) describes the folder, its
+`package.json` and the agent module: settings, widgets, actions, console input
+and publishing. [docs/views.md](docs/views.md) describes views, widgets an
+instrument draws itself with Smalltalk that runs inside Luma, new in Luma
+3.0.0.
+
 ## Trying one
 
 In Luma, attach to a process, choose **Add Instrument… → Link Folder…** and
