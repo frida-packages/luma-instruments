@@ -1,0 +1,138 @@
+{
+  "name": "trainer",
+  "displayName": "Trainer",
+  "version": "1.0.0",
+  "main": "main.ts",
+  "luma": {
+    "icon": { "kind": "symbolic", "value": "scope" },
+    "compatibility": { "platforms": ["darwin", "linux", "windows"] },
+    "features": [
+      {
+        "id": "types",
+        "name": "Look for values stored as",
+        "schema": {
+          "kind": "combo",
+          "choices": [
+            { "id": "common", "name": "32-bit integer, float or double" },
+            { "id": "all", "name": "Any integer, float or double" },
+            { "id": "byte", "name": "Byte" },
+            { "id": "int16", "name": "16-bit integer" },
+            { "id": "int32", "name": "32-bit integer" },
+            { "id": "int64", "name": "64-bit integer" },
+            { "id": "float", "name": "Float" },
+            { "id": "double", "name": "Double" }
+          ],
+          "default": "common"
+        },
+        "optional": false,
+        "enabledByDefault": true
+      },
+      {
+        "id": "unaligned",
+        "name": "Also look at unaligned addresses",
+        "schema": { "kind": "boolean", "default": false },
+        "optional": false,
+        "enabledByDefault": true
+      }
+    ],
+    "widgets": [
+      {
+        "id": "console",
+        "name": "Trainer",
+        "kind": {
+          "kind": "console",
+          "config": {
+            "prompt": ">",
+            "placeholder": "The value you see, e.g. 100, or help",
+            "runButtonLabel": "Scan",
+            "maxEntries": 500
+          }
+        },
+        "persistence": "none"
+      },
+      {
+        "id": "candidates",
+        "name": "Candidates",
+        "kind": { "kind": "counter", "config": {} },
+        "persistence": "none"
+      },
+      {
+        "id": "list",
+        "name": "Candidate addresses",
+        "kind": {
+          "kind": "table",
+          "config": {
+            "columns": [
+              { "id": "row", "name": "#", "alignment": "trailing" },
+              { "id": "address", "name": "Address", "alignment": "leading" },
+              { "id": "type", "name": "Type", "alignment": "leading" },
+              { "id": "value", "name": "Value", "alignment": "trailing" },
+              { "id": "previous", "name": "Previous", "alignment": "trailing" },
+              { "id": "where", "name": "Where", "alignment": "leading" }
+            ],
+            "actions": [
+              { "id": "keep", "name": "Keep only this" },
+              { "id": "discard", "name": "Discard" },
+              { "id": "lock", "name": "Lock" },
+              { "id": "memory", "name": "Show memory" }
+            ],
+            "maxRows": 100
+          }
+        },
+        "persistence": "none"
+      },
+      {
+        "id": "locks",
+        "name": "Locked values",
+        "kind": {
+          "kind": "table",
+          "config": {
+            "columns": [
+              { "id": "lock", "name": "#", "alignment": "trailing" },
+              { "id": "address", "name": "Address", "alignment": "leading" },
+              { "id": "type", "name": "Type", "alignment": "leading" },
+              { "id": "value", "name": "Held at", "alignment": "trailing" },
+              { "id": "blocked", "name": "Writes undone", "alignment": "trailing" },
+              { "id": "where", "name": "Where", "alignment": "leading" }
+            ],
+            "actions": [
+              { "id": "unlock", "name": "Unlock" },
+              { "id": "memory", "name": "Show memory" }
+            ],
+            "maxRows": 8
+          }
+        },
+        "persistence": "none"
+      },
+      {
+        "id": "writers",
+        "name": "Code that writes locked values",
+        "kind": {
+          "kind": "table",
+          "config": {
+            "columns": [
+              { "id": "code", "name": "Code", "alignment": "leading" },
+              { "id": "function", "name": "Function", "alignment": "leading" },
+              { "id": "writes", "name": "Writes", "alignment": "trailing" },
+              { "id": "target", "name": "Writes to", "alignment": "leading" }
+            ],
+            "actions": [],
+            "maxRows": 200
+          }
+        },
+        "persistence": "none"
+      },
+      {
+        "id": "memory",
+        "name": "Memory",
+        "kind": { "kind": "hex", "config": { "maxBytes": 4096 } },
+        "persistence": "none"
+      }
+    ],
+    "store": {
+      "summary": "Find where a game keeps a value such as your health by typing what you see as it changes, then change it, or lock it and see the code that tries to write it.",
+      "category": "runtime",
+      "access": { "kind": "free" }
+    }
+  }
+}

@@ -7,6 +7,7 @@ Instruments for [Luma](https://luma.frida.re), published in its store.
 | [TLS Plaintext](tls-plaintext) | Networking | A process's TLS traffic before encryption and after decryption |
 | [XPC Spy](xpc-spy) | IPC | The XPC messages a process sends and receives, per service |
 | [Certificates](certificates) | Cryptography | The X.509 certificates a process holds, found as live objects and in memory |
+| [Trainer](trainer) | Runtime | Where a game keeps a value such as your health, to change it or lock it |
 
 Each folder is one instrument: TypeScript sources beside a `package.json`
 whose `luma` object carries its icon, compatibility, features, widgets and
