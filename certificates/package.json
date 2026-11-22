@@ -1,0 +1,79 @@
+{
+  "name": "certificates",
+  "displayName": "Certificates",
+  "version": "1.0.0",
+  "main": "main.ts",
+  "luma": {
+    "icon": { "kind": "symbolic", "value": "shield" },
+    "compatibility": { "platforms": ["windows", "darwin", "linux"] },
+    "features": [
+      {
+        "id": "scope",
+        "name": "Memory to scan for encoded certificates",
+        "schema": {
+          "kind": "combo",
+          "choices": [
+            { "id": "writable", "name": "Writable memory: heap, stacks and data" },
+            { "id": "readable", "name": "All readable memory, including code and mapped files" }
+          ],
+          "default": "writable"
+        },
+        "optional": false,
+        "enabledByDefault": true
+      }
+    ],
+    "widgets": [
+      {
+        "id": "scan",
+        "name": "Scan",
+        "kind": { "kind": "list", "config": { "actions": [{ "id": "rescan", "name": "Rescan" }], "maxItems": 1 } },
+        "persistence": "none"
+      },
+      {
+        "id": "certificates",
+        "name": "Certificates",
+        "kind": {
+          "kind": "table",
+          "config": {
+            "columns": [
+              { "id": "subject", "name": "Subject", "alignment": "leading" },
+              { "id": "issuer", "name": "Issuer", "alignment": "leading" },
+              { "id": "expires", "name": "Expires", "alignment": "leading" },
+              { "id": "key", "name": "Key", "alignment": "leading" },
+              { "id": "sha256", "name": "SHA-256", "alignment": "leading" },
+              { "id": "found", "name": "Found by", "alignment": "leading" }
+            ],
+            "actions": [{ "id": "inspect", "name": "Inspect" }],
+            "maxRows": 5000
+          }
+        },
+        "persistence": "none"
+      },
+      {
+        "id": "details",
+        "name": "Details",
+        "kind": {
+          "kind": "console",
+          "config": {
+            "prompt": "?",
+            "placeholder": "Name, host name or fingerprint to show",
+            "runButtonLabel": "Show",
+            "maxEntries": 500
+          }
+        },
+        "persistence": "none"
+      },
+      {
+        "id": "der",
+        "name": "DER",
+        "kind": { "kind": "hex", "config": { "maxBytes": 65536 } },
+        "persistence": "none"
+      }
+    ],
+    "store": {
+      "summary": "Find the X.509 certificates a process holds: live SecCertificate and OpenSSL X509 objects in moments, then DER and PEM anywhere in memory, each with its subject, issuer, expiry, key and location.",
+      "category": "cryptography",
+      "access": { "kind": "free" }
+    }
+  }
+}
