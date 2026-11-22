@@ -221,7 +221,11 @@ Each `schema` has a `kind` and the keys of that kind. Luma refuses a
 | `array` | `item`, `default` | | an array |
 
 A `combo`'s `choices` are `[{ "id": "…", "name": "…" }]`, both keys required,
-and the typings make its value the union of the ids.
+and the typings make its value the union of the ids. Its `default` has to be
+one of the ids; Luma refuses one that is not, wherever the `combo` is, as in
+`luma.features[0].schema.default: 'verbose' is none of the choices` or
+`luma.features[0].schema.fields[0].schema.default: 'verbose' is none of the
+choices`.
 
 An `object`'s `fields` are like features: `{ id, name, schema, optional,
 enabledByDefault }`, of which `id`, `name` and `schema` are required, and
@@ -233,7 +237,11 @@ An `array`'s `item` is `{ "kind": "…" }`, one of `boolean`, `int`, `uint`,
 (which requires `fields`); it takes no `default` of its own. The array's
 `default` is required, and written as tagged values, not as plain JSON: each
 `{ "kind": "…", "value": … }`, with the item's kind, or `string` for a `combo`
-item:
+item; an `object` item's `value` is an object of tagged values, one per field.
+Luma refuses an element that does not fit the item, naming it, as in
+`luma.features[0].schema.default[1]: does not match the item schema`, and an
+element of a `combo` item that names none of its choices, as in
+`luma.features[0].schema.default[1]: 'verbose' is none of the choices`:
 
 ```json
 {

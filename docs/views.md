@@ -194,8 +194,8 @@ A file may hold:
 Refused, with a message in the widget naming the file:
 
 - A class that is not a plain one: a trait, or a class whose `#type` is
-  variable, bytes or words (`… only plain classes can be defined, and … is not
-  one`).
+  anything but `#normal`, such as `#variable`, `#bytes` or `#words` (`… only
+  plain classes can be defined, and … is not one`).
 - A class defined twice, or one whose superclass is neither a class of the
   same instrument nor a class the image has.
 - An extension of a class the instrument does not define, `Object` included
@@ -226,7 +226,8 @@ agent's module. Nothing is shared with another session, another instrument,
 even one whose Smalltalk is byte for byte the same, or another version. When
 the Smalltalk changes, the views running the old version are closed and fresh
 classes are made for the new one. Once no view uses a set of classes, Luma lets
-go of them.
+go of them, class-side state included: a view started or restarted after that
+gets fresh classes.
 
 Instrument classes are not part of the project's own Smalltalk: they do not
 appear among the classes and methods a project keeps.
@@ -246,7 +247,9 @@ A view is a widget like any other in `luma.widgets`, of kind `view`:
 
 - `class` is the name of a class the instrument's `.st` files define. It is
   not checked when the folder is linked: a missing class shows in the widget as
-  `its Smalltalk defines no class BytePlotView` when the view starts.
+  `its Smalltalk defines no class BytePlotView` when the view starts, and an
+  instrument with no `.st` file at all as `The instrument has no Smalltalk (.st
+  files) to show this widget with.`
 - `height` is how tall the widget is, in points. It defaults to 360.
 - `persistence` is `session` or `none`, as for other widgets. With `session`,
   the latest state, its binary data included, is saved with the session in the
@@ -367,10 +370,11 @@ ModuleListView >> gtNamesFor: aView [
 
 Several become tabs, ordered by `priority`, lowest first; a view without one
 has priority 75. With a single view the widget shows it without a tab bar.
-Luma collects the views when the widget is first shown and again each time the
-view sends `changed`, and runs a list's `items` block again for each page it
-shows. Nothing else makes it collect them again, so a view that changes what
-its lists or text show has to send `changed`.
+Luma collects the views when the widget is shown and again each time the view
+sends `changed`. Nothing else makes it collect them again for the tabs, so a
+view that changes what its lists or text show has to send `changed`. Reading a
+page of a list, or opening a selected row, runs the `<gtView>` methods again
+too, and the list's `items` block with them, so keep both free of side effects.
 
 The builders a view can start from:
 
@@ -378,7 +382,7 @@ The builders a view can start from:
 | --- | --- | --- |
 | `aView list` | A list of items | `items:`, `itemText:`, `send:` |
 | `aView columnedList` | A table | `items:`, `column:text:`, `column:text:width:`, `column:icon:`, `send:` |
-| `aView tree` | A tree | `items:`, `children:`, `itemText:`, `send:` |
+| `aView tree` | Its top-level items, as a list | `items:`, `itemText:`, `send:`; `children:` is taken but not shown |
 | `aView text` | Text | `text:` |
 | `aView canvas` | A scene the view draws | `scene:` |
 | `aView explicit` | A chart | `stencil:` |
@@ -387,7 +391,14 @@ The builders a view can start from:
 
 Every builder takes `title:` and `priority:`. Longer lists, tables and trees
 can be filtered in the widget; selecting a row opens what `send:` answers for
-it, or the item itself, in an inspector.
+it, or the item itself, in an inspector. There the object's own views are
+collected the way Glamorous Toolkit collects them: one that raises or answers
+no view shows its error in its place, and nothing stops.
+
+A `forward` view shows the view that the method `view:` names builds for the
+object `object:` gives, or its block answers. When that method raises or
+answers no view, the view stops naming both methods: `views: gtForwardFor:
+raised Error: gtRaisingFor: raised …`.
 
 A view has nowhere to show an action button, so the twelve messages Glamorous
 Toolkit views declare them with are refused: `action:`, `actionStencil:`,
@@ -408,18 +419,23 @@ A `<gtView>` method that raises an error stops the view, and the widget names
 the method (`views: gtModulesFor: raised …`). So does one that answers
 something that is not a view, `nil` included (`views: gtNilFor: answered nil,
 which is not a view`), and one whose view was given a `priority:` that is not a
-number. So does an error in what the view built, such as an `items:` block,
-whether it raises while the views are collected or when a page of the list is
-read. A `<gtView>` method that answers the builder it was handed, without
-choosing a view from it, is left out; one that chose a view and gave it nothing
-to show, such as a list with no items, gets its tab all the same.
+number (`views: gtSizesFor: gave the priority 'high', which is not a number`).
+An error in what the view built stops it too. One raised while the views are
+collected, by a `text:`, `stencil:` or `painting:` block, is named the same
+way; one raised while a page of a list is read, by an `items:`, `itemText:`
+or column block, shows as `items raised …`, and one raised by a `send:` block
+when a row is opened as `send raised …`. A `<gtView>` method that answers the
+builder it was handed, without choosing a view from it, is left out; one that
+chose a view and gave it nothing to show, such as a list with no items, gets
+its tab all the same.
 
 ### Charts
 
 Charts are made with Glamorous Toolkit's plotter classes, which Luma's image
-provides under their usual names: `GtPlotterHorizontalBarChart`,
-`GtPlotterVerticalBarChart`, `GtPlotterLineChart`,
-`GtPlotterScatterChart` and `GtPlotterDataGroup`. An `explicit` view whose
+provides under their usual names: `GtPlotter`, `GtPlotterHorizontalBarChart`,
+`GtPlotterVerticalBarChart`, `GtPlotterLineChart`, `GtPlotterScatterChart`,
+`GtPlotterCompositeChart`, `GtPlotterDataGroup` and
+`GtPlotterLogarithmicScale`. An `explicit` view whose
 `stencil:` block answers one of them shows it:
 
 ```smalltalk
@@ -432,7 +448,7 @@ ModuleListView >> gtSizesFor: aView [
 		stencil: [
 			GtPlotterHorizontalBarChart new
 				with: (GtPlotterDataGroup new
-					values: (modules first: (modules size min: 20));
+					values: (modules first: (modules size min: 10));
 					labelled: [ :each | each at: 'name' ]);
 				barWidthData: [ :each | each at: 'size' ];
 				yourself ]
@@ -440,10 +456,13 @@ ModuleListView >> gtSizesFor: aView [
 ```
 
 A chart with no values still gets its tab, and shows no bars. A `stencil:`
-block that raises, or answers something other than a chart, stops the view
-when its views are collected; the error the widget names is then not the one
-the block raised, since the shim swallows that and reports the missing chart
-instead.
+block that raises stops the view when its views are collected, naming the
+method and the block's own error (`views: gtSizesFor: raised …`). So does one
+that answers something other than a chart (`views: gtSizesFor: raised Error:
+the stencil answered nil, which is not a chart`), a `labelled:` block that
+raises, and a value block, such as `barWidthData:`, that answers something
+other than a number or a `Duration`, `nil` included. The same goes for a
+`mondrian` view's `painting:` block and its nodes' `labelled:` blocks.
 
 ## Drawing on a canvas
 
@@ -581,8 +600,8 @@ shaders, `commit` them, then hand it vertices:
 | `uniform: aName value: aNumberOrArray` | Declares or sets a uniform: 1, 2, 3 or 4 floats, or 16 for a `mat4`. Answers false, with the reason in `LumaCanvas lastError`, for any other count. |
 | `vertexSource: aString fragmentSource: aString` | The two shader bodies. |
 | `commit` | Compiles the shaders against the declarations. Answers false, with the compiler's message in `LumaCanvas lastError`, when they do not compile. |
-| `vertices: someBytes primitive: aSymbol` | Float32 vertex data from a `LumaBytes`. |
-| `vertices: someBytes indices: someIndices primitive: aSymbol` | The same, with uint32 indices from another `LumaBytes`; see below. |
+| `vertices: someBytes primitive: aSymbol` | Float32 vertex data from a `LumaBytes`, kept by reference rather than copied; see below. |
+| `vertices: someBytes indices: someIndices primitive: aSymbol` | The same, drawn indexed with uint32 indices from a `LumaBytes`, such as a slice of the same data; see below. |
 | `mesh: anArray primitive: aSymbol` | Vertices as a Smalltalk array of numbers, then `commit`. |
 | `remesh: anArray primitive: aSymbol` | Vertices as an array, without compiling again. |
 | `ramp: aName from: a to: b over: seconds` | Moves a uniform from `a` to `b` once. Answers false, as `uniform:value:` does, for a count it cannot hold. |
@@ -599,12 +618,25 @@ Primitives are `#points`, `#lines`, `#lineStrip`, `#triangles` and
 `#triangleStrip`.
 
 With indices, the index data has to be whole triangles, three uint32 indices
-each, and every index has to name a vertex. With `#lines`, each triangle is
-drawn as its three edges, which is how a wireframe of an indexed mesh is made;
-with any other primitive, the indexed vertices are drawn in index order. The
-vertex methods answer false, with the reason in `LumaCanvas lastError`, when
-the drawable has no attributes declared yet, when the data is not a whole
-number of vertices, or when an index is out of range.
+each, whatever the primitive, and every index has to name a vertex. With
+`#lines`, each triangle is drawn as its three edges, which is how a wireframe
+of an indexed mesh is made; with any other primitive, the indexed vertices are
+drawn in index order. The vertex methods answer false, with the reason in
+`LumaCanvas lastError`, when the primitive is none of these (`#hexagons is not
+a primitive`), when the drawable has no attributes declared yet (`declare the
+drawable's attributes before handing it vertices`), when the data is not a
+whole number of vertices (`1000 bytes are not a whole number of 12-byte
+vertices`), when the index data ends partway through an index (`14 bytes are
+not a whole number of 4-byte indices`), when the indices are not whole
+triangles (`8 indices are not a whole number of triangles`), when an index is
+out of range (`index 300 is past the last of 256 vertices`), and when the
+vertex or index bytes are not held any more (`those bytes are not held any
+more`).
+
+A drawable keeps the bytes it was handed and draws from them where they are:
+a slice that starts on a 4-byte boundary costs no copy, one that does not is
+copied once. However many drawables draw from the same data, the GPU is given
+it once.
 
 The shaders are bodies only: write `void main() { … }` and Luma adds the
 version line and the declarations. The vertex shader sets `gl_Position`, the
@@ -631,9 +663,9 @@ The canvas clears to a light or a dark background as Luma's appearance is, and
 follows it when it changes, on every platform; read `u_scheme` to color what
 is drawn on it to match.
 
-Declare attributes, varyings and uniforms before `commit`, which writes the
-declarations from them; one declared later needs another `commit`. Setting a
-declared uniform's value needs none.
+Declare attributes, varyings, uniforms and buffers before `commit`, which
+writes the declarations from them; one declared later needs another `commit`.
+Setting a declared uniform's value needs none.
 
 Luma draws a canvas when its scene changes, and continuously only while
 something in it moves: a shader that reads `u_time`, or a `ramp:` or
@@ -703,8 +735,11 @@ narrowed to the instrument's view widget ids, and the restored state as
 ## Binary data
 
 The data of a state or an event reaches the view as a `LumaBytes`: bytes Luma
-holds outside the image, so megabytes of vertices never become Smalltalk
-objects. `data:` is `nil` when the agent sent none.
+holds outside the image, the very bytes the widget's state keeps, lent rather
+than copied, so megabytes of vertices never become Smalltalk objects. The image
+cannot reach them directly: each read below is a call into Luma that copies
+out what it reads, while a drawable takes them by reference (see
+[Drawables](#drawables)). `data:` is `nil` when the agent sent none.
 
 | Message | Answers |
 | --- | --- |
@@ -720,12 +755,16 @@ Elements are read in the byte order of the machine, which is little-endian on
 every machine Luma runs on. An index or slice outside the data raises an
 error.
 
-Luma lets go of the bytes when the last `LumaBytes` sharing them is garbage
-collected, when it is sent `release`, or when the view stops. With large
-states, send `release` once the bytes have been handed to a drawable, so that
-the previous state's data does not wait for the garbage collector. After that,
-or after the view has stopped, reading raises `those bytes are not held any
-more`.
+Luma lets go of the bytes once nothing holds them: no `LumaBytes` sharing
+them, no drawable they were handed to, and no state that still carries them. A
+`LumaBytes` lets go when it is garbage collected, when it is sent `release`, or
+when the view stops; a slice holds the bytes on its own until it does the same.
+With large states, send `release` once the bytes have been handed to a
+drawable, so that the previous state's data does not wait for the garbage
+collector; the drawable goes on drawing them. After that, or after the view
+has stopped, `asByteArray`, `float32At:`, `uint32At:` and `float32Extent:`
+raise `those bytes are not held any more`, and the vertex methods answer false
+with the same words in `LumaCanvas lastError`.
 
 Data from the view to the agent is a `ByteArray`: `context send: aValue data:
 aByteArray`.
@@ -784,17 +823,21 @@ reason names what failed:
   raised, answered no view or declared an action button, the reason names it:
   `views: gtModulesFor: raised …`.
 - `setState was refused: …` or `sendEvent was refused: …`, for a state or an
-  event Luma would not take, such as one over the [limits](#limits) that a lab
-  relayed. One refused before the view runs, while the widget waits for
-  **Allow** or the view has stopped, is held, the latest only, and stops the
-  view once it runs; the widget asks for **Allow** before it reports one.
+  event from the instrument's own agent that Luma would not take; `A state
+  from the lab was refused: …` or `An event from the lab was refused: …`,
+  for one a lab relayed over the [limits](#limits). One refused while the
+  view is not running, because it has not started, waits for **Allow** or has
+  stopped, is held, the latest only, and stops the view once it runs; the
+  widget asks for **Allow** before it reports one.
 - `… did not finish within 3 seconds`, when it ran out of time.
 - `a process it forked: …`.
 - The load problems, one per line, for Smalltalk that does not load.
 
 **Restart** makes a fresh object and gives it the kept state and the events
-held while the view was stopped. Nothing of the old object survives. The agent
-is not involved: it keeps running whatever the view does.
+held while the view was stopped. Nothing of the old object survives, and
+unless another view of the instrument is running in that session, neither does
+class-side state: the classes are made afresh. The agent is not involved: it
+keeps running whatever the view does.
 
 `close` is not sent to a view that stopped on an error.
 
@@ -835,7 +878,9 @@ feeds it the states and events the host's instrument produces:
   the lab; the message then arrives with `from`, the member's id and name. For
   any other member, `canSend` is false and `send:` answers false without
   sending. A message is delivered only while the host's instrument is
-  attached.
+  attached. One over the [limits](#limits) is dropped, with a warning in the
+  host's event log, such as `A message from Alice's view was refused: its data
+  is 1048577 bytes; the most is 1048576`, and the host's view goes on running.
 
 A view's state is the same for everyone, so keep anything one member should
 not see out of it.
