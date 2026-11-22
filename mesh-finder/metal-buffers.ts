@@ -1,0 +1,213 @@
+import type { BufferAccess, GpuBuffer } from "./graphics-backend.js";
+import { isaBits } from "./objc.js";
+
+const source = `
+#include <glib.h>
+
+#define OBJECT_ALIGNMENT_MASK 15
+#define UTF8_ENCODING 0x08000100
+
+typedef struct
+{
+  guint64 class_mask;
+  guint64 magic_mask;
+  guint64 magic_value;
+} IsaBits;
+
+typedef struct
+{
+  gpointer contents;
+  guint64 length;
+  guint64 storage_mode;
+  guint64 gpu_address;
+  gchar label[256];
+} BufferFacts;
+
+extern gpointer objc_msgSend (gpointer self, gpointer op, ...);
+extern gpointer sel_registerName (const gchar * name);
+extern gpointer objc_autoreleasePoolPush (void);
+extern void objc_autoreleasePoolPop (gpointer pool);
+extern guint8 CFStringGetCString (gpointer string, gchar * buffer, glong size, guint32 encoding);
+
+typedef gpointer (* PointerGetter) (gpointer self, gpointer op);
+typedef guint64 (* ValueGetter) (gpointer self, gpointer op);
+
+typedef struct
+{
+  gpointer contents;
+  gpointer length;
+  gpointer storage_mode;
+  gpointer gpu_address;
+  gpointer label;
+} Selectors;
+
+extern Selectors selectors;
+
+void init (void)
+{
+  selectors.contents = sel_registerName ("contents");
+  selectors.length = sel_registerName ("length");
+  selectors.storage_mode = sel_registerName ("storageMode");
+  selectors.gpu_address = sel_registerName ("gpuAddress");
+  selectors.label = sel_registerName ("label");
+}
+
+guint8 describe_buffer (gpointer object, guint64 expected_class, const IsaBits * isa, BufferFacts * facts)
+{
+  gpointer pool, label;
+  guint64 header;
+
+  if (((guint64) object & OBJECT_ALIGNMENT_MASK) != 0)
+    return FALSE;
+  header = *(guint64 *) object;
+  if ((header & isa->class_mask) != expected_class || (header & isa->magic_mask) != isa->magic_value)
+    return FALSE;
+
+  pool = objc_autoreleasePoolPush ();
+  facts->contents = ((PointerGetter) objc_msgSend) (object, selectors.contents);
+  facts->length = ((ValueGetter) objc_msgSend) (object, selectors.length);
+  facts->storage_mode = ((ValueGetter) objc_msgSend) (object, selectors.storage_mode);
+  facts->gpu_address = ((ValueGetter) objc_msgSend) (object, selectors.gpu_address);
+  facts->label[0] = 0;
+  label = ((PointerGetter) objc_msgSend) (object, selectors.label);
+  if (label != NULL)
+    CFStringGetCString (label, facts->label, sizeof (facts->label), UTF8_ENCODING);
+  objc_autoreleasePoolPop (pool);
+  return TRUE;
+}
+`;
+
+const FACTS_SIZE = 32 + 256;
+const GPU_ONLY_STORAGE_MODES = new Set([2, 3]);
+
+export function findMetalBuffers(bufferClasses: NativePointer[], describer: MetalBufferDescriber): MetalBuffer[] {
+    const { mask } = isaBits();
+    const matches = Memory.findPointers(Process.enumerateRanges("rw-"), bufferClasses, { mask });
+    const buffers: MetalBuffer[] = [];
+    for (const { address, value } of matches) {
+        const buffer = describer.describe(address, value.and(mask));
+        if (buffer !== null) {
+            buffers.push(buffer);
+        }
+    }
+    return buffers;
+}
+
+export class MetalBufferDescriber {
+    private readonly facts = Memory.alloc(FACTS_SIZE);
+    private readonly selectors = Memory.alloc(5 * Process.pointerSize);
+    private readonly describer = new CModule(source, {
+        selectors: this.selectors,
+        objc_msgSend: Module.getGlobalExportByName("objc_msgSend"),
+        sel_registerName: Module.getGlobalExportByName("sel_registerName"),
+        objc_autoreleasePoolPush: Module.getGlobalExportByName("objc_autoreleasePoolPush"),
+        objc_autoreleasePoolPop: Module.getGlobalExportByName("objc_autoreleasePoolPop"),
+        CFStringGetCString: Module.getGlobalExportByName("CFStringGetCString"),
+    });
+    private readonly describeBuffer = new NativeFunction(this.describer.describe_buffer, "uint8",
+        ["pointer", "uint64", "pointer", "pointer"]);
+    private readonly isa = Memory.alloc(24);
+
+    constructor() {
+        const { mask, magicMask, magicValue } = isaBits();
+        this.isa.writePointer(mask);
+        this.isa.add(8).writePointer(magicMask);
+        this.isa.add(16).writePointer(magicValue);
+    }
+
+    describeLive(object: NativePointer): MetalBuffer | null {
+        return this.describe(object, object.readPointer().and(isaBits().mask));
+    }
+
+    describe(object: NativePointer, cls: NativePointer): MetalBuffer | null {
+        const facts = this.facts;
+        if (!isReadable(object) || this.describeBuffer(object, uint64(cls.toString()), this.isa, facts) === 0) {
+            return null;
+        }
+        return new MetalBuffer(
+            object,
+            facts.readPointer(),
+            facts.add(8).readU64().toNumber(),
+            facts.add(16).readU64().toNumber(),
+            facts.add(24).readU64().toNumber(),
+            facts.add(32).readUtf8String() || null,
+        );
+    }
+}
+
+export class MetalBuffer implements GpuBuffer {
+    readonly api = "Metal";
+    readonly id: string;
+    readonly address: string;
+    readonly label: string | null;
+    readonly byteLength: number;
+    readonly access: BufferAccess;
+    readonly creationOrder: number;
+
+    constructor(
+        object: NativePointer,
+        private readonly contents: NativePointer,
+        byteLength: number,
+        storageMode: number,
+        creationOrder: number,
+        label: string | null,
+    ) {
+        this.id = `Metal:${object}`;
+        this.address = object.toString();
+        this.label = label;
+        this.byteLength = byteLength;
+        this.access = (GPU_ONLY_STORAGE_MODES.has(storageMode) || contents.isNull()) ? "gpu-only" : "cpu-readable";
+        this.creationOrder = creationOrder;
+    }
+
+    read(offset: number, length: number): ArrayBuffer {
+        if (this.access === "gpu-only") {
+            throw new Error(`${this.address} is in GPU-only storage`);
+        }
+        if (offset < 0 || length < 0 || offset + length > this.byteLength) {
+            throw new Error(`read of ${length} bytes at ${offset} is outside ${this.address}, which holds ${this.byteLength}`);
+        }
+        return this.contents.add(offset).readByteArray(length)!;
+    }
+}
+
+export class BytesBuffer implements GpuBuffer {
+    readonly api = "Metal";
+    readonly id: string;
+    readonly address = "setVertexBytes";
+    readonly label = null;
+    readonly byteLength: number;
+    readonly access: BufferAccess = "cpu-readable";
+    readonly creationOrder = 0;
+    private readonly bytes: ArrayBuffer;
+
+    constructor(source: NativePointer, byteLength: number) {
+        this.byteLength = byteLength;
+        this.bytes = source.readByteArray(byteLength)!;
+        this.id = `Metal:bytes:${contentHash(this.bytes)}`;
+    }
+
+    read(offset: number, length: number): ArrayBuffer {
+        if (offset < 0 || length < 0 || offset + length > this.byteLength) {
+            throw new Error(`read of ${length} bytes at ${offset} is outside ${this.byteLength} bytes set with setVertexBytes`);
+        }
+        return this.bytes.slice(offset, offset + length);
+    }
+}
+
+function isReadable(object: NativePointer): boolean {
+    try {
+        object.readU64();
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+function contentHash(bytes: ArrayBuffer): string {
+    let hash = 0x811c9dc5;
+    for (const byte of new Uint8Array(bytes)) {
+        hash = Math.imul(hash ^ byte, 0x01000193);
+    }
+    return `${(hash >>> 0).toString(16)}x${bytes.byteLength}`;
+}

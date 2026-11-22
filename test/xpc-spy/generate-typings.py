@@ -31,6 +31,7 @@ def widget_type(kind):
         "table": lambda: "CustomInstrumentTableWidget<"
         + f"{union(c['id'] for c in config['columns'])}, {union(a['id'] for a in config['actions'])}>",
         "console": lambda: "CustomInstrumentConsoleWidget",
+        "view": lambda: "CustomInstrumentViewWidget",
     }[kind["kind"]]()
 
 
@@ -39,6 +40,7 @@ def snapshot_type(kind):
     return {
         "table": lambda: f"CustomInstrumentTableSnapshot<{union(c['id'] for c in config['columns'])}>",
         "console": lambda: "CustomInstrumentConsoleSnapshot",
+        "view": lambda: "CustomInstrumentViewSnapshot",
     }[kind["kind"]]()
 
 

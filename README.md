@@ -9,6 +9,7 @@ Instruments for [Luma](https://luma.frida.re), published in its store.
 | [Certificates](certificates) | Cryptography | The X.509 certificates a process holds, found as live objects and in memory |
 | [Trainer](trainer) | Runtime | Where a game keeps a value such as your health, to change it or lock it |
 | [Lua Hunter](lua-hunter) | Runtime | The Lua interpreters embedded in a process, with a console into each |
+| [Mesh Finder](mesh-finder) | UI | The 3D meshes a game or app holds in its Metal and OpenGL buffers, as OBJ |
 
 Each folder is one instrument: TypeScript sources beside a `package.json`
 whose `luma` object carries its icon, compatibility, features, widgets and

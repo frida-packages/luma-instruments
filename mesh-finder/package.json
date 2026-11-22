@@ -1,0 +1,93 @@
+{
+  "name": "mesh-finder",
+  "displayName": "Mesh Finder",
+  "version": "1.0.0",
+  "main": "main.ts",
+  "engines": { "luma": ">=3.0.0" },
+  "luma": {
+    "icon": { "kind": "symbolic", "value": "magnifyingglass" },
+    "compatibility": { "platforms": ["darwin"] },
+    "features": [
+      {
+        "id": "watchDraws",
+        "name": "Learn meshes from draw calls",
+        "schema": { "kind": "boolean", "default": true },
+        "optional": false,
+        "enabledByDefault": true
+      },
+      {
+        "id": "guessUndrawn",
+        "name": "Guess meshes in buffers never drawn",
+        "schema": { "kind": "boolean", "default": true },
+        "optional": false,
+        "enabledByDefault": true
+      },
+      {
+        "id": "minimumConfidence",
+        "name": "Lowest confidence shown for guessed meshes (%)",
+        "schema": { "kind": "uint", "default": 60, "min": 0, "max": 100 },
+        "optional": false,
+        "enabledByDefault": true
+      },
+      {
+        "id": "minimumVertices",
+        "name": "Fewest vertices a mesh must have",
+        "schema": { "kind": "uint", "default": 12, "min": 1, "max": 1000000 },
+        "optional": false,
+        "enabledByDefault": true
+      }
+    ],
+    "widgets": [
+      {
+        "id": "meshes",
+        "name": "Meshes",
+        "kind": {
+          "kind": "table",
+          "config": {
+            "columns": [
+              { "id": "mesh", "name": "Mesh", "alignment": "leading" },
+              { "id": "api", "name": "API", "alignment": "leading" },
+              { "id": "vertices", "name": "Vertices", "alignment": "trailing" },
+              { "id": "triangles", "name": "Triangles", "alignment": "trailing" },
+              { "id": "size", "name": "Size", "alignment": "leading" },
+              { "id": "layout", "name": "Layout", "alignment": "leading" },
+              { "id": "learned", "name": "Learned from", "alignment": "leading" },
+              { "id": "buffers", "name": "Buffers", "alignment": "leading" }
+            ],
+            "actions": [
+              { "id": "show", "name": "Show" },
+              { "id": "obj", "name": "Export OBJ" }
+            ],
+            "maxRows": 5000
+          }
+        },
+        "persistence": "none"
+      },
+      {
+        "id": "mesh",
+        "name": "Mesh",
+        "kind": { "kind": "view", "config": { "class": "MeshView", "height": 420 } },
+        "persistence": "session"
+      },
+      {
+        "id": "viewer",
+        "name": "Console",
+        "kind": {
+          "kind": "console",
+          "config": {
+            "prompt": ">",
+            "placeholder": "show 3, obj 3, scan, help",
+            "runButtonLabel": "Run",
+            "maxEntries": 500
+          }
+        },
+        "persistence": "none"
+      }
+    ],
+    "store": {
+      "summary": "Find the 3D meshes a game or app holds in its Metal and OpenGL buffers, with exact layouts learned from its draw calls, and export any of them as OBJ.",
+      "category": "ui",
+      "access": { "kind": "free" }
+    }
+  }
+}
