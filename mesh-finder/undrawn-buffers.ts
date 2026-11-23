@@ -89,6 +89,7 @@ export function snapshotCandidates(buffers: GpuBuffer[]): Snapshots {
 
 export function* analyzeUndrawnBuffers(snapshots: SnapshotBuffer[], catalog: MeshCatalog, progress: FinderProgress) {
     const status = new AnalysisStatus(snapshots.length, progress);
+    const evidentLayouts = new EvidentLayouts();
     const indexCandidates: IndexCandidate[] = [];
     for (const [i, buffer] of snapshots.entries()) {
         if (catalog.isDrawn(buffer.id)) {
@@ -107,7 +108,8 @@ export function* analyzeUndrawnBuffers(snapshots: SnapshotBuffer[], catalog: Mes
 
     let meshes = 0;
     for (const [i, candidate] of indexCandidates.entries()) {
-        const pairing = yield* bestPairing(candidate, unpaired, () => status.left(indexCandidates.length - i + unpaired.size));
+        const pairing = yield* bestPairing(candidate, unpaired, evidentLayouts,
+            () => status.left(indexCandidates.length - i + unpaired.size));
         if (pairing !== null) {
             unpaired.delete(pairing.vertices);
             if (admit(catalog, meshSpec(pairing, candidate))) {
@@ -122,7 +124,7 @@ export function* analyzeUndrawnBuffers(snapshots: SnapshotBuffer[], catalog: Mes
     const examined = pointCloudCandidates.slice(0, MOST_POINT_CLOUD_CANDIDATES);
     let pointClouds = 0;
     for (const [i, buffer] of examined.entries()) {
-        const layout = guessBufferLayout(buffer, null);
+        const layout = evidentLayouts.of(buffer);
         const vertexCount = (layout !== null) ? Math.floor((buffer.byteLength - layout.offset) / layout.stride) : 0;
         if (layout !== null && vertexCount >= SMALLEST_POINT_CLOUD) {
             const capped = { ...layout, confidence: Math.min(layout.confidence, HIGHEST_POINT_CLOUD_CONFIDENCE) };
@@ -139,6 +141,17 @@ export function* analyzeUndrawnBuffers(snapshots: SnapshotBuffer[], catalog: Mes
         : "";
     progress.note(`Guessed ${meshes} meshes and ${pointClouds} point clouds from ${snapshots.length} buffers no draw was seen using.`
         + unexamined);
+}
+
+class EvidentLayouts {
+    private readonly layouts = new Map<SnapshotBuffer, GuessedLayout | null>();
+
+    of(buffer: SnapshotBuffer): GuessedLayout | null {
+        if (!this.layouts.has(buffer)) {
+            this.layouts.set(buffer, guessBufferLayout(buffer, null));
+        }
+        return this.layouts.get(buffer)!;
+    }
 }
 
 class AnalysisStatus {
@@ -195,8 +208,8 @@ function isPaddingTriangle(view: DataView, first: number, width: number): boolea
     return indices[0] === indices[1] && indices[1] === indices[2];
 }
 
-function* bestPairing(candidate: IndexCandidate, vertexBuffers: Set<SnapshotBuffer>, stepped: () => void)
-    : Generator<void, Pairing | null, void> {
+function* bestPairing(candidate: IndexCandidate, vertexBuffers: Set<SnapshotBuffer>, evidentLayouts: EvidentLayouts,
+    stepped: () => void): Generator<void, Pairing | null, void> {
     const nearest = [...vertexBuffers].filter(vertices => couldHoldVertices(vertices.byteLength, candidate.vertexCount))
         .sort((a, b) => distance(a, candidate) - distance(b, candidate))
         .slice(0, MOST_PAIRING_CANDIDATES);
@@ -208,12 +221,17 @@ function* bestPairing(candidate: IndexCandidate, vertexBuffers: Set<SnapshotBuff
         if (layout === null) {
             continue;
         }
-        if (best === null || layout.confidence > best.layout.confidence
-            || (layout.confidence === best.layout.confidence && distance(vertices, candidate) < distance(best.vertices, candidate))) {
+        const outranks = best === null || layout.confidence > best.layout.confidence
+            || (layout.confidence === best.layout.confidence && distance(vertices, candidate) < distance(best.vertices, candidate));
+        if (outranks && !contradictsHomogeneousPositions(layout, evidentLayouts.of(vertices))) {
             best = { vertices, layout };
         }
     }
     return best;
+}
+
+function contradictsHomogeneousPositions(layout: GuessedLayout, evident: GuessedLayout | null): boolean {
+    return evident !== null && evident.format.count === 4 && layout.stride % evident.stride !== 0 && evident.stride % layout.stride !== 0;
 }
 
 function distance(vertices: SnapshotBuffer, candidate: IndexCandidate): number {
