@@ -1,3 +1,5 @@
+import { Draw } from "./gl-draw.pat";
+
 export type GLCall =
     | "drawArrays"
     | "drawArraysInstanced"
@@ -705,7 +707,7 @@ export class GLTap {
     private readonly waitUntilIdle: NativeFunction<void, []>;
 
     constructor(private readonly platform: GLTapPlatform, events: GLTapEvents) {
-        const onNewDraw = new NativeCallback(draw => events.newDraw(parseDraw(draw)), "void", ["pointer"]);
+        const onNewDraw = new NativeCallback(draw => events.newDraw(glDrawOf(Draw.at(draw))), "void", ["pointer"]);
         const onFrame = new NativeCallback(shareGroup => events.frame(shareGroup), "void", ["pointer"]);
         const onUpload = new NativeCallback((kind, shareGroup, buffer, offset, length, data) => events.upload({
             kind: uploadKinds[kind],
@@ -769,18 +771,17 @@ export class GLTap {
     }
 }
 
-function parseDraw(draw: NativePointer): GLDraw {
-    const field = (index: number) => draw.add(index * 8);
+function glDrawOf(draw: Draw): GLDraw {
     return {
-        shareGroup: field(0).readPointer(),
-        program: field(1).readU32(),
-        vertexArray: field(2).readU32(),
-        elementBuffer: field(3).readU32(),
-        mode: field(4).readU32(),
-        count: field(5).readU32(),
-        type: field(6).readU32(),
-        indices: field(7).readU64().toNumber(),
-        first: field(8).readU32(),
-        baseVertex: field(9).readS64().toNumber(),
+        shareGroup: draw.shareGroup,
+        program: draw.program.toNumber(),
+        vertexArray: draw.vertexArray.toNumber(),
+        elementBuffer: draw.elementBuffer.toNumber(),
+        mode: draw.mode.toNumber(),
+        count: draw.count.toNumber(),
+        type: draw.type.toNumber(),
+        indices: draw.indices.toNumber(),
+        first: draw.first.toNumber(),
+        baseVertex: draw.baseVertex.toNumber(),
     };
 }
