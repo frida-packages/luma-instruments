@@ -138,7 +138,9 @@ from graphics pipeline libraries are followed. With
 strides set with `vkCmdBindVertexBuffers2` are used too. Otherwise the layout
 is worked out from the buffers, as for Metal. The topology of a pipeline made
 before the instrument was added is unknown, so its draws are taken to be
-triangle lists, or strips when their vertex count cannot be a list.
+triangle lists, or strips when their vertex count cannot be a list. Once a
+pipeline is made again, the draws that use it are looked at again, even when
+the new pipeline has the old one's handle.
 
 A Vulkan buffer is a handle, not an object that can be found in memory, so
 its contents are known only from what Mesh Finder sees happen to it. Memory

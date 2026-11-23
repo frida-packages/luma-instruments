@@ -112,6 +112,7 @@ const callsWithResults = new Set<TapCall>(["createBuffer", "allocateMemory", "ma
 export const tapEntryPointNames = tapCalls.flatMap(([, names]) => names);
 
 const UNSET = uint64("0xffffffffffffffff");
+const ALL_BINDINGS = 0xffffffff;
 const LARGEST_BUFFER_COUNT = 65536;
 const LARGEST_MAPPING_COUNT = 16384;
 const objectKinds = new Map<number, ObjectKind>([[8, "memory"], [9, "buffer"]]);
@@ -209,6 +210,7 @@ typedef struct
   guint64 seen[SEEN_CAPACITY];
   guint64 pipelines[PIPELINE_CAPACITY];
   guint32 pipeline_bindings[PIPELINE_CAPACITY];
+  guint32 pipeline_generations[PIPELINE_CAPACITY];
   BufferEntry buffers[BUFFER_CAPACITY];
   MemoryEntry memories[MEMORY_CAPACITY];
   DeviceEntry devices[DEVICE_CAPACITY];
@@ -408,7 +410,8 @@ static void leave_js (void);
 static gboolean remember (guint64 key);
 static void entry_remove (gpointer table, gsize entry_size, guint capacity, guint * count, guint64 * entry);
 static gboolean holds_geometry (guint64 usage);
-static guint32 bindings_that_matter (guint64 pipeline);
+static guint claim_pipeline (guint64 pipeline);
+static guint find_pipeline (guint64 pipeline);
 static gpointer entry_find (gpointer table, gsize entry_size, guint capacity, guint64 handle);
 static gpointer entry_insert (gpointer table, gsize entry_size, guint capacity, guint * count, guint64 handle);
 static guint home_of (guint64 handle, guint capacity);
@@ -571,18 +574,23 @@ void set_draw_watch (guint draw_watch)
 
 void set_pipeline_bindings (guint64 pipeline, guint32 bindings)
 {
-  guint index = home_of (pipeline, PIPELINE_CAPACITY);
-  guint probes;
+  guint index;
   g_mutex_lock (&tap.lock);
-  for (probes = 0; probes != PIPELINE_CAPACITY; probes++)
+  index = claim_pipeline (pipeline);
+  if (index != PIPELINE_CAPACITY)
+    tap.pipeline_bindings[index] = bindings;
+  g_mutex_unlock (&tap.lock);
+}
+
+void renew_pipeline (guint64 pipeline, guint32 bindings)
+{
+  guint index;
+  g_mutex_lock (&tap.lock);
+  index = claim_pipeline (pipeline);
+  if (index != PIPELINE_CAPACITY)
   {
-    if (tap.pipelines[index] == pipeline || tap.pipelines[index] == 0)
-    {
-      tap.pipelines[index] = pipeline;
-      tap.pipeline_bindings[index] = bindings;
-      break;
-    }
-    index = (index + 1) % PIPELINE_CAPACITY;
+    tap.pipeline_bindings[index] = bindings;
+    tap.pipeline_generations[index]++;
   }
   g_mutex_unlock (&tap.lock);
 }
@@ -1082,7 +1090,7 @@ static void record_draw (Recording * recording, Draw * draw)
 {
   guint64 key;
   guint32 relevant;
-  guint i;
+  guint pipeline, i;
   gboolean fresh;
 
   if (tap.draw_watch != DRAWS_OBSERVED)
@@ -1094,7 +1102,10 @@ static void record_draw (Recording * recording, Draw * draw)
   key = mix (mix (mix (key, draw->indirect_offset), draw->draw_count), draw->indirect_stride);
 
   g_mutex_lock (&tap.lock);
-  relevant = (recording->vertex_input != 0) ? ALL_BINDINGS : bindings_that_matter (recording->pipeline);
+  pipeline = find_pipeline (recording->pipeline);
+  if (pipeline != PIPELINE_CAPACITY)
+    key = mix (key, tap.pipeline_generations[pipeline]);
+  relevant = (recording->vertex_input == 0 && pipeline != PIPELINE_CAPACITY) ? tap.pipeline_bindings[pipeline] : ALL_BINDINGS;
   for (i = 0; i != BINDING_COUNT; i++)
   {
     const Binding * binding = &recording->bindings[i];
@@ -1239,19 +1250,35 @@ static gboolean holds_geometry (guint64 usage)
   return usage == 0 || (usage & GEOMETRY_USAGE) != 0;
 }
 
-static guint32 bindings_that_matter (guint64 pipeline)
+static guint claim_pipeline (guint64 pipeline)
+{
+  guint index = home_of (pipeline, PIPELINE_CAPACITY);
+  guint probes;
+  for (probes = 0; probes != PIPELINE_CAPACITY; probes++)
+  {
+    if (tap.pipelines[index] == pipeline || tap.pipelines[index] == 0)
+    {
+      tap.pipelines[index] = pipeline;
+      return index;
+    }
+    index = (index + 1) % PIPELINE_CAPACITY;
+  }
+  return PIPELINE_CAPACITY;
+}
+
+static guint find_pipeline (guint64 pipeline)
 {
   guint index = home_of (pipeline, PIPELINE_CAPACITY);
   guint probes;
   for (probes = 0; probes != PIPELINE_CAPACITY; probes++)
   {
     if (tap.pipelines[index] == pipeline)
-      return tap.pipeline_bindings[index];
+      return index;
     if (tap.pipelines[index] == 0)
-      return ALL_BINDINGS;
+      return PIPELINE_CAPACITY;
     index = (index + 1) % PIPELINE_CAPACITY;
   }
-  return ALL_BINDINGS;
+  return PIPELINE_CAPACITY;
 }
 
 static gpointer entry_find (gpointer table, gsize entry_size, guint capacity, guint64 handle)
@@ -1315,6 +1342,7 @@ export class VulkanTap {
     private readonly deviceFor: NativeFunction<NativePointer, [NativePointerValue, NativePointerValue]>;
     private readonly setDrawWatch: NativeFunction<void, [number]>;
     private readonly setBindings: NativeFunction<void, [number | UInt64, number]>;
+    private readonly renew: NativeFunction<void, [number | UInt64, number]>;
     private readonly waitUntilIdle: NativeFunction<void, []>;
     private readonly facts = tapFacts.BufferFacts.at(Memory.alloc(tapFacts.BufferFacts.size));
     private readonly driverOut = Memory.alloc(8);
@@ -1355,6 +1383,7 @@ export class VulkanTap {
         this.deviceFor = new NativeFunction(this.tap.device_for, "pointer", ["pointer", "pointer"]);
         this.setDrawWatch = new NativeFunction(this.tap.set_draw_watch, "void", ["uint"]);
         this.setBindings = new NativeFunction(this.tap.set_pipeline_bindings, "void", ["uint64", "uint32"]);
+        this.renew = new NativeFunction(this.tap.renew_pipeline, "void", ["uint64", "uint32"]);
         this.waitUntilIdle = new NativeFunction(this.tap.wait_until_idle, "void", []);
         this.attach(drivers);
     }
@@ -1407,6 +1436,10 @@ export class VulkanTap {
 
     narrowPipeline(pipeline: UInt64, bindings: number): void {
         this.setBindings(pipeline, bindings >>> 0);
+    }
+
+    renewPipeline(pipeline: UInt64, positionSlot: number | null): void {
+        this.renew(pipeline, (positionSlot !== null) ? (1 << positionSlot) >>> 0 : ALL_BINDINGS);
     }
 
     dispose(): void {

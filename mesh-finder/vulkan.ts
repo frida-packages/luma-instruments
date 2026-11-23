@@ -116,13 +116,11 @@ class VulkanBackend implements GraphicsBackend {
     }
 
     private learned(pipeline: UInt64, description: PipelineDescription): void {
-        if (description.vertexInput === null || description.vertexInput === "dynamic") {
-            return;
-        }
-        const position = positionLayoutOf(description.vertexInput, description.names, "pipeline vertex input");
-        if (position !== null) {
-            this.hooks?.tap.narrowPipeline(pipeline, 1 << position.slot);
-        }
+        const input = description.vertexInput;
+        const position = (input !== null && input !== "dynamic")
+            ? positionLayoutOf(input, description.names, "pipeline vertex input")
+            : null;
+        this.hooks?.tap.renewPipeline(pipeline, position?.slot ?? null);
     }
 
     private onDraw(draw: RecordedDraw): void {
