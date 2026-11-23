@@ -1,6 +1,7 @@
 import type { BufferAccess, GpuBuffer } from "./graphics-backend.js";
 import { vulkanLibraries } from "./graphics-libraries.js";
 import type { VulkanDriver } from "./vulkan-driver.js";
+import { MemoryRequirements } from "./vulkan-memory-requirements.pat";
 import type { BufferFacts, KnownMapping, ObjectKind, VulkanTap } from "./vulkan-tap.js";
 
 interface MemoryShadow {
@@ -38,7 +39,7 @@ export class VulkanContents {
     private readonly labels = new Map<string, string>();
     private readonly requiredSizes = new Map<string, number>();
     private readonly memoryRequirements: Map<number, NativeFunction<void, [NativePointerValue, number | UInt64, NativePointerValue]>>;
-    private readonly requirements = Memory.alloc(24);
+    private readonly requirements = MemoryRequirements.at(Memory.alloc(MemoryRequirements.size));
     private readonly usedLengthKernel = new CModule(usedLengthSource);
     private readonly usedLength = new NativeFunction(this.usedLengthKernel.used_length, "uint64", ["pointer", "uint64"]);
     private readonly changedBuffers = new Set<string>();
@@ -156,8 +157,8 @@ export class VulkanContents {
         if (owner === null || query === undefined) {
             return null;
         }
-        query(owner.device, handle, this.requirements);
-        const size = this.requirements.readU64().toNumber();
+        query(owner.device, handle, this.requirements.$address);
+        const size = this.requirements.size.toNumber();
         this.requiredSizes.set(key, size);
         this.tap().rememberBuffer(handle);
         return size;

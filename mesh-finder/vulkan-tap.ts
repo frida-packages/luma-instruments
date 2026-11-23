@@ -1,4 +1,6 @@
+import * as tapFacts from "./vulkan-buffer-facts.pat";
 import type { VulkanDriver } from "./vulkan-driver.js";
+import { Draw } from "./vulkan-draw.pat";
 
 export interface RecordedDraw {
     commandBuffer: NativePointer;
@@ -109,13 +111,9 @@ const callsWithResults = new Set<TapCall>(["createBuffer", "allocateMemory", "ma
 
 export const tapEntryPointNames = tapCalls.flatMap(([, names]) => names);
 
-const UNSET = "18446744073709551615";
-const DRAW_HEADER_FIELDS = 18;
-const BINDING_SIZE = 24;
-const FACTS_FIELDS = 8;
+const UNSET = uint64("0xffffffffffffffff");
 const LARGEST_BUFFER_COUNT = 65536;
 const LARGEST_MAPPING_COUNT = 16384;
-const MAPPING_SIZE = 16;
 const objectKinds = new Map<number, ObjectKind>([[8, "memory"], [9, "buffer"]]);
 const drawWatches: Record<DrawWatch, number> = { ignored: 0, observed: 1 };
 
@@ -1318,14 +1316,14 @@ export class VulkanTap {
     private readonly setDrawWatch: NativeFunction<void, [number]>;
     private readonly setBindings: NativeFunction<void, [number | UInt64, number]>;
     private readonly waitUntilIdle: NativeFunction<void, []>;
-    private readonly facts = Memory.alloc(FACTS_FIELDS * 8);
+    private readonly facts = tapFacts.BufferFacts.at(Memory.alloc(tapFacts.BufferFacts.size));
     private readonly driverOut = Memory.alloc(8);
 
     constructor(drivers: VulkanDriver[], events: VulkanTapEvents) {
         const sizer = new CModule(sizeSource);
         this.state = Memory.alloc(new NativeFunction(sizer.tap_size, "uint64", [])().toNumber());
         this.callbacks = [
-            new NativeCallback(draw => events.newDraw(parseDraw(draw)), "void", ["pointer"]),
+            new NativeCallback(draw => events.newDraw(recordedDrawOf(Draw.at(draw))), "void", ["pointer"]),
             new NativeCallback((id, bindings, bindingCount, attributes, attributeCount) =>
                 events.vertexInput(id, bindings, bindingCount, attributes, attributeCount), "void",
             ["uint64", "pointer", "uint32", "pointer", "uint32"]),
@@ -1362,20 +1360,20 @@ export class VulkanTap {
     }
 
     describeBuffer(handle: UInt64): BufferFacts | null {
-        if (this.describe(handle, this.facts) === 0) {
+        const facts = this.facts;
+        if (this.describe(handle, facts.$address) === 0) {
             return null;
         }
-        const field = (index: number) => this.facts.add(index * 8);
-        const mappedSize = field(7).readU64();
+        const { mappedSize } = facts;
         return {
-            size: field(0).readU64().toNumber(),
-            memory: field(1).readU64(),
-            memoryOffset: field(2).readU64().toNumber(),
-            order: field(3).readU64().toNumber(),
-            backing: (field(4).readU64().toNumber() !== 0) ? "tracked" : "untracked",
-            mapped: field(5).readPointer(),
-            mappedOffset: field(6).readU64().toNumber(),
-            mappedSize: (mappedSize.toString() === UNSET) ? null : mappedSize.toNumber(),
+            size: facts.size.toNumber(),
+            memory: facts.memory,
+            memoryOffset: facts.memoryOffset.toNumber(),
+            order: facts.order.toNumber(),
+            backing: (facts.backing.toNumber() !== 0) ? "tracked" : "untracked",
+            mapped: facts.mapped,
+            mappedOffset: facts.mappedOffset.toNumber(),
+            mappedSize: mappedSize.equals(UNSET) ? null : mappedSize.toNumber(),
         };
     }
 
@@ -1390,12 +1388,11 @@ export class VulkanTap {
     }
 
     mappings(): KnownMapping[] {
-        const entries = Memory.alloc(LARGEST_MAPPING_COUNT * MAPPING_SIZE);
+        const entries = Memory.alloc(LARGEST_MAPPING_COUNT * tapFacts.Mapping.size);
         const count = this.listMappings(entries, LARGEST_MAPPING_COUNT);
         return Array.from({ length: count }, (_, i) => {
-            const entry = entries.add(i * MAPPING_SIZE);
-            const size = entry.add(8).readU64();
-            return { mapped: entry.readPointer(), mappedSize: (size.toString() === UNSET) ? null : size.toNumber() };
+            const { mapped, mappedSize } = tapFacts.Mapping.at(entries.add(i * tapFacts.Mapping.size));
+            return { mapped, mappedSize: mappedSize.equals(UNSET) ? null : mappedSize.toNumber() };
         });
     }
 
@@ -1440,43 +1437,40 @@ export class VulkanTap {
     }
 }
 
-function parseDraw(draw: NativePointer): RecordedDraw {
-    const field = (index: number) => draw.add(index * 8);
-    const topology = field(3).readU64();
-    const vertexInput = field(4).readU64();
-    const bound = field(17).readU32();
+function recordedDrawOf(draw: Draw): RecordedDraw {
+    const { topology, vertexInput } = draw;
+    const bound = draw.bound.toNumber();
     const bindings: RecordedBinding[] = [];
-    for (let index = 0; index !== 32; index++) {
+    draw.bindings.forEach((binding, index) => {
         if ((bound & (1 << index)) === 0) {
-            continue;
+            return;
         }
-        const binding = draw.add(DRAW_HEADER_FIELDS * 8 + index * BINDING_SIZE);
-        const stride = binding.add(16).readU64();
+        const { stride } = binding;
         bindings.push({
             index,
-            buffer: binding.readU64(),
-            offset: binding.add(8).readU64().toNumber(),
-            stride: (stride.toString() === UNSET) ? null : stride.toNumber(),
+            buffer: binding.buffer,
+            offset: binding.offset.toNumber(),
+            stride: stride.equals(UNSET) ? null : stride.toNumber(),
         });
-    }
+    });
     return {
-        commandBuffer: field(0).readPointer(),
-        driver: field(1).readU64().toNumber(),
-        pipeline: field(2).readU64(),
-        topology: (topology.toString() === UNSET) ? null : topology.toNumber(),
+        commandBuffer: draw.commandBuffer,
+        driver: draw.driver.toNumber(),
+        pipeline: draw.pipeline,
+        topology: topology.equals(UNSET) ? null : topology.toNumber(),
         vertexInput: vertexInput.equals(0) ? null : vertexInput,
-        latestVertexInput: (field(5).readU64().toNumber() !== 0) ? "command" : "pipeline",
-        elements: (field(6).readU64().toNumber() !== 0) ? "indexed" : "vertices",
-        indexBuffer: field(7).readU64(),
-        indexOffset: field(8).readU64().toNumber(),
-        indexType: field(9).readU64().toNumber(),
-        count: field(10).readU64().toNumber(),
-        first: field(11).readU64().toNumber(),
-        vertexOffset: field(12).readS64().toNumber(),
-        indirectBuffer: field(13).readU64(),
-        indirectOffset: field(14).readU64().toNumber(),
-        drawCount: field(15).readU64().toNumber(),
-        indirectStride: field(16).readU64().toNumber(),
+        latestVertexInput: (draw.latestVertexInput.toNumber() !== 0) ? "command" : "pipeline",
+        elements: (draw.elements.toNumber() !== 0) ? "indexed" : "vertices",
+        indexBuffer: draw.indexBuffer,
+        indexOffset: draw.indexOffset.toNumber(),
+        indexType: draw.indexType.toNumber(),
+        count: draw.count.toNumber(),
+        first: draw.first.toNumber(),
+        vertexOffset: draw.vertexOffset.toNumber(),
+        indirectBuffer: draw.indirectBuffer,
+        indirectOffset: draw.indirectOffset.toNumber(),
+        drawCount: draw.drawCount.toNumber(),
+        indirectStride: draw.indirectStride.toNumber(),
         bindings,
     };
 }

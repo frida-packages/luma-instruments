@@ -3,6 +3,21 @@ import { positionAttribute } from "./position-attribute.js";
 import { vertexInputNames, type InputNames, type VertexInputNames } from "./spirv-inputs.js";
 import { positionFormat, type ComponentType, type PositionFormat } from "./vertex-format.js";
 import type { VulkanDriver } from "./vulkan-driver.js";
+import {
+    BaseInStructure,
+    GraphicsPipelineCreateInfo,
+    PipelineDynamicStateCreateInfo,
+    PipelineLibraryCreateInfo,
+    PipelineShaderStageCreateInfo,
+    PipelineVertexInputStateCreateInfo,
+    ShaderModuleCreateInfo,
+} from "./vulkan-pipeline-info.pat";
+import {
+    VertexInputAttributeDescription,
+    VertexInputAttributeDescription2,
+    VertexInputBindingDescription,
+    VertexInputBindingDescription2,
+} from "./vulkan-vertex-input.pat";
 
 export interface VertexBindingInfo {
     binding: number;
@@ -43,8 +58,6 @@ const DYNAMIC_PRIMITIVE_TOPOLOGY = 1000267000;
 const DYNAMIC_VERTEX_INPUT_BINDING_STRIDE = 1000267005;
 const DYNAMIC_VERTEX_INPUT = 1000352000;
 const LARGEST_PARSED_SHADER = 16 * 1048576;
-const GRAPHICS_PIPELINE_INFO_SIZE = 144;
-const STAGE_INFO_SIZE = 48;
 
 const vulkanFormats = new Map<number, [ComponentType, number]>([
     [16, ["unorm8", 2]], [17, ["snorm8", 2]], [23, ["unorm8", 3]], [24, ["snorm8", 3]], [37, ["unorm8", 4]], [38, ["snorm8", 4]],
@@ -75,8 +88,9 @@ export class PipelineLayouts {
             hook(driver.entryPoints.get("vkCreateGraphicsPipelines"), {
                 onEnter(args) {
                     const count = args[2].toUInt32();
+                    const infos = args[3];
                     this.descriptions = Array.from({ length: count },
-                        (_, i) => layouts.describeCreateInfo(args[3].add(i * GRAPHICS_PIPELINE_INFO_SIZE)));
+                        (_, i) => layouts.describeCreateInfo(GraphicsPipelineCreateInfo.at(infos.add(i * GraphicsPipelineCreateInfo.size))));
                     this.pipelines = args[5];
                 },
                 onLeave() {
@@ -91,7 +105,7 @@ export class PipelineLayouts {
             });
             hook(driver.entryPoints.get("vkCreateShaderModule"), {
                 onEnter(args) {
-                    this.names = namesOfModuleInfo(args[1]);
+                    this.names = namesOfModuleInfo(ShaderModuleCreateInfo.at(args[1]));
                     this.module = args[3];
                 },
                 onLeave(result) {
@@ -118,16 +132,16 @@ export class PipelineLayouts {
         }
     }
 
-    private describeCreateInfo(info: NativePointer): PipelineDescription {
-        const dynamicStates = dynamicStatesOf(info.add(96).readPointer());
-        const vertexInputState = info.add(32).readPointer();
-        const assembly = info.add(40).readPointer();
+    private describeCreateInfo(info: GraphicsPipelineCreateInfo): PipelineDescription {
+        const dynamicStates = dynamicStatesOf(info.dynamicState);
+        const vertexInputState = info.vertexInputState;
+        const assembly = info.inputAssemblyState;
         const own: PipelineDescription = {
-            topology: dynamicStates.has(DYNAMIC_PRIMITIVE_TOPOLOGY) ? "dynamic" : (assembly.isNull() ? null : assembly.add(20).readU32()),
-            vertexInput: dynamicStates.has(DYNAMIC_VERTEX_INPUT) ? "dynamic" : (vertexInputState.isNull() ? null
+            topology: dynamicStates.has(DYNAMIC_PRIMITIVE_TOPOLOGY) ? "dynamic" : (assembly?.topology ?? null),
+            vertexInput: dynamicStates.has(DYNAMIC_VERTEX_INPUT) ? "dynamic" : (vertexInputState === null ? null
                 : vertexInputOf(vertexInputState)),
             strides: dynamicStates.has(DYNAMIC_VERTEX_INPUT_BINDING_STRIDE) ? "dynamic" : "declared",
-            names: this.vertexNamesOf(info.add(24).readPointer(), info.add(20).readU32()),
+            names: this.vertexNamesOf(info.stages, info.stageCount),
         };
         return librariesOf(info).reduce((merged, library) => {
             const linked = this.pipelines.get(library.toString());
@@ -142,12 +156,12 @@ export class PipelineLayouts {
 
     private vertexNamesOf(stages: NativePointer, count: number): InputNames | null {
         for (let i = 0; i !== count; i++) {
-            const stage = stages.add(i * STAGE_INFO_SIZE);
-            if (stage.add(20).readU32() !== VERTEX_STAGE) {
+            const stage = PipelineShaderStageCreateInfo.at(stages.add(i * PipelineShaderStageCreateInfo.size));
+            if (stage.stage !== VERTEX_STAGE) {
                 continue;
             }
-            const entry = stage.add(32).readPointer().readUtf8String()!;
-            const module = stage.add(24).readPointer();
+            const entry = stage.name.readUtf8String()!;
+            const module = stage.module;
             const names = module.isNull() ? inlineModuleNames(stage) : this.modules.get(module.toString());
             return names?.get(entry) ?? null;
         }
@@ -159,20 +173,16 @@ export function dynamicVertexInputOf(bindings: NativePointer, bindingCount: numb
     attributeCount: number): VertexInputInfo {
     return {
         bindings: Array.from({ length: bindingCount }, (_, i) => {
-            const binding = bindings.add(i * 32);
-            return {
-                binding: binding.add(16).readU32(),
-                stride: binding.add(20).readU32(),
-                rate: rateOf(binding.add(24).readU32()),
-            };
+            const binding = VertexInputBindingDescription2.at(bindings.add(i * VertexInputBindingDescription2.size));
+            return { binding: binding.binding, stride: binding.stride, rate: rateOf(binding.inputRate) };
         }),
         attributes: Array.from({ length: attributeCount }, (_, i) => {
-            const attribute = attributes.add(i * 32);
+            const attribute = VertexInputAttributeDescription2.at(attributes.add(i * VertexInputAttributeDescription2.size));
             return {
-                location: attribute.add(16).readU32(),
-                binding: attribute.add(20).readU32(),
-                format: formatOf(attribute.add(24).readU32()),
-                offset: attribute.add(28).readU32(),
+                location: attribute.location,
+                binding: attribute.binding,
+                format: formatOf(attribute.format),
+                offset: attribute.offset,
             };
         }),
     };
@@ -195,59 +205,60 @@ export function positionLayoutOf(input: VertexInputInfo, names: InputNames | nul
     };
 }
 
-function dynamicStatesOf(state: NativePointer): Set<number> {
-    if (state.isNull()) {
+function dynamicStatesOf(state: PipelineDynamicStateCreateInfo | null): Set<number> {
+    if (state === null) {
         return new Set();
     }
-    const count = state.add(20).readU32();
-    const states = state.add(24).readPointer();
-    return new Set(Array.from({ length: count }, (_, i) => states.add(i * 4).readU32()));
+    const { dynamicStateCount, dynamicStates } = state;
+    return new Set(Array.from({ length: dynamicStateCount }, (_, i) => dynamicStates.add(i * 4).readU32()));
 }
 
-function vertexInputOf(state: NativePointer): VertexInputInfo {
-    const bindingCount = state.add(20).readU32();
-    const bindings = state.add(24).readPointer();
-    const attributeCount = state.add(32).readU32();
-    const attributes = state.add(40).readPointer();
+function vertexInputOf(state: PipelineVertexInputStateCreateInfo): VertexInputInfo {
+    const bindings = state.vertexBindingDescriptions;
+    const attributes = state.vertexAttributeDescriptions;
     return {
-        bindings: Array.from({ length: bindingCount }, (_, i) => {
-            const binding = bindings.add(i * 12);
-            return { binding: binding.readU32(), stride: binding.add(4).readU32(), rate: rateOf(binding.add(8).readU32()) };
+        bindings: Array.from({ length: state.vertexBindingDescriptionCount }, (_, i) => {
+            const binding = VertexInputBindingDescription.at(bindings.add(i * VertexInputBindingDescription.size));
+            return { binding: binding.binding, stride: binding.stride, rate: rateOf(binding.inputRate) };
         }),
-        attributes: Array.from({ length: attributeCount }, (_, i) => {
-            const attribute = attributes.add(i * 16);
+        attributes: Array.from({ length: state.vertexAttributeDescriptionCount }, (_, i) => {
+            const attribute = VertexInputAttributeDescription.at(attributes.add(i * VertexInputAttributeDescription.size));
             return {
-                location: attribute.readU32(),
-                binding: attribute.add(4).readU32(),
-                format: formatOf(attribute.add(8).readU32()),
-                offset: attribute.add(12).readU32(),
+                location: attribute.location,
+                binding: attribute.binding,
+                format: formatOf(attribute.format),
+                offset: attribute.offset,
             };
         }),
     };
 }
 
-function librariesOf(info: NativePointer): UInt64[] {
-    for (let next = info.add(8).readPointer(); !next.isNull(); next = next.add(8).readPointer()) {
-        if (next.readU32() === PIPELINE_LIBRARY_CREATE_INFO) {
-            const libraries = next.add(24).readPointer();
-            return Array.from({ length: next.add(16).readU32() }, (_, i) => libraries.add(i * 8).readU64());
-        }
+function librariesOf(info: GraphicsPipelineCreateInfo): UInt64[] {
+    const chained = chainedInfo(info.next, PIPELINE_LIBRARY_CREATE_INFO);
+    if (chained === null) {
+        return [];
     }
-    return [];
+    const { libraryCount, libraries } = PipelineLibraryCreateInfo.at(chained);
+    return Array.from({ length: libraryCount }, (_, i) => libraries.add(i * 8).readU64());
 }
 
-function inlineModuleNames(stage: NativePointer): VertexInputNames | undefined {
-    for (let next = stage.add(8).readPointer(); !next.isNull(); next = next.add(8).readPointer()) {
-        if (next.readU32() === SHADER_MODULE_CREATE_INFO) {
-            return namesOfModuleInfo(next);
-        }
-    }
-    return undefined;
+function inlineModuleNames(stage: PipelineShaderStageCreateInfo): VertexInputNames | undefined {
+    const chained = chainedInfo(stage.next, SHADER_MODULE_CREATE_INFO);
+    return (chained !== null) ? namesOfModuleInfo(ShaderModuleCreateInfo.at(chained)) : undefined;
 }
 
-function namesOfModuleInfo(info: NativePointer): VertexInputNames {
-    const size = info.add(24).readU64().toNumber();
-    return (size <= LARGEST_PARSED_SHADER) ? vertexInputNames(info.add(32).readPointer().readByteArray(size)!) : new Map();
+function chainedInfo(first: NativePointer, type: number): NativePointer | null {
+    for (let next = first; !next.isNull(); next = BaseInStructure.at(next).next) {
+        if (BaseInStructure.at(next).sType === type) {
+            return next;
+        }
+    }
+    return null;
+}
+
+function namesOfModuleInfo(info: ShaderModuleCreateInfo): VertexInputNames {
+    const size = info.codeSize.toNumber();
+    return (size <= LARGEST_PARSED_SHADER) ? vertexInputNames(info.code.readByteArray(size)!) : new Map();
 }
 
 function rateOf(rate: number): InputRate {
