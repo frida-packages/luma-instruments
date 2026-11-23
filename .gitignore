@@ -2,3 +2,5 @@ node_modules/
 luma.d.ts
 build/
 .DS_Store
+*.pat.d.ts
+*.hexpat.d.ts

@@ -1,4 +1,5 @@
 import type { BufferAccess, GpuBuffer } from "./graphics-backend.js";
+import { BufferFacts, IsaBits } from "./metal-buffer-facts.pat";
 import { isaBits } from "./objc.js";
 
 const source = `
@@ -6,6 +7,7 @@ const source = `
 
 #define OBJECT_ALIGNMENT_MASK 15
 #define UTF8_ENCODING 0x08000100
+#define LABEL_CAPACITY 256
 
 typedef struct
 {
@@ -20,7 +22,6 @@ typedef struct
   guint64 length;
   guint64 storage_mode;
   guint64 gpu_address;
-  gchar label[256];
 } BufferFacts;
 
 extern gpointer objc_msgSend (gpointer self, gpointer op, ...);
@@ -52,7 +53,7 @@ void init (void)
   selectors.label = sel_registerName ("label");
 }
 
-guint8 describe_buffer (gpointer object, guint64 expected_class, const IsaBits * isa, BufferFacts * facts)
+guint8 describe_buffer (gpointer object, guint64 expected_class, const IsaBits * isa, BufferFacts * facts, gchar * label_text)
 {
   gpointer pool, label;
   guint64 header;
@@ -68,16 +69,16 @@ guint8 describe_buffer (gpointer object, guint64 expected_class, const IsaBits *
   facts->length = ((ValueGetter) objc_msgSend) (object, selectors.length);
   facts->storage_mode = ((ValueGetter) objc_msgSend) (object, selectors.storage_mode);
   facts->gpu_address = ((ValueGetter) objc_msgSend) (object, selectors.gpu_address);
-  facts->label[0] = 0;
+  label_text[0] = 0;
   label = ((PointerGetter) objc_msgSend) (object, selectors.label);
   if (label != NULL)
-    CFStringGetCString (label, facts->label, sizeof (facts->label), UTF8_ENCODING);
+    CFStringGetCString (label, label_text, LABEL_CAPACITY, UTF8_ENCODING);
   objc_autoreleasePoolPop (pool);
   return TRUE;
 }
 `;
 
-const FACTS_SIZE = 32 + 256;
+const LABEL_CAPACITY = 256;
 const GPU_ONLY_STORAGE_MODES = new Set([2, 3]);
 
 export function findMetalBuffers(bufferClasses: NativePointer[], describer: MetalBufferDescriber): MetalBuffer[] {
@@ -94,7 +95,8 @@ export function findMetalBuffers(bufferClasses: NativePointer[], describer: Meta
 }
 
 export class MetalBufferDescriber {
-    private readonly facts = Memory.alloc(FACTS_SIZE);
+    private readonly facts = BufferFacts.at(Memory.alloc(BufferFacts.size));
+    private readonly label = Memory.alloc(LABEL_CAPACITY);
     private readonly selectors = Memory.alloc(5 * Process.pointerSize);
     private readonly describer = new CModule(source, {
         selectors: this.selectors,
@@ -105,14 +107,14 @@ export class MetalBufferDescriber {
         CFStringGetCString: Module.getGlobalExportByName("CFStringGetCString"),
     });
     private readonly describeBuffer = new NativeFunction(this.describer.describe_buffer, "uint8",
-        ["pointer", "uint64", "pointer", "pointer"]);
-    private readonly isa = Memory.alloc(24);
+        ["pointer", "uint64", "pointer", "pointer", "pointer"]);
+    private readonly isa = IsaBits.at(Memory.alloc(IsaBits.size));
 
     constructor() {
         const { mask, magicMask, magicValue } = isaBits();
-        this.isa.writePointer(mask);
-        this.isa.add(8).writePointer(magicMask);
-        this.isa.add(16).writePointer(magicValue);
+        this.isa.classMask = mask;
+        this.isa.magicMask = magicMask;
+        this.isa.magicValue = magicValue;
     }
 
     describeLive(object: NativePointer): MetalBuffer | null {
@@ -121,16 +123,17 @@ export class MetalBufferDescriber {
 
     describe(object: NativePointer, cls: NativePointer): MetalBuffer | null {
         const facts = this.facts;
-        if (!isReadable(object) || this.describeBuffer(object, uint64(cls.toString()), this.isa, facts) === 0) {
+        if (!isReadable(object)
+            || this.describeBuffer(object, uint64(cls.toString()), this.isa.$address, facts.$address, this.label) === 0) {
             return null;
         }
         return new MetalBuffer(
             object,
-            facts.readPointer(),
-            facts.add(8).readU64().toNumber(),
-            facts.add(16).readU64().toNumber(),
-            facts.add(24).readU64().toNumber(),
-            facts.add(32).readUtf8String() || null,
+            facts.contents,
+            facts.length.toNumber(),
+            facts.storageMode.toNumber(),
+            facts.gpuAddress.toNumber(),
+            this.label.readUtf8String() || null,
         );
     }
 }

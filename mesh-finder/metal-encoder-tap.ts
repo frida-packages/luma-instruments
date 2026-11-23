@@ -1,3 +1,4 @@
+import { Draw } from "./metal-draw.pat";
 import { implementationOf } from "./objc.js";
 
 export interface EncodedDraw {
@@ -28,10 +29,7 @@ export interface EncodedSlot {
 
 export type SlotRole = "may-hold-vertices" | "bystander";
 
-const SLOT_COUNT = 31;
-const DRAW_HEADER_SIZE = 112;
-const SLOT_SIZE = 56;
-const STATIC_STRIDE = "18446744073709551615";
+const STATIC_STRIDE = uint64("0xffffffffffffffff");
 const TAP_STATE_SIZE = 4 * 1048576;
 
 const source = `
@@ -888,7 +886,7 @@ export class EncoderTap {
     private readonly waitUntilIdle: NativeFunction<void, []>;
 
     constructor(deliver: (draw: EncodedDraw) => void, scratchFound: (buffer: NativePointer) => void) {
-        this.onNewDraw = new NativeCallback(draw => deliver(parseDraw(draw)), "void", ["pointer"]);
+        this.onNewDraw = new NativeCallback(draw => deliver(encodedDrawOf(Draw.at(draw))), "void", ["pointer"]);
         this.onScratchBuffer = new NativeCallback(scratchFound, "void", ["pointer"]);
         this.state = Memory.alloc(TAP_STATE_SIZE);
         this.tap = new CModule(source, {
@@ -940,40 +938,37 @@ export class EncoderTap {
     }
 }
 
-function parseDraw(draw: NativePointer): EncodedDraw {
-    const field = (index: number) => draw.add(index * 8);
-    const bound = field(12).readU32();
-    const mayHoldVertices = field(13).readU32();
+function encodedDrawOf(draw: Draw): EncodedDraw {
+    const { bound, mayHoldVertices } = draw;
     const slots: EncodedSlot[] = [];
-    for (let index = 0; index !== SLOT_COUNT; index++) {
+    draw.slots.forEach((slot, index) => {
         if ((bound & (1 << index)) === 0) {
-            continue;
+            return;
         }
-        const slot = draw.add(DRAW_HEADER_SIZE + index * SLOT_SIZE);
-        const stride = slot.add(16).readU64();
+        const { stride } = slot;
         slots.push({
             index,
             role: ((mayHoldVertices & (1 << index)) !== 0) ? "may-hold-vertices" : "bystander",
-            buffer: slot.readPointer(),
-            offset: slot.add(8).readU64().toNumber(),
-            stride: (stride.toString() === STATIC_STRIDE) ? null : stride.toNumber(),
-            bytes: slot.add(24).readPointer(),
-            bytesLength: slot.add(32).readU64().toNumber(),
-            bytesDigest: slot.add(40).readU64().toString(16),
+            buffer: slot.buffer,
+            offset: slot.offset.toNumber(),
+            stride: stride.equals(STATIC_STRIDE) ? null : stride.toNumber(),
+            bytes: slot.bytes,
+            bytesLength: slot.bytesLength.toNumber(),
+            bytesDigest: slot.bytesDigest.toString(16),
         });
-    }
+    });
     return {
-        pipeline: field(0).readPointer(),
-        primitive: field(1).readU64().toNumber(),
-        indexType: field(2).readU64().toNumber(),
-        indexBuffer: field(3).readPointer(),
-        indexOffset: field(4).readU64().toNumber(),
-        indexCount: field(5).readU64().toNumber(),
-        vertexStart: field(6).readU64().toNumber(),
-        vertexCount: field(7).readU64().toNumber(),
-        baseVertex: field(8).readS64().toNumber(),
-        indirectBuffer: field(10).readPointer(),
-        indirectOffset: field(11).readU64().toNumber(),
+        pipeline: draw.pipeline,
+        primitive: draw.primitive.toNumber(),
+        indexType: draw.indexType.toNumber(),
+        indexBuffer: draw.indexBuffer,
+        indexOffset: draw.indexOffset.toNumber(),
+        indexCount: draw.indexCount.toNumber(),
+        vertexStart: draw.vertexStart.toNumber(),
+        vertexCount: draw.vertexCount.toNumber(),
+        baseVertex: draw.baseVertex.toNumber(),
+        indirectBuffer: draw.indirectBuffer,
+        indirectOffset: draw.indirectOffset.toNumber(),
         slots,
     };
 }

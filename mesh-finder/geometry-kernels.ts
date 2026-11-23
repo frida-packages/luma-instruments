@@ -1,3 +1,4 @@
+import * as measures from "./geometry-measures.pat";
 import type { IndexFormat, Topology } from "./graphics-backend.js";
 import { componentTypes, type PositionFormat } from "./vertex-format.js";
 
@@ -404,7 +405,6 @@ const gather = new NativeFunction(kernels.gather_positions, "uint64",
     ["pointer", "uint64", "uint64", "uint32", "uint32", "pointer", "pointer"]);
 const sample = new NativeFunction(kernels.sample_positions, "uint32", ["pointer", "uint32", "uint32", "uint32", "uint32", "pointer"]);
 
-const POSITION_SAMPLE_SIZE = 32;
 const RESTARTS_COUNTED = 0;
 const RESTARTS_SKIPPED = 1;
 const STRIP_ORDER = 0;
@@ -417,10 +417,10 @@ export const indexWidths: Record<IndexFormat, number> = { uint8: 1, uint16: 2, u
 
 export function indexRange(indices: ArrayBuffer, format: IndexFormat, topology: Topology): IndexRange | null {
     const width = indexWidths[format];
-    const range = Memory.alloc(16);
-    indexRangeOf(indices.unwrap(), indices.byteLength / width, width, restartsOf(topology), range);
-    const used = range.add(8).readU64().toNumber();
-    return (used === 0) ? null : { min: range.readU32(), max: range.add(4).readU32(), used };
+    const range = measures.IndexRange.at(Memory.alloc(measures.IndexRange.size));
+    indexRangeOf(indices.unwrap(), indices.byteLength / width, width, restartsOf(topology), range.$address);
+    const used = range.used.toNumber();
+    return (used === 0) ? null : { min: range.min, max: range.max, used };
 }
 
 export function triangleList(indices: ArrayBuffer, format: IndexFormat, topology: Topology, rebase: number): Uint32Array {
@@ -451,40 +451,41 @@ export function sequentialIndices(count: number): ArrayBuffer {
 
 export function indexProfile(indices: ArrayBuffer, format: IndexFormat, max: number): IndexProfile {
     const width = indexWidths[format];
-    const result = Memory.alloc(24);
-    profile(indices.unwrap(), indices.byteLength / width, width, max, result);
+    const result = measures.IndexProfile.at(Memory.alloc(measures.IndexProfile.size));
+    profile(indices.unwrap(), indices.byteLength / width, width, max, result.$address);
     return {
         max,
-        distinct: result.add(4).readU32(),
-        degenerateTriangles: result.add(8).readU64().toNumber(),
-        meanStep: result.add(16).readDouble(),
+        distinct: result.distinct,
+        degenerateTriangles: result.degenerate.toNumber(),
+        meanStep: result.meanStep,
     };
 }
 
 export const mostSampledPositions = 256;
 
 export function samplePositions(vertices: ArrayBuffer, count: number, stride: number, offset: number): PositionSample | null {
-    const result = Memory.alloc(POSITION_SAMPLE_SIZE);
-    if (sample(vertices.unwrap(), vertices.byteLength, count, stride, offset, result) === 0) {
+    const result = measures.PositionSample.at(Memory.alloc(measures.PositionSample.size));
+    if (sample(vertices.unwrap(), vertices.byteLength, count, stride, offset, result.$address) === 0) {
         return null;
     }
     return {
-        unitLength: result.readDouble(),
-        zeros: result.add(8).readDouble(),
-        continuity: 1 - Math.min(1, Math.sqrt(result.add(16).readDouble())),
-        homogeneous: result.add(24).readU32() !== 0,
+        unitLength: result.unitLength,
+        zeros: result.zeros,
+        continuity: 1 - Math.min(1, Math.sqrt(result.continuityLostSquared)),
+        homogeneous: result.homogeneous !== 0,
     };
 }
 
 export function gatherPositions(vertices: ArrayBuffer, count: number, stride: number, format: PositionFormat): GatheredPositions {
     const positions = new Float32Array(count * 3);
-    const bounds = Memory.alloc(24);
+    const bounds = measures.Bounds.at(Memory.alloc(measures.Bounds.size));
     const nonFinite = gather(vertices.unwrap(), count, stride, componentTypes.indexOf(format.component), format.count,
-        positions.buffer.unwrap(), bounds);
+        positions.buffer.unwrap(), bounds.$address);
+    const { min, max } = bounds;
     return {
         positions,
-        min: [bounds.readFloat(), bounds.add(4).readFloat(), bounds.add(8).readFloat()],
-        max: [bounds.add(12).readFloat(), bounds.add(16).readFloat(), bounds.add(20).readFloat()],
+        min: [min[0], min[1], min[2]],
+        max: [max[0], max[1], max[2]],
         nonFinite: nonFinite.toNumber(),
     };
 }
