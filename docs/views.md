@@ -170,9 +170,12 @@ a `Float`, a string a `String`, `true` and `false` themselves, and `null`
 
 The Smalltalk of an instrument is exactly its files whose path ends in `.st`,
 in the instrument's folder or below it. Luma reads nothing else in the folder
-into the image. In Luma's own editor these files are plain text: there is no
-Smalltalk coloring or completion there, so an editor of your own, or Pharo, is
-the better place to write them.
+into the image. From Luma 3.0.1 the instrument editor colors these files the
+way the Playground does and completes in method bodies, offering the
+instrument's own classes, selectors and instance variables beside the
+image's. Luma 3.0.0 has that only in the Playground and shows these files as
+plain text, so there an editor of your own, or Pharo, is the better place to
+write them.
 
 Each file is [Tonel](https://github.com/pharo-vcs/tonel), the format Pharo
 writes packages in: a `Class { … }` header followed by the class's methods,
