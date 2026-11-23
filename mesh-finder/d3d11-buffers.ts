@@ -1,4 +1,5 @@
 import { addRef, comMethod, guid, release, succeeded } from "./com-methods.js";
+import { BufferDesc } from "./d3d11-descriptions.pat";
 import { bufferSlots, isReferencedFromBehind, readPointerOrNull, type BufferClass } from "./d3d11-runtime.js";
 import type { BufferAccess, GpuBuffer } from "./graphics-backend.js";
 
@@ -53,7 +54,7 @@ export class D3D11Buffer implements GpuBuffer {
 }
 
 export class BufferDescriber {
-    private readonly description = Memory.alloc(24);
+    private readonly description = BufferDesc.at(Memory.alloc(BufferDesc.size));
     private readonly device = Memory.alloc(Process.pointerSize);
     private readonly labelSize = Memory.alloc(4);
     private readonly label = Memory.alloc(LONGEST_LABEL);
@@ -81,14 +82,14 @@ export class BufferDescriber {
 
     private describe(handle: NativePointer): BufferDescription {
         const description = this.description;
-        comMethod(handle, bufferSlots.getDesc, "void", ["pointer"])(handle, description);
+        comMethod(handle, bufferSlots.getDesc, "void", ["pointer"])(handle, description.$address);
         comMethod(handle, bufferSlots.getDevice, "void", ["pointer"])(handle, this.device);
         const device = this.device.readPointer();
         release(device);
         return {
-            byteLength: description.readU32(),
-            usage: description.add(4).readU32(),
-            bindFlags: description.add(8).readU32(),
+            byteLength: description.byteWidth,
+            usage: description.usage,
+            bindFlags: description.bindFlags,
             device,
             label: this.labelOf(handle),
         };

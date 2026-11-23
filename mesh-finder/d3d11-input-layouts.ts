@@ -1,3 +1,4 @@
+import { InputElementDesc } from "./d3d11-descriptions.pat";
 import { positionFormat, type ComponentType, type PositionFormat } from "./vertex-format.js";
 
 export interface DeclaredPosition {
@@ -47,22 +48,17 @@ export class InputLayouts {
 }
 
 function readElements(elements: NativePointer, count: number): InputElement[] {
-    const pointerSize = Process.pointerSize;
-    const elementSize = pointerSize + 24;
-    const read: InputElement[] = [];
-    for (let i = 0; i !== count; i++) {
-        const element = elements.add(i * elementSize);
-        const fields = element.add(pointerSize);
-        read.push({
-            semantic: element.readPointer().readCString()!,
-            semanticIndex: fields.readU32(),
-            format: fields.add(4).readU32(),
-            slot: fields.add(8).readU32(),
-            alignedOffset: fields.add(12).readU32(),
-            perVertex: fields.add(16).readU32() === PER_VERTEX_DATA,
-        });
-    }
-    return read;
+    return Array.from({ length: count }, (_, i) => {
+        const element = InputElementDesc.at(elements.add(i * InputElementDesc.size));
+        return {
+            semantic: element.semanticName.readCString()!,
+            semanticIndex: element.semanticIndex,
+            format: element.format,
+            slot: element.inputSlot,
+            alignedOffset: element.alignedByteOffset,
+            perVertex: element.inputSlotClass === PER_VERTEX_DATA,
+        };
+    });
 }
 
 function declaredPosition(elements: InputElement[]): DeclaredPosition | null {

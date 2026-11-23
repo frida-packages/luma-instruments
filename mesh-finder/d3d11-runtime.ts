@@ -1,4 +1,5 @@
 import { comCalls, comMethod, guid, methodAddress, queryInterface, release, succeeded } from "./com-methods.js";
+import { BufferDesc, QueryDesc, SubresourceData } from "./d3d11-descriptions.pat";
 
 export type TapCall =
     | "setInputLayout"
@@ -275,10 +276,10 @@ function noteEntries(tables: ContextTables, table: NativePointer, module: Module
 }
 
 function createSpacer(device: NativePointer): NativePointer | null {
-    const description = Memory.alloc(8);
-    description.writeU32(QUERY_EVENT);
+    const description = QueryDesc.at(Memory.alloc(QueryDesc.size));
+    description.query = QUERY_EVENT;
     const out = Memory.alloc(Process.pointerSize);
-    const result = comMethod(device, deviceSlots.createQuery, "int", ["pointer", "pointer"])(device, description, out);
+    const result = comMethod(device, deviceSlots.createQuery, "int", ["pointer", "pointer"])(device, description.$address, out);
     return succeeded(result) ? out.readPointer() : null;
 }
 
@@ -334,17 +335,17 @@ function headOf(table: NativePointer): string {
 }
 
 function createSampleBuffer(device: NativePointer, [usage, bind, cpuAccess]: SampleKind): NativePointer {
-    const description = Memory.alloc(24);
-    description.writeU32(SAMPLE_BUFFER_SIZE);
-    description.add(4).writeU32(usage);
-    description.add(8).writeU32(bind);
-    description.add(12).writeU32(cpuAccess);
+    const description = BufferDesc.at(Memory.alloc(BufferDesc.size));
+    description.byteWidth = SAMPLE_BUFFER_SIZE;
+    description.usage = usage;
+    description.bindFlags = bind;
+    description.cpuAccessFlags = cpuAccess;
     const contents = Memory.alloc(SAMPLE_BUFFER_SIZE);
-    const initial = Memory.alloc(2 * Process.pointerSize);
-    initial.writePointer(contents);
+    const initial = SubresourceData.at(Memory.alloc(SubresourceData.size));
+    initial.sysMem = contents;
     const out = Memory.alloc(Process.pointerSize);
-    const result = comMethod(device, deviceSlots.createBuffer, "int", ["pointer", "pointer", "pointer"])(device, description,
-        (usage === USAGE_DYNAMIC) ? NULL : initial, out);
+    const result = comMethod(device, deviceSlots.createBuffer, "int", ["pointer", "pointer", "pointer"])(device, description.$address,
+        (usage === USAGE_DYNAMIC) ? NULL : initial.$address, out);
     if (!succeeded(result)) {
         throw new Error(`a sample buffer could not be made: 0x${(result >>> 0).toString(16)}`);
     }

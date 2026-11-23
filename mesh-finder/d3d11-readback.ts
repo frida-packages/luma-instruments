@@ -1,5 +1,7 @@
 import { comMethod, release, succeeded } from "./com-methods.js";
 import type { BufferContents, RetainedBuffer } from "./d3d11-buffers.js";
+import { BufferDesc } from "./d3d11-descriptions.pat";
+import { Box, MappedSubresource } from "./d3d11-readback.pat";
 import { contextSlots, deviceSlots } from "./d3d11-runtime.js";
 
 interface CopyRequest {
@@ -18,7 +20,10 @@ const STAGING_CHUNK = 16 * 1048576;
 
 export class TurnReadback implements BufferContents {
     private readonly snapshots = new Map<string, ArrayBuffer>();
-    private readonly scratch = Memory.alloc(64);
+    private readonly description = BufferDesc.at(Memory.alloc(BufferDesc.size));
+    private readonly createdStaging = Memory.alloc(Process.pointerSize);
+    private readonly box = Box.at(Memory.alloc(Box.size));
+    private readonly mapping = MappedSubresource.at(Memory.alloc(MappedSubresource.size));
     private state: TurnState = "open";
 
     constructor(private readonly context: NativePointer, private readonly device: NativePointer) {
@@ -80,44 +85,43 @@ export class TurnReadback implements BufferContents {
     }
 
     private createStaging(length: number): NativePointer {
-        const description = this.scratch;
-        description.writeU32(length);
-        description.add(4).writeU32(USAGE_STAGING);
-        description.add(8).writeU32(0);
-        description.add(12).writeU32(CPU_ACCESS_READ);
-        description.add(16).writeU32(0);
-        description.add(20).writeU32(0);
-        const out = this.scratch.add(32);
+        const description = this.description;
+        description.byteWidth = length;
+        description.usage = USAGE_STAGING;
+        description.bindFlags = 0;
+        description.cpuAccessFlags = CPU_ACCESS_READ;
+        description.miscFlags = 0;
+        description.structureByteStride = 0;
         const result = comMethod(this.device, deviceSlots.createBuffer, "int", ["pointer", "pointer", "pointer"])(this.device,
-            description, NULL, out);
+            description.$address, NULL, this.createdStaging);
         if (!succeeded(result)) {
             throw new Error(`a ${length}-byte staging buffer could not be made: 0x${(result >>> 0).toString(16)}`);
         }
-        return out.readPointer();
+        return this.createdStaging.readPointer();
     }
 
     private copyInto(staging: NativePointer, position: number, { source, offset, length }: CopyRequest): void {
-        const box = this.scratch;
-        box.writeU32(offset);
-        box.add(4).writeU32(0);
-        box.add(8).writeU32(0);
-        box.add(12).writeU32(offset + length);
-        box.add(16).writeU32(1);
-        box.add(20).writeU32(1);
+        const box = this.box;
+        box.left = offset;
+        box.top = 0;
+        box.front = 0;
+        box.right = offset + length;
+        box.bottom = 1;
+        box.back = 1;
         comMethod(this.context, contextSlots.copySubresourceRegion, "void",
             ["pointer", "uint32", "uint32", "uint32", "uint32", "pointer", "uint32", "pointer"])(this.context, staging, 0, position, 0, 0,
-            source.handle, 0, box);
+            source.handle, 0, box.$address);
     }
 
     private mapped(staging: NativePointer, source: RetainedBuffer, length: number): ArrayBuffer {
-        const mapping = this.scratch;
+        const mapping = this.mapping;
         const result = comMethod(this.context, contextSlots.map, "int", ["pointer", "uint32", "uint32", "uint32", "pointer"])(
-            this.context, staging, 0, MAP_READ, 0, mapping);
+            this.context, staging, 0, MAP_READ, 0, mapping.$address);
         if (!succeeded(result)) {
             throw new Error(`${source.handle} could not be read back: 0x${(result >>> 0).toString(16)}`);
         }
         try {
-            return mapping.readPointer().readByteArray(length)!;
+            return mapping.data.readByteArray(length)!;
         } finally {
             comMethod(this.context, contextSlots.unmap, "void", ["pointer", "uint32"])(this.context, staging, 0);
         }

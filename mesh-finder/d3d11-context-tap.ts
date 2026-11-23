@@ -1,3 +1,4 @@
+import { Draw } from "./d3d11-draw.pat";
 import type { HookTarget, TapCall } from "./d3d11-runtime.js";
 
 export interface TapEvents {
@@ -36,9 +37,6 @@ export interface TappedSlot {
     offset: number;
 }
 
-const SLOT_COUNT = 32;
-const DRAW_HEADER_FIELDS = 15;
-const SLOT_FIELDS = 3;
 const TAP_STATE_SIZE = 2 * 1048576;
 
 const callIds: Record<TapCall, number> = {
@@ -740,7 +738,7 @@ export class ContextTap {
     private readonly waitUntilIdle: NativeFunction<void, []>;
 
     constructor(targets: HookTarget[], events: TapEvents) {
-        const onNewDraw = new NativeCallback(draw => events.newDraw(parseDraw(draw)), "void", ["pointer"]);
+        const onNewDraw = new NativeCallback(draw => events.newDraw(tappedDrawOf(Draw.at(draw))), "void", ["pointer"]);
         const onTurn = new NativeCallback((context, device) => events.turn(context, device), "void", ["pointer", "pointer"]);
         const onBufferCreated = new NativeCallback(buffer => events.bufferCreated(buffer), "void", ["pointer"]);
         const onInputLayout = new NativeCallback((layout, elements, count) => events.inputLayoutCreated(layout, elements, count), "void",
@@ -793,34 +791,30 @@ export class ContextTap {
     }
 }
 
-function parseDraw(draw: NativePointer): TappedDraw {
-    const field = (index: number) => draw.add(index * 8);
-    const pointerAt = (index: number) => ptr(field(index).readU64().toString());
-    const number = (index: number) => field(index).readU64().toNumber();
-    const bound = number(14);
+function tappedDrawOf(draw: Draw): TappedDraw {
+    const bound = draw.bound.toNumber();
     const slots: TappedSlot[] = [];
-    for (let index = 0; index !== SLOT_COUNT; index++) {
+    draw.slots.forEach((slot, index) => {
         if (((bound >>> index) & 1) === 0) {
-            continue;
+            return;
         }
-        const slot = DRAW_HEADER_FIELDS + index * SLOT_FIELDS;
-        slots.push({ index, buffer: pointerAt(slot), stride: number(slot + 1), offset: number(slot + 2) });
-    }
+        slots.push({ index, buffer: slot.buffer, stride: slot.stride.toNumber(), offset: slot.offset.toNumber() });
+    });
     return {
-        device: pointerAt(0),
-        kind: drawKinds[number(1)],
-        layout: pointerAt(2),
-        topology: number(3),
-        indexBuffer: pointerAt(4),
-        indexFormat: number(5),
-        indexOffset: number(6),
-        indexCount: number(7),
-        startIndex: number(8),
-        baseVertex: field(9).readS64().toNumber(),
-        vertexCount: number(10),
-        startVertex: number(11),
-        indirectBuffer: pointerAt(12),
-        indirectOffset: number(13),
+        device: draw.device,
+        kind: drawKinds[draw.kind.toNumber()],
+        layout: draw.layout,
+        topology: draw.topology.toNumber(),
+        indexBuffer: draw.indexBuffer,
+        indexFormat: draw.indexFormat.toNumber(),
+        indexOffset: draw.indexOffset.toNumber(),
+        indexCount: draw.indexCount.toNumber(),
+        startIndex: draw.startIndex.toNumber(),
+        baseVertex: draw.baseVertex.toNumber(),
+        vertexCount: draw.vertexCount.toNumber(),
+        startVertex: draw.startVertex.toNumber(),
+        indirectBuffer: draw.indirectBuffer,
+        indirectOffset: draw.indirectOffset.toNumber(),
         slots,
     };
 }
