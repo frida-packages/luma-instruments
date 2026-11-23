@@ -66,6 +66,10 @@ export class MeshFinder implements GeometryObserver {
         this.enqueue("found", analyzeUndrawnBuffers(snapshots.buffers, this.catalog, this.progress));
     }
 
+    observeScratchBuffer(id: string): void {
+        this.catalog.noteScratch(id);
+    }
+
     dispose(): void {
         if (this.scheduled !== null) {
             clearTimeout(this.scheduled);
@@ -83,7 +87,7 @@ export class MeshFinder implements GeometryObserver {
             return;
         }
         const positions = (draw.position !== null) ? declaredPositions(draw, draw.position) : this.guessedPositions(draw, span);
-        if (positions === null || !this.catalog.wants(identityOf(draw, positions.stream), rankOf(drawnWith(positions.layout)))) {
+        if (positions === null || !this.catalog.wants(identityOf(draw, positions.stream, span), rankOf(drawnWith(positions.layout)))) {
             return;
         }
         if (positions.stream.buffer.access !== "cpu-readable" || (draw.indices !== null && indexBytes === null)) {
@@ -116,7 +120,7 @@ export class MeshFinder implements GeometryObserver {
         const indexed = draw.indices !== null;
         const elementCount = indexed ? draw.indices!.count : draw.vertexCount;
         this.catalog.admit(unreadableMesh({
-            identity: unreadableIdentityOf(draw),
+            identity: unreadableIdentityOf(draw, span),
             api: draw.api,
             contents: unreadableContentsOf([stream.buffer, draw.indices?.buffer]),
             topology: draw.topology,
@@ -166,7 +170,7 @@ export class MeshFinder implements GeometryObserver {
 }
 
 function bufferIdsOf(draw: DrawCall): string[] {
-    const ids = draw.streams.map(stream => stream.buffer.id);
+    const ids = [...draw.streams.map(stream => stream.buffer.id), ...draw.bystanders.map(buffer => buffer.id)];
     return (draw.indices !== null) ? [...ids, draw.indices.buffer.id] : ids;
 }
 
@@ -198,22 +202,23 @@ function declaredPositions(draw: DrawCall, declared: PositionLayout): PlacedPosi
     };
 }
 
-function identityOf(draw: DrawCall, stream: VertexStream): string {
-    const elements = (draw.indices !== null)
-        ? `${draw.indices.buffer.id}+${draw.indices.offset}x${draw.indices.count}`
-        : `${draw.firstVertex}x${draw.vertexCount}`;
-    return `${draw.api}|${stream.buffer.id}+${stream.offset}|${elements}|${draw.topology}|${draw.baseVertex}`;
+function identityOf(draw: DrawCall, stream: VertexStream, span: VertexSpan): string {
+    return `${draw.api}|${stream.buffer.id}+${stream.offset}|${span.first}-${span.last}|${elementCountOf(draw)}|${draw.topology}`;
+}
+
+function elementCountOf(draw: DrawCall): number {
+    return (draw.indices !== null) ? draw.indices.count : draw.vertexCount;
 }
 
 function drawnWith(layout: VertexLayout) {
     return { evidence: "drawn", contents: "cpu-visible", layout } as const;
 }
 
-function unreadableIdentityOf(draw: DrawCall): string {
-    const source = (draw.indices !== null)
-        ? `${draw.indices.buffer.id}+${draw.indices.offset}x${draw.indices.count}`
-        : `${draw.streams[0].buffer.id}+${draw.streams[0].offset}|${draw.firstVertex}x${draw.vertexCount}`;
-    return `${draw.api}|unreadable|${source}|${draw.baseVertex}`;
+function unreadableIdentityOf(draw: DrawCall, span: VertexSpan): string {
+    const source = (draw.indices !== null && draw.indices.buffer.access !== "cpu-readable")
+        ? `${draw.indices.buffer.id}+${draw.indices.offset}|${draw.baseVertex}`
+        : `${draw.streams[0].buffer.id}+${draw.streams[0].offset}|${span.first}-${span.last}`;
+    return `${draw.api}|unreadable|${source}|${elementCountOf(draw)}`;
 }
 
 function unreadableContentsOf(buffers: (GpuBuffer | undefined)[]): Unreadable {
@@ -228,7 +233,7 @@ function drawnMeshSpec(
 ): MeshSpec {
     const vertexCount = span.last - span.first + 1;
     return {
-        identity: identityOf(draw, stream),
+        identity: identityOf(draw, stream, span),
         api: draw.api,
         evidence: "drawn",
         topology: draw.topology,

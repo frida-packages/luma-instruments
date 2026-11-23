@@ -329,6 +329,7 @@ class Direct3D11Backend implements GraphicsBackend {
             api: API,
             topology,
             streams,
+            bystanders: [],
             position,
             indices: null,
             firstVertex: draw.startVertex,

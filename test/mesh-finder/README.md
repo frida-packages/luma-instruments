@@ -15,13 +15,19 @@ way each:
 | octahedron | four floats per position, drawn on a deferred context | not indexed, four floats per position | the same, in a VAO it shares |
 | pyramid | half-float positions, `DrawInstanced` | `setVertexBytes` | the shared VAO re-pointed between draws |
 | cube | — | in private storage | — |
+| sphere and torus | — | sharing one vertex buffer, their indices rewritten into scratch every frame | — |
+| quad | — | vertices and indices rewritten into scratch every frame, expected not to be listed | — |
+| sphere | — | half-float positions, expected not to be listed | — |
 | torus | uploaded, never drawn | uploaded, never drawn | the same |
 | sphere | uploaded after the harness asks, never drawn | uploaded after `SIGUSR1`, never drawn | the same, through `glMapBufferRange` |
 
 Every pipeline and buffer is made before the harness attaches. The Metal
-target rebuilds the cube's pipeline every two seconds, so a vertex descriptor
-is seen too, and the Direct3D 11 target rebuilds the cube's and the
-pyramid's input layouts every second for the same reason. The Direct3D 11
+target binds its uniforms the way a game engine does: in slot 0, below the
+vertices, from two 4 MiB scratch buffers of plausible floats that take turns,
+each filled from its start again when its turn comes. It leaves the sphere's
+second stream bound for the draws that follow, too. It rebuilds the cube's pipeline every two seconds, so a vertex
+descriptor is seen too, and the Direct3D 11 target rebuilds the cube's and
+the pyramid's input layouts every second for the same reason. The Direct3D 11
 target also makes a sphere and lets it go before the harness attaches, and
 the harness checks that it is not listed. Each target exports
 `mesh_finder_expectations`, a JSON list of what should be found.
@@ -29,7 +35,8 @@ the harness checks that it is not listed. Each target exports
 `harness.ts` loads the instrument with a fake `ctx`, raises `SIGUSR1` halfway
 through and asks for a `scan`, then exports every mesh in the table as OBJ and
 checks each expected one by its counts, bounding box and first vertices,
-writing it to the output directory. It then shows each one and checks what
+writing it to the output directory. A row that matches nothing expected
+fails the run. It then shows each one and checks what
 the viewer was handed: the counts, the size of the data, the first vertices,
 and that every index is in range. Last, it disposes the instrument and
 checks that every hooked function is back to its original bytes; on Windows,
@@ -65,7 +72,7 @@ seconds: `python3 test/mesh-finder/run.py <pid> /tmp/meshes/other 10`.
 
 The Metal and OpenGL targets take a number of times to draw their scene each
 frame, and print their frame times every two seconds; `/tmp/metal-target 300`
-draws 2100 meshes a frame, for measuring what the hooks cost.
+draws 3300 meshes a frame, for measuring what the hooks cost.
 
 ## Vulkan, on Linux
 

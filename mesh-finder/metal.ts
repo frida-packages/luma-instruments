@@ -10,7 +10,7 @@ import type {
     VertexStream,
 } from "./graphics-backend.js";
 import { metalLibraries } from "./graphics-libraries.js";
-import { BytesBuffer, findMetalBuffers, MetalBufferDescriber } from "./metal-buffers.js";
+import { BytesBuffer, findMetalBuffers, metalBufferId, MetalBufferDescriber } from "./metal-buffers.js";
 import { EncoderTap, type EncodedDraw, type EncodedSlot } from "./metal-encoder-tap.js";
 import { PipelineWatch } from "./metal-pipelines.js";
 import { classesConformingTo, type DriverClasses } from "./objc.js";
@@ -46,7 +46,7 @@ class MetalBackend implements GraphicsBackend {
     }
 
     watchDraws(): void {
-        const encoders = new EncoderTap(draw => this.onDraw(draw));
+        const encoders = new EncoderTap(draw => this.onDraw(draw), buffer => this.observer.observeScratchBuffer(metalBufferId(buffer)));
         this.encoders = encoders;
         this.pipelines = new PipelineWatch(this.classes[PIPELINE_PROTOCOL], (pipeline, layout) => {
             if (layout !== "no-vertex-descriptor") {
@@ -98,23 +98,20 @@ class MetalBackend implements GraphicsBackend {
         if (topology === null) {
             return null;
         }
-        const streams = draw.slots.flatMap(slot => this.streamsOf(slot));
         const layout = this.pipelines!.layoutOf(draw.pipeline);
-        const position = (layout !== undefined && layout !== "no-vertex-descriptor") ? layout : null;
         const encoders = this.encoders!;
         const call: DrawCall = {
             api: this.api,
             topology,
-            streams,
-            position,
+            streams: draw.slots.filter(slot => slot.role === "may-hold-vertices").flatMap(slot => this.streamsOf(slot)),
+            bystanders: draw.slots.filter(slot => slot.role === "bystander").flatMap(slot => this.buffersOf(slot)),
+            position: (layout !== undefined && layout !== "no-vertex-descriptor") ? layout : null,
             indices: null,
             firstVertex: draw.vertexStart,
             vertexCount: draw.vertexCount,
             baseVertex: draw.baseVertex,
             noteSlotGuess(slot) {
-                if (position === null) {
-                    encoders.narrowPipeline(draw.pipeline, 1 << slot);
-                }
+                encoders.noteGuessedSlot(draw.pipeline, slot);
             },
         };
         return draw.indexBuffer.isNull() ? this.withIndirectVertices(call, draw) : this.withIndices(call, draw);
@@ -122,9 +119,14 @@ class MetalBackend implements GraphicsBackend {
 
     private streamsOf(slot: EncodedSlot): VertexStream[] {
         const buffer: GpuBuffer | null = (slot.bytesLength !== 0)
-            ? new BytesBuffer(slot.bytes, slot.bytesLength)
+            ? new BytesBuffer(slot.bytes, slot.bytesLength, slot.bytesDigest)
             : this.describer.describeLive(slot.buffer);
         return (buffer !== null) ? [{ slot: slot.index, buffer, offset: slot.offset, stride: slot.stride }] : [];
+    }
+
+    private buffersOf(slot: EncodedSlot): GpuBuffer[] {
+        const buffer = (slot.bytesLength === 0) ? this.describer.describeLive(slot.buffer) : null;
+        return (buffer !== null) ? [buffer] : [];
     }
 
     private withIndirectVertices(call: DrawCall, draw: EncodedDraw): DrawCall | null {

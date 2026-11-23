@@ -9,6 +9,7 @@ export class MeshCatalog {
     private readonly byIdentity = new Map<string, Mesh>();
     private readonly byId = new Map<number, Mesh>();
     private readonly drawnBuffers = new Set<string>();
+    private readonly scratchBuffers = new Set<string>();
     private nextId = 1;
 
     constructor(private readonly listener: CatalogListener) {
@@ -25,6 +26,9 @@ export class MeshCatalog {
             return null;
         }
         if (candidate.evidence === "found" && this.overlapsDrawn(candidate)) {
+            return null;
+        }
+        if (this.scratchBuffers.has(candidate.vertexBuffer.id)) {
             return null;
         }
         const mesh: Mesh = { id: existing?.id ?? this.nextId++, ...candidate };
@@ -44,9 +48,16 @@ export class MeshCatalog {
         }
         for (const other of [...this.byId.values()]) {
             if (other.evidence === "found" && this.overlapsDrawn(other)) {
-                this.byIdentity.delete(other.identity);
-                this.byId.delete(other.id);
-                this.listener.meshRemoved(other);
+                this.remove(other);
+            }
+        }
+    }
+
+    noteScratch(bufferId: string): void {
+        this.scratchBuffers.add(bufferId);
+        for (const mesh of [...this.byId.values()]) {
+            if (mesh.vertexBuffer.id === bufferId) {
+                this.remove(mesh);
             }
         }
     }
@@ -61,6 +72,12 @@ export class MeshCatalog {
 
     all(): Mesh[] {
         return [...this.byId.values()];
+    }
+
+    private remove(mesh: Mesh): void {
+        this.byIdentity.delete(mesh.identity);
+        this.byId.delete(mesh.id);
+        this.listener.meshRemoved(mesh);
     }
 
     private overlapsDrawn(mesh: UnnumberedMesh): boolean {

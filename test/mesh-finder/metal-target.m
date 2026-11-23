@@ -12,13 +12,13 @@ static NSString *const shaderSource = @
     "struct Described { float3 position [[attribute(0)]]; float3 normal [[attribute(1)]]; };\n"
     "struct PositionOnly { float3 position [[attribute(0)]]; };\n"
     "struct Pulled { packed_float3 position; packed_float3 normal; };\n"
-    "vertex Out described_vertex(Described in [[stage_in]], constant Uniforms &u [[buffer(7)]]) {\n"
+    "vertex Out described_vertex(Described in [[stage_in]], constant Uniforms &u [[buffer(0)]]) {\n"
     "    return { u.mvp * float4(in.position, 1), in.normal * 0.5 + 0.5 };\n"
     "}\n"
-    "vertex Out position_vertex(PositionOnly in [[stage_in]], constant Uniforms &u [[buffer(7)]]) {\n"
+    "vertex Out position_vertex(PositionOnly in [[stage_in]], constant Uniforms &u [[buffer(0)]]) {\n"
     "    return { u.mvp * float4(in.position, 1), float3(1) };\n"
     "}\n"
-    "vertex Out pulled_vertex(uint vid [[vertex_id]], const device Pulled *vertices [[buffer(0)]], constant Uniforms &u [[buffer(7)]]) {\n"
+    "vertex Out pulled_vertex(uint vid [[vertex_id]], const device Pulled *vertices [[buffer(1)]], constant Uniforms &u [[buffer(0)]]) {\n"
     "    Pulled v = vertices[vid];\n"
     "    return { u.mvp * float4(float3(v.position), 1), float3(v.normal) * 0.5 + 0.5 };\n"
     "}\n"
@@ -26,7 +26,10 @@ static NSString *const shaderSource = @
 
 static volatile sig_atomic_t late_upload_requested;
 
-enum { UNIFORM_SLOT = 7, UNIFORM_STRIDE = 256, DRAWS_PER_FRAME = 8, FRAMES_IN_FLIGHT = 3, SPHERE_OFFSET = 256 };
+enum {
+    UNIFORM_SLOT = 0, VERTEX_SLOT = 1, ATTRIBUTE_SLOT = 2, UNIFORM_STRIDE = 256, SCRATCH_LENGTH = 4 * 1024 * 1024, SCRATCH_COUNT = 2,
+    SPHERE_OFFSET = 256,
+};
 
 @interface Scene : NSObject
 @property (nonatomic, strong) id<MTLDevice> device;
@@ -40,12 +43,16 @@ enum { UNIFORM_SLOT = 7, UNIFORM_STRIDE = 256, DRAWS_PER_FRAME = 8, FRAMES_IN_FL
 @property (nonatomic, strong) id<MTLRenderPipelineState> pulled;
 @property (nonatomic, strong) id<MTLRenderPipelineState> paddedPositions;
 @property (nonatomic, strong) id<MTLRenderPipelineState> packedPositions;
-@property (nonatomic, strong) id<MTLBuffer> uniforms;
+@property (nonatomic, strong) id<MTLRenderPipelineState> batched;
+@property (nonatomic, strong) id<MTLRenderPipelineState> halfPositions;
+@property (nonatomic, strong) NSArray<id<MTLBuffer>> *scratches;
 @property (nonatomic, strong) id<MTLBuffer> cubeVertices, cubeIndices;
 @property (nonatomic, strong) id<MTLBuffer> spherePositions, sphereAttributes, sphereIndices;
 @property (nonatomic, strong) id<MTLBuffer> torusVertices, torusIndices;
 @property (nonatomic, strong) id<MTLBuffer> ribbonVertices;
 @property (nonatomic, strong) id<MTLBuffer> octahedronVertices;
+@property (nonatomic, strong) id<MTLBuffer> batchVertices;
+@property (nonatomic, strong) id<MTLBuffer> halfVertices, halfIndices;
 @property (nonatomic, strong) id<MTLBuffer> privateVertices, privateIndices;
 @property (nonatomic, strong) id<MTLBuffer> hiddenVertices, hiddenIndices;
 @property (nonatomic, strong) id<MTLBuffer> lateVertices, lateIndices;
@@ -54,6 +61,10 @@ enum { UNIFORM_SLOT = 7, UNIFORM_STRIDE = 256, DRAWS_PER_FRAME = 8, FRAMES_IN_FL
 @end
 
 static void request_late_upload(int signal);
+static uint16_t *batched_indices16(const Mesh *first, const Mesh *second);
+static uint16_t *half_positions(const Mesh *mesh);
+static uint16_t half_of(float value);
+static void expect_absent(const Mesh *mesh, const char *how, uint32_t triangle_count);
 static double elapsedMilliseconds(uint64_t start);
 
 int main(int argc, char **argv)
@@ -62,7 +73,7 @@ int main(int argc, char **argv)
         int repeats = (argc > 1) ? atoi(argv[1]) : 1;
         Scene *scene = [[Scene alloc] initWithRepeats:repeats];
         signal(SIGUSR1, request_late_upload);
-        printf("pid %d ready, %d draws per frame\n", getpid(), repeats * 7);
+        printf("pid %d ready, %d draws per frame\n", getpid(), repeats * 11);
         fflush(stdout);
         double total = 0, worst = 0, encoding = 0;
         int frames = 0;
@@ -88,8 +99,11 @@ int main(int argc, char **argv)
 @implementation Scene {
     int _repeats;
     Mesh _cube, _sphere, _torus, _ribbon, _octahedron, _pyramid, _privateCube, _hidden, _late;
+    Mesh _batchedSphere, _batchedTorus, _halfSphere;
+    uint16_t *_batchIndices;
     void *_pyramidPositions;
     uint64_t _frame;
+    NSUInteger _scratchCursor;
 }
 
 - (instancetype)initWithRepeats:(int)repeats
@@ -137,17 +151,6 @@ int main(int argc, char **argv)
     if (_frame % 120 == 119) {
         _interleaved = [self pipelineWithFunction:@"described_vertex" layout:[self interleavedLayout]];
     }
-    NSUInteger ring = (_frame % FRAMES_IN_FLIGHT) * UNIFORM_STRIDE * DRAWS_PER_FRAME;
-    float angle = _frame * 0.01f;
-    for (int i = 0; i != DRAWS_PER_FRAME; i++) {
-        float *mvp = (float *) ((uint8_t *) _uniforms.contents + ring + i * UNIFORM_STRIDE);
-        memset(mvp, 0, 64);
-        mvp[0] = cosf(angle) * 0.1f; mvp[2] = sinf(angle) * 0.1f;
-        mvp[5] = 0.1f;
-        mvp[8] = -sinf(angle) * 0.05f; mvp[10] = cosf(angle) * 0.05f; mvp[14] = 0.5f;
-        mvp[15] = 1;
-    }
-
     MTLRenderPassDescriptor *pass = [MTLRenderPassDescriptor renderPassDescriptor];
     pass.colorAttachments[0].texture = _target;
     pass.colorAttachments[0].loadAction = MTLLoadActionClear;
@@ -159,9 +162,11 @@ int main(int argc, char **argv)
     id<MTLCommandBuffer> commands = [_queue commandBuffer];
     id<MTLRenderCommandEncoder> encoder = [commands renderCommandEncoderWithDescriptor:pass];
     [encoder setDepthStencilState:_depthState];
-    __block int draw = 0;
+    float angle = _frame * 0.01f;
+    id<MTLBuffer> scratch = [self scratch];
+    _scratchCursor = 0;
     void (^uniformsForNextDraw)(void) = ^{
-        [encoder setVertexBuffer:self->_uniforms offset:ring + (draw++ % DRAWS_PER_FRAME) * UNIFORM_STRIDE atIndex:UNIFORM_SLOT];
+        [encoder setVertexBuffer:scratch offset:[self scratchUniformsAtAngle:angle] atIndex:UNIFORM_SLOT];
     };
 
     for (int repeat = 0; repeat != _repeats; repeat++) {
@@ -175,21 +180,52 @@ int main(int argc, char **argv)
     return encoded;
 }
 
+- (id<MTLBuffer>)scratch
+{
+    return _scratches[_frame % SCRATCH_COUNT];
+}
+
+- (NSUInteger)scratchUniformsAtAngle:(float)angle
+{
+    float uniforms[UNIFORM_STRIDE / 4] = {
+        cosf(angle) * 0.1f, 0, sinf(angle) * 0.1f, 0,
+        0, 0.1f, 0, 0,
+        -sinf(angle) * 0.05f, 0, cosf(angle) * 0.05f, 0,
+        0, 0, 0.5f, 1,
+    };
+    for (int i = 16; i != UNIFORM_STRIDE / 4; i++) {
+        uniforms[i] = 40 * sinf(angle * i + _scratchCursor);
+    }
+    return [self scratchBytes:uniforms length:sizeof(uniforms)];
+}
+
+- (NSUInteger)scratchBytes:(const void *)bytes length:(NSUInteger)length
+{
+    NSUInteger offset = _scratchCursor;
+    memcpy((uint8_t *) [self scratch].contents + offset, bytes, length);
+    _scratchCursor += (length + UNIFORM_STRIDE - 1) / UNIFORM_STRIDE * UNIFORM_STRIDE;
+    return offset;
+}
+
 - (void)buildPipelines
 {
     _interleaved = [self pipelineWithFunction:@"described_vertex" layout:[self interleavedLayout]];
     MTLVertexDescriptor *split = [MTLVertexDescriptor vertexDescriptor];
     split.attributes[0].format = MTLVertexFormatFloat3;
-    split.attributes[0].bufferIndex = 0;
+    split.attributes[0].bufferIndex = VERTEX_SLOT;
     split.attributes[1].format = MTLVertexFormatFloat3;
     split.attributes[1].offset = 12;
-    split.attributes[1].bufferIndex = 1;
-    split.layouts[0].stride = 12;
-    split.layouts[1].stride = sizeof(Vertex);
+    split.attributes[1].bufferIndex = ATTRIBUTE_SLOT;
+    split.layouts[VERTEX_SLOT].stride = 12;
+    split.layouts[ATTRIBUTE_SLOT].stride = sizeof(Vertex);
     _splitStreams = [self pipelineWithFunction:@"described_vertex" layout:split];
     _pulled = [self pipelineWithFunction:@"pulled_vertex" layout:nil];
     _paddedPositions = [self pipelineWithFunction:@"position_vertex" layout:[self positionLayoutWithStride:16]];
     _packedPositions = [self pipelineWithFunction:@"position_vertex" layout:[self positionLayoutWithStride:12]];
+    _batched = [self pipelineWithFunction:@"described_vertex" layout:[self interleavedLayout]];
+    MTLVertexDescriptor *half = [self positionLayoutWithStride:8];
+    half.attributes[0].format = MTLVertexFormatHalf3;
+    _halfPositions = [self pipelineWithFunction:@"position_vertex" layout:half];
 }
 
 - (void)uploadMeshes
@@ -203,6 +239,9 @@ int main(int argc, char **argv)
     _privateCube = make_cube("private-cube", 4, 4, 0);
     _hidden = make_torus("hidden-torus", -4, 0, 0, 2.0f, 0.5f, 32, 12);
     _late = make_sphere("late-sphere", 0, 0, -4, 0.75f, 8, 12);
+    _batchedSphere = make_sphere("batched-sphere", 8, 0, 0, 1.0f, 12, 24);
+    _batchedTorus = make_torus("batched-torus", 8, 4, 0, 1.0f, 0.3f, 32, 12);
+    _halfSphere = make_sphere("half-float-sphere", -8, 0, 0, 1.0f, 12, 24);
 
     _cubeVertices = [self bufferWithBytes:_cube.vertices length:_cube.vertex_count * sizeof(Vertex) label:@"Cube vertices"];
     uint16_t *cubeIndices = indices16(&_cube);
@@ -225,6 +264,16 @@ int main(int argc, char **argv)
     _octahedronVertices = [self bufferWithBytes:octahedron length:_octahedron.vertex_count * 16 label:nil];
     _pyramidPositions = positions_with_stride(&_pyramid, 12);
 
+    NSMutableData *batchVertices = [NSMutableData dataWithBytes:_batchedSphere.vertices
+                                                         length:_batchedSphere.vertex_count * sizeof(Vertex)];
+    [batchVertices appendBytes:_batchedTorus.vertices length:_batchedTorus.vertex_count * sizeof(Vertex)];
+    _batchVertices = [self bufferWithBytes:batchVertices.bytes length:batchVertices.length label:@"Batch"];
+    _batchIndices = batched_indices16(&_batchedSphere, &_batchedTorus);
+    uint16_t *halfPositions = half_positions(&_halfSphere);
+    _halfVertices = [self bufferWithBytes:halfPositions length:_halfSphere.vertex_count * 8 label:@"Half floats"];
+    uint16_t *halfIndices = indices16(&_halfSphere);
+    _halfIndices = [self bufferWithBytes:halfIndices length:_halfSphere.index_count * 2 label:nil];
+
     id<MTLBuffer> stagingVertices = [self bufferWithBytes:_privateCube.vertices
                                                    length:_privateCube.vertex_count * sizeof(Vertex)
                                                     label:nil];
@@ -245,7 +294,13 @@ int main(int argc, char **argv)
     uint16_t *hiddenIndices = indices16(&_hidden);
     _hiddenIndices = [self bufferWithBytes:hiddenIndices length:_hidden.index_count * 2 label:nil];
 
-    _uniforms = [_device newBufferWithLength:UNIFORM_STRIDE * DRAWS_PER_FRAME * FRAMES_IN_FLIGHT options:MTLResourceStorageModeShared];
+    NSMutableArray<id<MTLBuffer>> *scratches = [NSMutableArray array];
+    for (int i = 0; i != SCRATCH_COUNT; i++) {
+        id<MTLBuffer> scratch = [_device newBufferWithLength:SCRATCH_LENGTH options:MTLResourceStorageModeShared];
+        scratch.label = @"Scratch";
+        [scratches addObject:scratch];
+    }
+    _scratches = scratches;
 
     free(cubeIndices);
     free(spherePositions);
@@ -254,6 +309,8 @@ int main(int argc, char **argv)
     free(octahedron);
     free(privateIndices);
     free(hiddenIndices);
+    free(halfPositions);
+    free(halfIndices);
 
     expect(&_cube, "interleaved position, normal and uv; 16-bit indices; vertex descriptor", 12, 1);
     expect(&_sphere, "positions alone in their own buffer at an offset; 32-bit indices; vertex descriptor", _sphere.index_count / 3, 1);
@@ -264,6 +321,11 @@ int main(int argc, char **argv)
     expect(&_privateCube, "private storage", 12, 0);
     expect(&_hidden, "uploaded, never drawn", _hidden.index_count / 3, 1);
     expect(&_late, "uploaded after attach, never drawn, found by a second scan", _late.index_count / 3, 1);
+    expect(&_batchedSphere, "first of two meshes in one vertex buffer, indices rewritten every frame; pipeline made before attach",
+        _batchedSphere.index_count / 3, 1);
+    expect(&_batchedTorus, "second of two meshes in one vertex buffer, indices rewritten every frame; pipeline made before attach",
+        _batchedTorus.index_count / 3, 1);
+    expect_absent(&_halfSphere, "half-float positions; pipeline made before attach", _halfSphere.index_count / 3);
 }
 
 - (void)uploadLateMesh
@@ -280,39 +342,69 @@ int main(int argc, char **argv)
 {
     [encoder setRenderPipelineState:_interleaved];
     uniformsForNextDraw();
-    [encoder setVertexBuffer:_cubeVertices offset:0 atIndex:0];
+    [encoder setVertexBuffer:_cubeVertices offset:0 atIndex:VERTEX_SLOT];
     [encoder drawIndexedPrimitives:MTLPrimitiveTypeTriangle indexCount:_cube.index_count indexType:MTLIndexTypeUInt16
                        indexBuffer:_cubeIndices indexBufferOffset:0];
     uniformsForNextDraw();
-    [encoder setVertexBuffer:_ribbonVertices offset:0 atIndex:0];
+    [encoder setVertexBuffer:_ribbonVertices offset:0 atIndex:VERTEX_SLOT];
     [encoder drawPrimitives:MTLPrimitiveTypeTriangleStrip vertexStart:0 vertexCount:_ribbon.vertex_count];
     uniformsForNextDraw();
-    [encoder setVertexBuffer:_privateVertices offset:0 atIndex:0];
+    [encoder setVertexBuffer:_privateVertices offset:0 atIndex:VERTEX_SLOT];
     [encoder drawIndexedPrimitives:MTLPrimitiveTypeTriangle indexCount:_privateCube.index_count indexType:MTLIndexTypeUInt16
                        indexBuffer:_privateIndices indexBufferOffset:0 instanceCount:1];
 
     [encoder setRenderPipelineState:_splitStreams];
     uniformsForNextDraw();
-    [encoder setVertexBuffer:_spherePositions offset:SPHERE_OFFSET atIndex:0];
-    [encoder setVertexBuffer:_sphereAttributes offset:0 atIndex:1];
+    [encoder setVertexBuffer:_spherePositions offset:SPHERE_OFFSET atIndex:VERTEX_SLOT];
+    [encoder setVertexBuffer:_sphereAttributes offset:0 atIndex:ATTRIBUTE_SLOT];
     [encoder drawIndexedPrimitives:MTLPrimitiveTypeTriangle indexCount:_sphere.index_count indexType:MTLIndexTypeUInt32
                        indexBuffer:_sphereIndices indexBufferOffset:0];
 
     [encoder setRenderPipelineState:_pulled];
     uniformsForNextDraw();
-    [encoder setVertexBuffer:_torusVertices offset:0 atIndex:0];
+    [encoder setVertexBuffer:_torusVertices offset:0 atIndex:VERTEX_SLOT];
     [encoder drawIndexedPrimitives:MTLPrimitiveTypeTriangle indexCount:_torus.index_count indexType:MTLIndexTypeUInt16
                        indexBuffer:_torusIndices indexBufferOffset:0 instanceCount:1 baseVertex:0 baseInstance:0];
 
     [encoder setRenderPipelineState:_paddedPositions];
     uniformsForNextDraw();
-    [encoder setVertexBuffer:_octahedronVertices offset:0 atIndex:0];
+    [encoder setVertexBuffer:_octahedronVertices offset:0 atIndex:VERTEX_SLOT];
     [encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:_octahedron.vertex_count instanceCount:1];
 
     [encoder setRenderPipelineState:_packedPositions];
     uniformsForNextDraw();
-    [encoder setVertexBytes:_pyramidPositions length:_pyramid.vertex_count * 12 atIndex:0];
+    [encoder setVertexBytes:_pyramidPositions length:_pyramid.vertex_count * 12 atIndex:VERTEX_SLOT];
     [encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:_pyramid.vertex_count];
+
+    [encoder setRenderPipelineState:_batched];
+    _scratchCursor += (_frame % 7) * UNIFORM_STRIDE;
+    NSUInteger sphereIndices = [self scratchBytes:_batchIndices length:_batchedSphere.index_count * 2];
+    NSUInteger torusIndices = [self scratchBytes:_batchIndices + _batchedSphere.index_count length:_batchedTorus.index_count * 2];
+    uniformsForNextDraw();
+    [encoder setVertexBuffer:_batchVertices offset:0 atIndex:VERTEX_SLOT];
+    [encoder drawIndexedPrimitives:MTLPrimitiveTypeTriangle indexCount:_batchedSphere.index_count indexType:MTLIndexTypeUInt16
+                       indexBuffer:[self scratch] indexBufferOffset:sphereIndices];
+    uniformsForNextDraw();
+    [encoder drawIndexedPrimitives:MTLPrimitiveTypeTriangle indexCount:_batchedTorus.index_count indexType:MTLIndexTypeUInt16
+                       indexBuffer:[self scratch] indexBufferOffset:torusIndices];
+
+    Vertex quad[4];
+    for (int corner = 0; corner != 4; corner++) {
+        float x = 12 + (corner & 1) + sinf(_frame * 0.05f), y = corner >> 1;
+        quad[corner] = (Vertex) { { x, y, 0 }, { 0, 0, 1 }, { corner & 1, corner >> 1 } };
+    }
+    static const uint16_t quadIndices[6] = { 0, 1, 2, 2, 1, 3 };
+    NSUInteger quadVertices = [self scratchBytes:quad length:sizeof(quad)];
+    uniformsForNextDraw();
+    [encoder setVertexBuffer:[self scratch] offset:quadVertices atIndex:VERTEX_SLOT];
+    [encoder drawIndexedPrimitives:MTLPrimitiveTypeTriangle indexCount:6 indexType:MTLIndexTypeUInt16
+                       indexBuffer:[self scratch] indexBufferOffset:[self scratchBytes:quadIndices length:sizeof(quadIndices)]];
+
+    [encoder setRenderPipelineState:_halfPositions];
+    uniformsForNextDraw();
+    [encoder setVertexBuffer:_halfVertices offset:0 atIndex:VERTEX_SLOT];
+    [encoder drawIndexedPrimitives:MTLPrimitiveTypeTriangle indexCount:_halfSphere.index_count indexType:MTLIndexTypeUInt16
+                       indexBuffer:_halfIndices indexBufferOffset:0];
 }
 
 - (id<MTLRenderPipelineState>)pipelineWithFunction:(NSString *)name layout:(MTLVertexDescriptor *)layout
@@ -336,11 +428,11 @@ int main(int argc, char **argv)
 {
     MTLVertexDescriptor *layout = [MTLVertexDescriptor vertexDescriptor];
     layout.attributes[0].format = MTLVertexFormatFloat3;
-    layout.attributes[0].bufferIndex = 0;
+    layout.attributes[0].bufferIndex = VERTEX_SLOT;
     layout.attributes[1].format = MTLVertexFormatFloat3;
     layout.attributes[1].offset = 12;
-    layout.attributes[1].bufferIndex = 0;
-    layout.layouts[0].stride = sizeof(Vertex);
+    layout.attributes[1].bufferIndex = VERTEX_SLOT;
+    layout.layouts[VERTEX_SLOT].stride = sizeof(Vertex);
     return layout;
 }
 
@@ -348,8 +440,8 @@ int main(int argc, char **argv)
 {
     MTLVertexDescriptor *layout = [MTLVertexDescriptor vertexDescriptor];
     layout.attributes[0].format = MTLVertexFormatFloat3;
-    layout.attributes[0].bufferIndex = 0;
-    layout.layouts[0].stride = stride;
+    layout.attributes[0].bufferIndex = VERTEX_SLOT;
+    layout.layouts[VERTEX_SLOT].stride = stride;
     return layout;
 }
 
@@ -365,6 +457,46 @@ int main(int argc, char **argv)
 static void request_late_upload(int signal)
 {
     late_upload_requested = 1;
+}
+
+static uint16_t *batched_indices16(const Mesh *first, const Mesh *second)
+{
+    uint16_t *narrow = calloc(first->index_count + second->index_count, 2);
+    for (uint32_t i = 0; i != first->index_count; i++) {
+        narrow[i] = (uint16_t) first->indices[i];
+    }
+    for (uint32_t i = 0; i != second->index_count; i++) {
+        narrow[first->index_count + i] = (uint16_t) (first->vertex_count + second->indices[i]);
+    }
+    return narrow;
+}
+
+static uint16_t *half_positions(const Mesh *mesh)
+{
+    uint16_t *packed = calloc(mesh->vertex_count, 8);
+    for (uint32_t i = 0; i != mesh->vertex_count; i++) {
+        for (int k = 0; k != 3; k++) {
+            packed[i * 4 + k] = half_of(mesh->vertices[i].position[k]);
+        }
+    }
+    return packed;
+}
+
+static uint16_t half_of(float value)
+{
+    uint32_t bits;
+    memcpy(&bits, &value, 4);
+    uint32_t sign = (bits >> 16) & 0x8000;
+    int32_t exponent = (int32_t) ((bits >> 23) & 0xff) - 127 + 15;
+    if (exponent <= 0) {
+        return (uint16_t) sign;
+    }
+    return (uint16_t) (sign | (uint32_t) exponent << 10 | ((bits >> 13) & 0x3ff));
+}
+
+static void expect_absent(const Mesh *mesh, const char *how, uint32_t triangle_count)
+{
+    record_expectation(mesh, how, triangle_count, CONTENTS_CPU_VISIBLE, PRESENCE_ABSENT);
 }
 
 static double elapsedMilliseconds(uint64_t start)

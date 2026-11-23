@@ -25,6 +25,7 @@ export interface BufferSearch {
 export interface GeometryObserver {
     observeDraw(draw: DrawCall): void;
     observeBuffers(buffers: GpuBuffer[]): void;
+    observeScratchBuffer(id: string): void;
 }
 
 export interface GpuBuffer {
@@ -48,6 +49,7 @@ export interface DrawCall {
     api: string;
     topology: Topology;
     streams: VertexStream[];
+    bystanders: GpuBuffer[];
     position: PositionLayout | null;
     indices: IndexBinding | null;
     firstVertex: number;

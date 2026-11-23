@@ -152,7 +152,7 @@ export class MetalBuffer implements GpuBuffer {
         creationOrder: number,
         label: string | null,
     ) {
-        this.id = `Metal:${object}`;
+        this.id = metalBufferId(object);
         this.address = object.toString();
         this.label = label;
         this.byteLength = byteLength;
@@ -171,6 +171,10 @@ export class MetalBuffer implements GpuBuffer {
     }
 }
 
+export function metalBufferId(object: NativePointer): string {
+    return `Metal:${object}`;
+}
+
 export class BytesBuffer implements GpuBuffer {
     readonly api = "Metal";
     readonly id: string;
@@ -181,10 +185,10 @@ export class BytesBuffer implements GpuBuffer {
     readonly creationOrder = 0;
     private readonly bytes: ArrayBuffer;
 
-    constructor(source: NativePointer, byteLength: number) {
+    constructor(source: NativePointer, byteLength: number, digest: string) {
         this.byteLength = byteLength;
         this.bytes = source.readByteArray(byteLength)!;
-        this.id = `Metal:bytes:${contentHash(this.bytes)}`;
+        this.id = `Metal:bytes:${digest}x${byteLength}`;
     }
 
     read(offset: number, length: number): ArrayBuffer {
@@ -202,12 +206,4 @@ function isReadable(object: NativePointer): boolean {
     } catch {
         return false;
     }
-}
-
-function contentHash(bytes: ArrayBuffer): string {
-    let hash = 0x811c9dc5;
-    for (const byte of new Uint8Array(bytes)) {
-        hash = Math.imul(hash ^ byte, 0x01000193);
-    }
-    return `${(hash >>> 0).toString(16)}x${bytes.byteLength}`;
 }

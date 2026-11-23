@@ -75,6 +75,21 @@ descriptor, the layout is worked out from the bound buffers: their size, the
 number of vertices the draw needs, and which bytes read as plausible
 coordinates. The table says which of these it was.
 
+Metal binds a draw's vertices and its uniforms through the same table, and
+for such a pipeline nothing says which is which. A game typically writes its
+uniforms, and often the indices and vertices of what it batches, into scratch
+buffers that it rewrites every frame, and uniforms read as plausible
+coordinates too. So Mesh Finder watches the bytes at each place a draw binds.
+A place counts only once the same bytes were seen there in an earlier render
+pass, in a buffer that has kept still for a few dozen passes. A buffer whose
+bytes keep changing is taken for scratch from then on, and what was listed
+from it is removed. Among the places that count, vertices
+are looked for in the ones bound last, since what an earlier draw left bound
+was bound before; a slot where an earlier guess found a pipeline's vertices
+is remembered as theirs. Indices in a scratch buffer are told apart by what
+they say rather than where they are, so a mesh that is batched anew every
+frame is listed once.
+
 Buffers in private storage have no contents the CPU can read. Meshes drawn
 from them are still listed, with their triangle count, but there is nothing
 to show or export.
@@ -219,6 +234,8 @@ of them are meshes took about 20 s.
 - Positions that are not 32-bit floats, when they have to be guessed. A
   layout declared by the API is read in half floats and normalized integers
   too.
+- Metal meshes whose vertices are rewritten every frame, as dynamically
+  batched geometry, particles and most user interfaces are.
 - Direct3D 11 draws whose input layout was made before the instrument was
   added have their layout guessed, since an input layout keeps no names.
   Draws that fetch their own vertices from shader resources, stream output

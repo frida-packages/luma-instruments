@@ -53,6 +53,7 @@ const SIGUSR1 = (Process.platform === "darwin") ? 30 : 10;
 const COMPARED_BYTES = 16;
 const LATE_UPLOAD_MS = 500;
 const TOLERANCE = 1e-4;
+const MOST_STRAYS_NAMED = 8;
 const LEFT_BY_EARLIER_INSTANCE = "left-by-an-earlier-instance";
 const phases: Record<Phase, number> = { attached: 1, disposed: 2 };
 
@@ -218,6 +219,16 @@ function check(handle: CustomInstrumentHandle, expectations: Expectation[], out:
             continue;
         }
         console.log(`PASS ${expected.name} (${expected.how}) as ${match.cells.mesh}: ${match.cells.learned}`);
+    }
+
+    const listed = expectations.filter(expected => expected.presence === "listed");
+    const strays = [...rows.values()].filter(row => !listed.some(expected => matches(expected, row, exported.get(row.id)!)));
+    for (const stray of strays.slice(0, MOST_STRAYS_NAMED)) {
+        failures++;
+        console.log(`FAIL ${stray.cells.mesh} is listed and nothing expects it: ${stray.cells.learned}, ${stray.cells.buffers}`);
+    }
+    if (strays.length > MOST_STRAYS_NAMED) {
+        console.log(`FAIL and ${strays.length - MOST_STRAYS_NAMED} more rows that nothing expects`);
     }
 
     handle.onConsoleInput!({ widget: "viewer", entryId: "1", text: "list" }, {

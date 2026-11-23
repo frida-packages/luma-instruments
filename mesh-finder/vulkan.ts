@@ -157,6 +157,7 @@ class VulkanBackend implements GraphicsBackend {
             api: this.api,
             topology,
             streams,
+            bystanders: [],
             position,
             indices: null,
             firstVertex: 0,

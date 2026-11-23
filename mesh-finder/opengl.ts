@@ -141,6 +141,7 @@ export class GLBackend implements GraphicsBackend {
             api: apiNames[this.flavorOf(draw.shareGroup)],
             topology,
             streams,
+            bystanders: [],
             position: positionLayoutOf(attributes, this.gl.attributeNames(draw.program)),
             indices: (indexFormat !== undefined)
                 ? { buffer: indexBuffer!, offset: draw.indices, format: indexFormat, count: draw.count }
