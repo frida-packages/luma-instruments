@@ -14,6 +14,13 @@ export interface IndexProfile {
     meanStep: number;
 }
 
+export interface PositionSample {
+    unitLength: number;
+    zeros: number;
+    continuity: number;
+    homogeneous: boolean;
+}
+
 export interface GatheredPositions {
     positions: Float32Array;
     min: [number, number, number];
@@ -30,6 +37,7 @@ typedef enum { STRIP_ORDER, FAN_ORDER } RunOrder;
 
 typedef struct { guint32 min; guint32 max; guint64 used; } IndexRange;
 typedef struct { guint32 max; guint32 distinct; guint64 degenerate; double mean_step; } IndexProfile;
+typedef struct { double unit_length; double zeros; double continuity_lost_squared; guint32 homogeneous; } PositionSample;
 
 #define LARGEST_VERTEX_COUNT (1u << 24)
 #define LARGEST_NARROW_MEAN_STEP 1024.0
@@ -37,6 +45,11 @@ typedef struct { guint32 max; guint32 distinct; guint64 degenerate; double mean_
 #define PLAUSIBLE_FLOAT_SHARE 0.6
 #define SMALLEST_COORDINATE 1e-30f
 #define LARGEST_COORDINATE 1e6f
+#define MOST_SAMPLED_POSITIONS 256
+#define TOLERATED_IMPLAUSIBLE 0.02
+#define SHORTEST_UNIT_LENGTH_SQUARED (0.98 * 0.98)
+#define LONGEST_UNIT_LENGTH_SQUARED (1.02 * 1.02)
+#define HOMOGENEOUS_SHARE 0.9
 
 static const guint32 component_sizes[] = { 4, 2, 2, 2, 2, 2, 1, 1 };
 
@@ -44,6 +57,9 @@ static guint32 restart_value (guint32 width);
 static guint32 index_at (const guint8 * data, guint64 i, guint32 width);
 static gboolean steps_are_small (const guint8 * data, guint32 count, guint32 width, double largest_mean, guint32 below);
 static gboolean holds_plausible_floats (const guint8 * data, guint32 count);
+static gboolean is_plausible_coordinate (float value);
+static gboolean same_point (const float * a, const float * b);
+static double median_of (double * values, guint32 count);
 static float component_at (const guint8 * p, guint32 type);
 static float half_to_float (guint16 h);
 
@@ -196,6 +212,85 @@ guint64 gather_positions (const guint8 * data, guint64 count, guint64 stride, gu
   return non_finite;
 }
 
+guint32 sample_positions (const guint8 * data, guint32 length, guint32 count, guint32 stride, guint32 offset, PositionSample * sample)
+{
+  double steps[MOST_SAMPLED_POSITIONS];
+  float point[3], previous[3], first[3], second[3], lo[3], hi[3];
+  double diagonal_squared = 0;
+  guint32 taken = 0, implausible = 0, zeros = 0, unit = 0, homogeneous = 0, distinct = 0, spanned = 0, i, k;
+
+  for (i = 0; i != count && i * stride + offset + 12 <= length; i++)
+  {
+    const guint8 * vertex = data + i * stride + offset;
+    double length_squared;
+    float w;
+
+    memcpy (point, vertex, 12);
+    if (!is_plausible_coordinate (point[0]) || !is_plausible_coordinate (point[1]) || !is_plausible_coordinate (point[2]))
+    {
+      implausible++;
+      continue;
+    }
+    for (k = 0; k != 3; k++)
+    {
+      if (point[k] == 0)
+        zeros++;
+      if (taken == 0 || point[k] < lo[k])
+        lo[k] = point[k];
+      if (taken == 0 || point[k] > hi[k])
+        hi[k] = point[k];
+    }
+    length_squared = (double) point[0] * point[0] + (double) point[1] * point[1] + (double) point[2] * point[2];
+    if (length_squared > SHORTEST_UNIT_LENGTH_SQUARED && length_squared < LONGEST_UNIT_LENGTH_SQUARED)
+      unit++;
+    if (offset + 16 <= stride && i * stride + offset + 16 <= length)
+    {
+      memcpy (&w, vertex + 12, 4);
+      if (w == 1)
+        homogeneous++;
+    }
+    if (distinct == 0)
+    {
+      memcpy (first, point, 12);
+      distinct = 1;
+    }
+    else if (distinct == 1 && !same_point (point, first))
+    {
+      memcpy (second, point, 12);
+      distinct = 2;
+    }
+    else if (distinct == 2 && !same_point (point, first) && !same_point (point, second))
+    {
+      distinct = 3;
+    }
+    if (taken != 0)
+    {
+      double dx = (double) point[0] - previous[0], dy = (double) point[1] - previous[1], dz = (double) point[2] - previous[2];
+      steps[taken - 1] = dx * dx + dy * dy + dz * dz;
+    }
+    memcpy (previous, point, 12);
+    taken++;
+  }
+
+  if (taken < 3 || implausible > (taken + implausible) * TOLERATED_IMPLAUSIBLE || distinct < 3)
+    return FALSE;
+  for (k = 0; k != 3; k++)
+  {
+    double extent = (double) hi[k] - lo[k];
+    if (extent > 0)
+      spanned++;
+    diagonal_squared += extent * extent;
+  }
+  if (spanned < 2)
+    return FALSE;
+
+  sample->unit_length = (double) unit / taken;
+  sample->zeros = (double) zeros / (taken * 3);
+  sample->continuity_lost_squared = median_of (steps, taken - 1) / diagonal_squared;
+  sample->homogeneous = homogeneous > taken * HOMOGENEOUS_SHARE;
+  return TRUE;
+}
+
 static guint32 restart_value (guint32 width)
 {
   return (width == 4) ? 0xffffffffu : ((1u << (width * 8)) - 1);
@@ -242,6 +337,30 @@ static gboolean holds_plausible_floats (const guint8 * data, guint32 count)
   return plausible >= count * PLAUSIBLE_FLOAT_SHARE;
 }
 
+static gboolean is_plausible_coordinate (float value)
+{
+  float magnitude = (value < 0) ? -value : value;
+  return value == 0 || (magnitude >= SMALLEST_COORDINATE && magnitude <= LARGEST_COORDINATE);
+}
+
+static gboolean same_point (const float * a, const float * b)
+{
+  return a[0] == b[0] && a[1] == b[1] && a[2] == b[2];
+}
+
+static double median_of (double * values, guint32 count)
+{
+  guint32 i, j;
+  for (i = 1; i < count; i++)
+  {
+    double value = values[i];
+    for (j = i; j != 0 && values[j - 1] > value; j--)
+      values[j] = values[j - 1];
+    values[j] = value;
+  }
+  return values[count / 2];
+}
+
 static float component_at (const guint8 * p, guint32 type)
 {
   switch (type)
@@ -283,7 +402,9 @@ const profile = new NativeFunction(kernels.profile_indices, "void", ["pointer", 
 const looksLikeMesh = new NativeFunction(kernels.looks_like_mesh_data, "uint32", ["pointer", "uint32"]);
 const gather = new NativeFunction(kernels.gather_positions, "uint64",
     ["pointer", "uint64", "uint64", "uint32", "uint32", "pointer", "pointer"]);
+const sample = new NativeFunction(kernels.sample_positions, "uint32", ["pointer", "uint32", "uint32", "uint32", "uint32", "pointer"]);
 
+const POSITION_SAMPLE_SIZE = 32;
 const RESTARTS_COUNTED = 0;
 const RESTARTS_SKIPPED = 1;
 const STRIP_ORDER = 0;
@@ -337,6 +458,21 @@ export function indexProfile(indices: ArrayBuffer, format: IndexFormat, max: num
         distinct: result.add(4).readU32(),
         degenerateTriangles: result.add(8).readU64().toNumber(),
         meanStep: result.add(16).readDouble(),
+    };
+}
+
+export const mostSampledPositions = 256;
+
+export function samplePositions(vertices: ArrayBuffer, count: number, stride: number, offset: number): PositionSample | null {
+    const result = Memory.alloc(POSITION_SAMPLE_SIZE);
+    if (sample(vertices.unwrap(), vertices.byteLength, count, stride, offset, result) === 0) {
+        return null;
+    }
+    return {
+        unitLength: result.readDouble(),
+        zeros: result.add(8).readDouble(),
+        continuity: 1 - Math.min(1, Math.sqrt(result.add(16).readDouble())),
+        homogeneous: result.add(24).readU32() !== 0,
     };
 }
 

@@ -1,3 +1,4 @@
+import { mostSampledPositions, samplePositions, type PositionSample } from "./geometry-kernels.js";
 import type { GpuBuffer, VertexStream } from "./graphics-backend.js";
 import { float32x3, float32x4, type PositionFormat } from "./vertex-format.js";
 
@@ -19,10 +20,8 @@ type Fit = "exact" | "loose";
 
 const SMALLEST_STRIDE = 12;
 const LARGEST_STRIDE = 256;
-const SAMPLED_VERTICES = 256;
 const SAMPLED_VERTICES_PER_LOOSE_STRIDE = 48;
 const LAST_LOOSE_OFFSET = 28;
-const TOLERATED_IMPLAUSIBLE = 0.02;
 const LARGEST_COORDINATE = 1e6;
 const SMALLEST_NONZERO_COORDINATE = 1e-30;
 const TOLERATED_SPARE_VERTICES = 2;
@@ -30,8 +29,6 @@ const TOLERATED_SPARE_SHARE = 0.01;
 const COMMON_STRIDE_LIMIT = 64;
 const RARE_STRIDE_LIMIT = 128;
 const HIGHEST_GUESS_CONFIDENCE = 0.95;
-const UNIT_LENGTH_TOLERANCE = 0.02;
-const HOMOGENEOUS_SHARE = 0.9;
 
 export function guessDrawLayout(streams: VertexStream[], span: VertexSpan): GuessedLayout | null {
     let best: GuessedLayout | null = null;
@@ -107,7 +104,7 @@ function fitsTightly(available: number, stride: number, vertexCount: number): bo
 }
 
 function assessStride(buffer: GpuBuffer, base: number, stride: number, span: VertexSpan, fit: Fit): GuessedLayout | null {
-    const sampleCount = Math.min(span.last - span.first + 1, (fit === "exact") ? SAMPLED_VERTICES : SAMPLED_VERTICES_PER_LOOSE_STRIDE);
+    const sampleCount = Math.min(span.last - span.first + 1, (fit === "exact") ? mostSampledPositions : SAMPLED_VERTICES_PER_LOOSE_STRIDE);
     const lastOffset = (fit === "exact") ? stride - SMALLEST_STRIDE : Math.min(stride - SMALLEST_STRIDE, LAST_LOOSE_OFFSET);
     const sampleStart = base + span.first * stride;
     const tail = Math.min(stride, 16);
@@ -116,7 +113,7 @@ function assessStride(buffer: GpuBuffer, base: number, stride: number, span: Ver
     if (sampleLength < SMALLEST_STRIDE || lastStart + SMALLEST_STRIDE > buffer.byteLength) {
         return null;
     }
-    const samples = new DataView(buffer.read(sampleStart, sampleLength));
+    const samples = buffer.read(sampleStart, sampleLength);
     const lastVertex = new DataView(buffer.read(lastStart, Math.min(stride, buffer.byteLength - lastStart)));
 
     let best: GuessedLayout | null = null;
@@ -124,17 +121,17 @@ function assessStride(buffer: GpuBuffer, base: number, stride: number, span: Ver
         if (offset + SMALLEST_STRIDE > lastVertex.byteLength || !plausibleTriple(lastVertex, 0, offset)) {
             continue;
         }
-        const shape = sampleShape(samples, sampleCount, stride, offset);
-        if (shape === null) {
+        const sample = samplePositions(samples, sampleCount, stride, offset);
+        if (sample === null) {
             continue;
         }
-        const confidence = confidenceOf(shape, stride, offset, fit);
+        const confidence = confidenceOf(sample, stride, offset, fit);
         if (best === null || confidence > best.confidence) {
             best = {
                 slot: 0,
                 stride,
                 offset,
-                format: shape.homogeneous ? float32x4 : float32x3,
+                format: sample.homogeneous ? float32x4 : float32x3,
                 confidence,
                 reason: describeGuess(fit, stride, offset),
             };
@@ -143,58 +140,7 @@ function assessStride(buffer: GpuBuffer, base: number, stride: number, span: Ver
     return best;
 }
 
-interface SampleShape {
-    unitLength: number;
-    zeros: number;
-    continuity: number;
-    homogeneous: boolean;
-}
-
-function sampleShape(samples: DataView, count: number, stride: number, offset: number): SampleShape | null {
-    const points: number[][] = [];
-    let implausible = 0;
-    let zeros = 0;
-    let unit = 0;
-    let homogeneous = 0;
-    for (let i = 0; i !== count; i++) {
-        const at = i * stride + offset;
-        if (at + SMALLEST_STRIDE > samples.byteLength) {
-            break;
-        }
-        if (!plausibleTriple(samples, i * stride, offset)) {
-            implausible++;
-            continue;
-        }
-        const point = [samples.getFloat32(at, true), samples.getFloat32(at + 4, true), samples.getFloat32(at + 8, true)];
-        zeros += point.filter(component => component === 0).length;
-        if (Math.abs(Math.hypot(point[0], point[1], point[2]) - 1) < UNIT_LENGTH_TOLERANCE) {
-            unit++;
-        }
-        if (offset + 16 <= stride && at + 16 <= samples.byteLength && samples.getFloat32(at + 12, true) === 1) {
-            homogeneous++;
-        }
-        points.push(point);
-    }
-    const sampled = points.length + implausible;
-    if (sampled === 0 || implausible > sampled * TOLERATED_IMPLAUSIBLE || points.length < 3) {
-        return null;
-    }
-    const extent = [0, 1, 2].map(axis => {
-        const values = points.map(point => point[axis]);
-        return Math.max(...values) - Math.min(...values);
-    });
-    if (extent.filter(size => size > 0).length < 2 || distinctCount(points) < Math.min(3, points.length)) {
-        return null;
-    }
-    return {
-        unitLength: unit / points.length,
-        zeros: zeros / (points.length * 3),
-        continuity: continuityOf(points, Math.hypot(extent[0], extent[1], extent[2])),
-        homogeneous: homogeneous > points.length * HOMOGENEOUS_SHARE,
-    };
-}
-
-function confidenceOf(shape: SampleShape, stride: number, offset: number, fit: Fit): number {
+function confidenceOf(sample: PositionSample, stride: number, offset: number, fit: Fit): number {
     let score = 0.45;
     if (stride > COMMON_STRIDE_LIMIT) {
         score -= (stride > RARE_STRIDE_LIMIT) ? 0.3 : 0.15;
@@ -205,16 +151,16 @@ function confidenceOf(shape: SampleShape, stride: number, offset: number, fit: F
     if (offset === 0) {
         score += 0.2;
     }
-    if (shape.homogeneous) {
+    if (sample.homogeneous) {
         score += 0.1;
     }
-    if (shape.unitLength > 0.9) {
+    if (sample.unitLength > 0.9) {
         score -= 0.35;
     }
-    if (shape.zeros > 0.5) {
+    if (sample.zeros > 0.5) {
         score -= 0.3;
     }
-    score += 0.15 * shape.continuity;
+    score += 0.15 * sample.continuity;
     return Math.max(0, Math.min(HIGHEST_GUESS_CONFIDENCE, score));
 }
 
@@ -234,19 +180,4 @@ function plausibleTriple(view: DataView, vertexStart: number, offset: number): b
         }
     }
     return true;
-}
-
-function distinctCount(points: number[][]): number {
-    return new Set(points.map(point => point.join(","))).size;
-}
-
-function continuityOf(points: number[][], diagonal: number): number {
-    const steps: number[] = [];
-    for (let i = 1; i < points.length; i++) {
-        const [a, b] = [points[i - 1], points[i]];
-        steps.push(Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]));
-    }
-    steps.sort((x, y) => x - y);
-    const median = steps[Math.floor(steps.length / 2)];
-    return 1 - Math.min(1, median / diagonal);
 }
