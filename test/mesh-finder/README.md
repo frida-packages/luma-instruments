@@ -79,7 +79,12 @@ draws 3300 meshes a frame, for measuring what the hooks cost.
 `vulkan-target.c` draws the same six meshes with Vulkan, offscreen, with no
 surface or window: dynamic rendering into an image of its own. Every buffer
 is made before the harness attaches, so those draws come out with their
-triangle counts and no contents. On `SIGUSR1` the target reloads the scene
+triangle counts and no contents. The memory of the cube, the torus, the
+octahedron and the pyramid stays mapped, and which buffers it holds is not
+known, so the cube and the torus are expected a second time, guessed with
+their contents; the octahedron and the pyramid have no indices, and their
+memory reads only as a point cloud, below the confidence the harness shows.
+On `SIGUSR1` the target reloads the scene
 from new buffers, shifted 10 along x, the way a game loads a level, and
 those are expected with their contents:
 

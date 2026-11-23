@@ -169,6 +169,11 @@ int main(int argc, char **argv)
     Buffer late_vertices = { 0 }, late_indices = { 0 };
 
     scene_expect(&scene, "drawn from buffers bound before attach", CONTENTS_UNLOCATED);
+    Mesh mapped_cube = shifted(scene.cube, "mapped-cube", 0), mapped_torus = shifted(scene.torus, "mapped-torus", 0);
+    expect(&mapped_cube, "drawn from buffers bound before attach, also found in their memory, still mapped; 16-bit indices", 12,
+        CONTENTS_CPU_VISIBLE);
+    expect(&mapped_torus, "drawn from buffers bound before attach, also found in their memory, still mapped; 32-bit indices",
+        mapped_torus.index_count / 3, CONTENTS_CPU_VISIBLE);
     scene_expect(&expected_reload, "reloaded after attach", CONTENTS_CPU_VISIBLE);
     expect(&hidden, "persistently mapped before attach, never drawn", hidden.index_count / 3, CONTENTS_CPU_VISIBLE);
     expect(&late, "staged into device-local memory after attach, never drawn", late.index_count / 3, CONTENTS_CPU_VISIBLE);
