@@ -10,6 +10,7 @@ Instruments for [Luma](https://luma.frida.re), published in its store.
 | [Trainer](trainer) | Runtime | Where a game keeps a value such as your health, to change it or lock it |
 | [Lua Hunter](lua-hunter) | Runtime | The Lua interpreters embedded in a process, with a console into each |
 | [Mesh Finder](mesh-finder) | UI | The 3D meshes a game or app holds in its Direct3D 11, Metal, Vulkan and OpenGL buffers, as OBJ |
+| [GStreamer](gstreamer) | Runtime | The GStreamer pipelines a process is running, each as a live graph of bins, elements, pads and caps to click through |
 
 Each folder is one instrument: TypeScript sources beside a `package.json`
 whose `luma` object carries its icon, compatibility, settings, widgets and

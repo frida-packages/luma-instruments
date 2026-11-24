@@ -1,0 +1,75 @@
+{
+  "name": "gstreamer",
+  "displayName": "GStreamer",
+  "version": "1.0.0",
+  "main": "main.ts",
+  "engines": { "luma": ">=4.0.0" },
+  "luma": {
+    "icon": { "kind": "symbolic", "value": "branch" },
+    "compatibility": { "platforms": ["windows", "darwin", "linux"] },
+    "settings": [
+      {
+        "id": "details",
+        "name": "Detail in the graph",
+        "schema": {
+          "kind": "combo",
+          "choices": [
+            { "id": "states", "name": "States and media types" },
+            { "id": "all", "name": "States, caps and changed properties" },
+            { "id": "verbose", "name": "Everything, with full property values" }
+          ],
+          "default": "all"
+        },
+        "optional": false,
+        "enabledByDefault": true
+      },
+      {
+        "id": "refreshInterval",
+        "name": "Seconds between refreshes of the shown graph (0: only on Show)",
+        "schema": { "kind": "uint", "default": 2, "min": 0, "max": 3600 },
+        "optional": false,
+        "enabledByDefault": true
+      }
+    ],
+    "widgets": [
+      {
+        "id": "scan",
+        "kind": "list",
+        "config": { "rowActions": [], "maxItems": 1 },
+        "persistence": "none"
+      },
+      {
+        "id": "pipelines",
+        "name": "Pipelines",
+        "kind": "table",
+        "config": {
+          "columns": [
+            { "id": "name", "name": "Name", "alignment": "leading" },
+            { "id": "type", "name": "Type", "alignment": "leading" },
+            { "id": "kind", "name": "Kind", "alignment": "leading" },
+            { "id": "state", "name": "State", "alignment": "leading" },
+            { "id": "elements", "name": "Elements", "alignment": "trailing" },
+            { "id": "address", "name": "Address", "alignment": "leading" },
+            { "id": "found", "name": "Found by", "alignment": "leading" }
+          ],
+          "rowActions": [{ "id": "show", "name": "Show" }],
+          "maxRows": 1000
+        },
+        "actions": [{ "id": "rescan", "name": "Rescan memory" }],
+        "persistence": "none"
+      },
+      {
+        "id": "graph",
+        "name": "Graph",
+        "kind": "view",
+        "config": { "class": "PipelineGraphView", "height": 480 },
+        "persistence": "session"
+      }
+    ],
+    "store": {
+      "summary": "See the GStreamer pipelines a process is running, those made before Luma attached included, each with its state and elements, and the live graph of any of them as GStreamer itself draws it.",
+      "category": "runtime",
+      "access": { "kind": "free" }
+    }
+  }
+}

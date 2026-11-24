@@ -1,0 +1,85 @@
+digraph pipeline {
+  rankdir=LR;
+  fontname="sans";
+  fontsize="10";
+  labelloc=t;
+  nodesep=.1;
+  ranksep=.2;
+  label="<GstPlayBin3>\nplaybin3-0\n[0]
+uri=\"file:///tmp/media/test.…
+current-uri=\"file:///tmp/media/test.…
+audio-sink=(GstFakeAudioSink) fakeaudiosink0
+video-sink=(GstFakeVideoSink) fakevideosink0";
+  node [style="filled,rounded", shape=box, fontsize="9", fontname="sans", margin="0.0,0.0"];
+  edge [labelfontsize="6", fontsize="9", fontname="monospace"];
+  
+  legend [
+    pos="0,0!",
+    margin="0.05,0.05",
+    style="filled",
+    label="Legend\lElement-States: [~] void-pending, [0] null, [-] ready, [=] paused, [>] playing\lPad-Activation: [-] none, [>] push, [<] pull\lPad-Flags: [b]locked, [f]lushing, [b]locking, [E]OS; upper-case is set\lPad-Task: [T] has started task, [t] has paused task\l",
+  ];
+  subgraph cluster_node_playsink_0x105da9b80 {
+    fontname="Bitstream Vera Sans";
+    fontsize="8";
+    style="filled,rounded";
+    color=black;
+    label="GstPlaySink\nplaysink\n[0]
+flags=video+audio+text+soft-volume+buffering+deinterlace+soft-colorbalance
+video-sink=(GstFakeVideoSink) fakevideosink0
+audio-sink=(GstFakeAudioSink) fakeaudiosink0
+send-event-mode=first";
+    fillcolor="#ffffff";
+    subgraph cluster_node_streamsynchronizer0_0x761059d400 {
+      fontname="Bitstream Vera Sans";
+      fontsize="8";
+      style="filled,rounded";
+      color=black;
+      label="GstStreamSynchronizer\nstreamsynchronizer0\n[0]";
+      fillcolor="#ffffff";
+    }
+
+  }
+
+  subgraph cluster_node_uridecodebin3_0x76105b82a0 {
+    fontname="Bitstream Vera Sans";
+    fontsize="8";
+    style="filled,rounded";
+    color=black;
+    label="GstURIDecodeBin3\nuridecodebin3\n[0]
+uri=\"file:///tmp/media/test.…
+current-uri=\"file:///tmp/media/test.…
+use-buffering=TRUE
+caps=video/x-raw(ANY); audio/x-raw(ANY); text/x-raw(ANY); subpicture/x-dvd; subpictur…";
+    fillcolor="#ffffff";
+    subgraph cluster_node_decodebin3_0_0x76105b87a0 {
+      fontname="Bitstream Vera Sans";
+      fontsize="8";
+      style="filled,rounded";
+      color=black;
+      label="GstDecodebin3\ndecodebin3-0\n[0]
+caps=video/x-raw(ANY); audio/x-raw(ANY); text/x-raw(ANY); subpicture/x-dvd; subpictur…";
+      subgraph cluster_node_decodebin3_0_0x76105b87a0_sink {
+        label="";
+        style="invis";
+        node_decodebin3_0_0x76105b87a0_node_sink_0x76105b8a50 [color=black, fillcolor="#ddddff", label="sink\n[>][bfb]", height="0.2", style="filled,solid"];
+      }
+
+      fillcolor="#ffffff";
+      subgraph cluster_node_multiqueue0_0x76105b01c0 {
+        fontname="Bitstream Vera Sans";
+        fontsize="8";
+        style="filled,rounded";
+        color=black;
+        label="GstMultiQueue\nmultiqueue0\n[0]
+max-size-buffers=0
+sync-by-running-time=TRUE
+use-interleave=TRUE";
+        fillcolor="#ffffff";
+      }
+
+    }
+
+  }
+
+}
