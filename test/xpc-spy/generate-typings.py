@@ -16,8 +16,8 @@ def union(ids):
     return " | ".join(f'"{i}"' for i in ids) or "never"
 
 
-def feature_type(feature):
-    kind = feature["schema"]["kind"]
+def setting_type(setting):
+    kind = setting["schema"]["kind"]
     if kind == "boolean":
         return "boolean"
     if kind in ("int", "uint", "double"):
@@ -25,37 +25,63 @@ def feature_type(feature):
     return "string"
 
 
-def widget_type(kind):
-    config = kind["config"]
+def widget_type(widget):
+    kind_type = kind_type_of(widget)
+    if "actions" not in widget:
+        return kind_type
+    return f"{kind_type} & CustomInstrumentWidgetActions<{union(a['id'] for a in widget['actions'])}>"
+
+
+def kind_type_of(widget):
+    config = widget["config"]
     return {
-        "table": lambda: "CustomInstrumentTableWidget<"
-        + f"{union(c['id'] for c in config['columns'])}, {union(a['id'] for a in config['actions'])}>",
+        "table": lambda: f"CustomInstrumentTableWidget<{union(c['id'] for c in config['columns'])}>",
+        "list": lambda: "CustomInstrumentListWidget",
         "console": lambda: "CustomInstrumentConsoleWidget",
         "view": lambda: "CustomInstrumentViewWidget",
-    }[kind["kind"]]()
+    }[widget["kind"]]()
 
 
-def snapshot_type(kind):
-    config = kind["config"]
+def action_variants(widget):
+    variants = []
+    if "actions" in widget:
+        variants.append(action_variant(widget["id"], widget["actions"], "item?: undefined"))
+    row_actions = widget["config"].get("rowActions", [])
+    if row_actions:
+        variants.append(action_variant(widget["id"], row_actions, "item: string"))
+    return variants
+
+
+def action_variant(widget_id, actions, item):
+    return f'{{ widget: "{widget_id}"; action: {union(a["id"] for a in actions)}; {item} }}'
+
+
+def snapshot_type(widget):
+    config = widget["config"]
     return {
         "table": lambda: f"CustomInstrumentTableSnapshot<{union(c['id'] for c in config['columns'])}>",
+        "list": lambda: "CustomInstrumentListSnapshot",
         "console": lambda: "CustomInstrumentConsoleSnapshot",
         "view": lambda: "CustomInstrumentViewSnapshot",
-    }[kind["kind"]]()
+    }[widget["kind"]]()
 
 
-features = ["declare interface CustomInstrumentFeatureMap {"]
-for feature in manifest["features"]:
-    optional = feature["optional"] and feature["schema"]["kind"] != "boolean"
-    features.append(f"    {feature['id']}{'?' if optional else ''}: {feature_type(feature)};")
-features.append("}")
+settings = ["declare interface CustomInstrumentSettingMap {"]
+for setting in manifest["settings"]:
+    optional = setting["optional"] and setting["schema"]["kind"] != "boolean"
+    settings.append(f"    {setting['id']}{'?' if optional else ''}: {setting_type(setting)};")
+settings.append("}")
 
 widgets = ["declare interface CustomInstrumentWidgetMap {"]
-widgets += [f"    {w['id']}: {widget_type(w['kind'])};" for w in manifest["widgets"]]
+widgets += [f"    {w['id']}: {widget_type(w)};" for w in manifest["widgets"]]
 widgets.append("}")
 
+actions = ["declare interface CustomInstrumentActionMap {"]
+actions += [f"    {w['id']}: {' | '.join(variants)};" for w in manifest["widgets"] if (variants := action_variants(w))]
+actions.append("}")
+
 restored = ["declare interface CustomInstrumentRestoredState {"]
-restored += [f"    {w['id']}: {snapshot_type(w['kind'])};" for w in manifest["widgets"] if w["persistence"] == "session"]
+restored += [f"    {w['id']}: {snapshot_type(w)};" for w in manifest["widgets"] if w["persistence"] == "session"]
 restored.append("}")
 
-output.write_text("\n\n".join([ambient, "\n".join(features), "\n".join(widgets), "\n".join(restored)]) + "\n")
+output.write_text("\n\n".join([ambient, "\n".join(settings), "\n".join(widgets), "\n".join(actions), "\n".join(restored)]) + "\n")

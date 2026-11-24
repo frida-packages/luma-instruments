@@ -6,32 +6,34 @@ export function summarize(value: unknown, maxLength: number): string {
 }
 
 class Summary {
-    private length = 0;
+    readonly #maxLength: number;
+    #length = 0;
 
-    constructor(private readonly maxLength: number) {
+    constructor(maxLength: number) {
+        this.#maxLength = maxLength;
     }
 
     describe(value: unknown): string {
         if (Array.isArray(value)) {
-            return `[${this.describeAll(value.map(element => [null, element]))}]`;
+            return `[${this.#describeAll(value.map(element => [null, element]))}]`;
         }
         if (isRecord(value)) {
-            return `{${this.describeAll(Object.entries(value))}}`;
+            return `{${this.#describeAll(Object.entries(value))}}`;
         }
         const text = leafText(value);
-        this.length += text.length;
+        this.#length += text.length;
         return text;
     }
 
-    private describeAll(entries: [string | null, unknown][]): string {
+    #describeAll(entries: [string | null, unknown][]): string {
         const parts: string[] = [];
         for (const [key, value] of entries) {
-            if (this.length >= this.maxLength) {
+            if (this.#length >= this.#maxLength) {
                 parts.push("…");
                 break;
             }
             const prefix = (key !== null) ? `${key}: ` : "";
-            this.length += prefix.length + 2;
+            this.#length += prefix.length + 2;
             parts.push(prefix + this.describe(value));
         }
         return parts.join(", ");

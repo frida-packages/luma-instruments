@@ -5,9 +5,11 @@ async and sync requests over an in-process anonymous listener, makes fresh
 connections and listeners (including an NSXPC one), reaches a missing mach
 service to get an error event, and reads and writes a `UserDefaults` value.
 `harness.ts` loads the instrument into it with a fake `ctx` that prints every
-event and widget call, changes the settings halfway through, and disposes the
-instrument after 16 seconds. `stress.ts` counts events instead of printing
-them, for a target started with a burst size.
+event and widget call, shows message 3, chooses **Clear** on both widgets
+after 5 seconds and asks for message 3 again, which must then be refused,
+changes the settings halfway through, and disposes the instrument after 16
+seconds. `stress.ts` counts events instead of printing them, for a target
+started with a burst size.
 
 Build the target outside the repository, generate the typings the app would
 write, and run the harness from the repository root:

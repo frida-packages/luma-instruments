@@ -7,10 +7,10 @@ export class Settings {
         this.apply(config);
     }
 
-    apply({ features }: CustomInstrumentConfig): void {
-        this.services = (features.services !== undefined) ? new RegExp(features.services) : null;
-        this.backtraces = features.backtraces;
-        this.dataLimit = features.dataLimit;
+    apply({ settings }: CustomInstrumentConfig): void {
+        this.services = (settings.services !== undefined) ? new RegExp(settings.services) : null;
+        this.backtraces = settings.backtraces;
+        this.dataLimit = settings.dataLimit;
     }
 
     wants(service: string): boolean {

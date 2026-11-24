@@ -3,10 +3,11 @@
   "displayName": "XPC Spy",
   "version": "1.0.0",
   "main": "main.ts",
+  "engines": { "luma": ">=4.0.0" },
   "luma": {
     "icon": { "kind": "symbolic", "value": "antenna" },
     "compatibility": { "platforms": ["darwin"] },
-    "features": [
+    "settings": [
       {
         "id": "services",
         "name": "Only services matching",
@@ -33,35 +34,33 @@
       {
         "id": "services",
         "name": "Services",
-        "kind": {
-          "kind": "table",
-          "config": {
-            "columns": [
-              { "id": "service", "name": "Service", "alignment": "leading" },
-              { "id": "peer", "name": "Peer PID", "alignment": "trailing" },
-              { "id": "sent", "name": "Sent", "alignment": "trailing" },
-              { "id": "received", "name": "Received", "alignment": "trailing" },
-              { "id": "seen", "name": "Last seen", "alignment": "leading" },
-              { "id": "last", "name": "Last message", "alignment": "leading" }
-            ],
-            "actions": [],
-            "maxRows": 1000
-          }
+        "kind": "table",
+        "config": {
+          "columns": [
+            { "id": "service", "name": "Service", "alignment": "leading" },
+            { "id": "peer", "name": "Peer PID", "alignment": "trailing" },
+            { "id": "sent", "name": "Sent", "alignment": "trailing" },
+            { "id": "received", "name": "Received", "alignment": "trailing" },
+            { "id": "seen", "name": "Last seen", "alignment": "leading" },
+            { "id": "last", "name": "Last message", "alignment": "leading" }
+          ],
+          "rowActions": [],
+          "maxRows": 1000
         },
+        "actions": [{ "id": "clear", "name": "Clear" }],
         "persistence": "session"
       },
       {
         "id": "messages",
         "name": "Recent messages",
-        "kind": {
-          "kind": "console",
-          "config": {
-            "prompt": "#",
-            "placeholder": "Message number to inspect",
-            "runButtonLabel": "Inspect",
-            "maxEntries": 500
-          }
+        "kind": "console",
+        "config": {
+          "maxEntries": 500,
+          "prompt": "#",
+          "placeholder": "Message number to inspect",
+          "runButtonLabel": "Inspect"
         },
+        "actions": [{ "id": "clear", "name": "Clear" }],
         "persistence": "none"
       }
     ],

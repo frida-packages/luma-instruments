@@ -14,7 +14,7 @@ const ctx = {
     },
 } as unknown as CustomInstrumentContext;
 
-const config: CustomInstrumentConfig = { features: { backtraces: false, dataLimit: 4096 } };
+const config: CustomInstrumentConfig = { settings: { backtraces: false, dataLimit: 4096 } };
 const restored = { services: { rows: [] } } as unknown as CustomInstrumentRestoredState;
 
 const handle = await instrument.create(ctx, config, restored);

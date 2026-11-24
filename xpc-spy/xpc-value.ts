@@ -18,13 +18,15 @@ export function toJavaScript(object: NativePointer, dataLimit: number): unknown 
 }
 
 class Conversion {
-    private remainingNodes = NODES_PER_MESSAGE;
+    readonly #dataLimit: number;
+    #remainingNodes = NODES_PER_MESSAGE;
 
-    constructor(private readonly dataLimit: number) {
+    constructor(dataLimit: number) {
+        this.#dataLimit = dataLimit;
     }
 
     convert(object: NativePointer, level: number): unknown {
-        this.remainingNodes--;
+        this.#remainingNodes--;
         const type = xpc.getType(object);
         const converter = converters.get(type.toString());
         if (converter === undefined) {
@@ -34,7 +36,7 @@ class Conversion {
     }
 
     convertEntries(dictionary: NativePointer, level: number): unknown {
-        if (this.remainingNodes <= 0) {
+        if (this.#remainingNodes <= 0) {
             return "…";
         }
         const result: Record<string, unknown> = {};
@@ -46,11 +48,11 @@ class Conversion {
         if (omitted > 0) {
             result["…"] = `${omitted} more`;
         }
-        return this.nested(result, level);
+        return this.#nested(result, level);
     }
 
     convertElements(array: NativePointer, level: number): unknown {
-        if (this.remainingNodes <= 0) {
+        if (this.#remainingNodes <= 0) {
             return "…";
         }
         const count = xpc.arrayGetCount(array).toNumber();
@@ -62,21 +64,21 @@ class Conversion {
         if (count > shown) {
             result.push(`… ${count - shown} more`);
         }
-        return this.nested(result, level);
+        return this.#nested(result, level);
     }
 
     convertData(data: NativePointer, level: number): unknown {
         const length = xpc.dataGetLength(data).toNumber();
-        const kept = Math.min(length, this.dataLimit);
+        const kept = Math.min(length, this.#dataLimit);
         const bytes = (kept === 0) ? new ArrayBuffer(0) : xpc.dataGetBytesPtr(data).readByteArray(kept)!;
         if (kept === length) {
             return bytes;
         }
         const truncated: TruncatedData = { bytes, length };
-        return this.nested(truncated, level);
+        return this.#nested(truncated, level);
     }
 
-    private nested(container: unknown, level: number): unknown {
+    #nested(container: unknown, level: number): unknown {
         return (level === EXPANDED_LEVELS) ? summarize(container, NESTED_SUMMARY_LENGTH) : container;
     }
 }

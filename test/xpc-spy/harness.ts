@@ -3,10 +3,11 @@
 import { instrument } from "../../xpc-spy/main.js";
 
 const DISPOSE_AFTER_MS = 16000;
+const CLEAR_AFTER_MS = 5000;
 const LUMA_VALUE_DEPTH = 3;
 
-const initialConfig: CustomInstrumentConfig = { features: { backtraces: false, dataLimit: 64 } };
-const narrowedConfig: CustomInstrumentConfig = { features: { services: "^com\\.apple\\.", backtraces: true, dataLimit: 8 } };
+const initialConfig: CustomInstrumentConfig = { settings: { backtraces: false, dataLimit: 64 } };
+const narrowedConfig: CustomInstrumentConfig = { settings: { services: "^com\\.apple\\.", backtraces: true, dataLimit: 8 } };
 
 const ctx = {
     emit(value: unknown) {
@@ -30,16 +31,14 @@ const restored = { services: { rows: [restoredRow] } };
 const handle = await instrument.create(ctx, initialConfig, restored as unknown as CustomInstrumentRestoredState);
 console.log("created");
 
+setTimeout(() => inspect(["#3", "99999"]), 3000);
+
 setTimeout(() => {
-    for (const text of ["#3", "99999"]) {
-        handle.onConsoleInput!({ widget: "messages", entryId: text, text }, {
-            output: (text: string) => console.log("respond.output", text),
-            error: (text: string) => console.log("respond.error", text),
-            value: (value: unknown) => console.log("respond.value", printable(value)),
-            image: () => {},
-        });
-    }
-}, 3000);
+    handle.onAction!({ widget: "services", action: "clear" });
+    handle.onAction!({ widget: "messages", action: "clear" });
+    console.log("cleared services and messages");
+    inspect(["#3"]);
+}, CLEAR_AFTER_MS);
 
 setTimeout(() => {
     handle.updateConfig!(narrowedConfig);
@@ -50,6 +49,17 @@ setTimeout(() => {
     handle.dispose!();
     console.log("disposed");
 }, DISPOSE_AFTER_MS);
+
+function inspect(texts: string[]): void {
+    for (const text of texts) {
+        handle.onConsoleInput!({ widget: "messages", entryId: text, text }, {
+            output: (text: string) => console.log("respond.output", text),
+            error: (text: string) => console.log("respond.error", text),
+            value: (value: unknown) => console.log("respond.value", printable(value)),
+            image: () => {},
+        });
+    }
+}
 
 function printable(value: unknown): string {
     return JSON.stringify(value, (_key, item) => {

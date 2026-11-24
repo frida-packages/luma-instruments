@@ -15,6 +15,13 @@ export const instrument: CustomInstrument = {
             updateConfig(next) {
                 settings.apply(next);
             },
+            onAction({ widget }) {
+                if (widget === "services") {
+                    services.clear();
+                } else {
+                    recorder.clearLog();
+                }
+            },
             onConsoleInput({ text }, respond) {
                 const number = text.replace(/^#/, "");
                 const event = recorder.recall(Number(number));

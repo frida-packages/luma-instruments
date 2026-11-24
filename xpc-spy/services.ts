@@ -12,12 +12,14 @@ interface ServiceRow {
 }
 
 export class ServiceBoard {
-    private readonly rows = new Map<string, ServiceRow>();
-    private readonly changed = new Set<string>();
+    readonly #table: ServiceTable;
+    readonly #rows = new Map<string, ServiceRow>();
+    readonly #changed = new Set<string>();
 
-    constructor(private readonly table: ServiceTable, restored: ServiceSnapshot) {
+    constructor(table: ServiceTable, restored: ServiceSnapshot) {
+        this.#table = table;
         for (const { id, cells } of restored.rows) {
-            this.rows.set(id, {
+            this.#rows.set(id, {
                 peer: cells.peer,
                 sent: Number(cells.sent),
                 received: Number(cells.received),
@@ -28,10 +30,10 @@ export class ServiceBoard {
     }
 
     note(event: MessageEvent, gist: string, seen: string): void {
-        let row = this.rows.get(event.service);
+        let row = this.#rows.get(event.service);
         if (row === undefined) {
             row = { peer: "", sent: 0, received: 0, seen, last: "" };
-            this.rows.set(event.service, row);
+            this.#rows.set(event.service, row);
         }
         if (event.direction === "sent") {
             row.sent++;
@@ -43,13 +45,13 @@ export class ServiceBoard {
         }
         row.seen = seen;
         row.last = gist;
-        this.changed.add(event.service);
+        this.#changed.add(event.service);
     }
 
     publish(): void {
-        for (const service of this.changed) {
-            const row = this.rows.get(service)!;
-            this.table.upsertRow({
+        for (const service of this.#changed) {
+            const row = this.#rows.get(service)!;
+            this.#table.upsertRow({
                 id: service,
                 cells: {
                     service,
@@ -61,6 +63,12 @@ export class ServiceBoard {
                 },
             });
         }
-        this.changed.clear();
+        this.#changed.clear();
+    }
+
+    clear(): void {
+        this.#rows.clear();
+        this.#changed.clear();
+        this.#table.clear();
     }
 }
