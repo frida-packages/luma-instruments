@@ -4,7 +4,7 @@ import { instrument } from "../../trainer/main.js";
 import { FakeWidgets } from "./fake-widgets.js";
 
 const widgets = new FakeWidgets();
-const trainer = await instrument.create(widgets.context(), { features: { types: "int32", unaligned: false } },
+const trainer = await instrument.create(widgets.context(), { settings: { types: "int32", unaligned: false } },
     {} as CustomInstrumentRestoredState);
 const console1 = widgets.console(trainer);
 const health = Process.mainModule.getExportByName("health");

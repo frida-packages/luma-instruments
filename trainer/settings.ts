@@ -9,8 +9,8 @@ export class Settings {
         this.apply(config);
     }
 
-    apply({ features }: CustomInstrumentConfig): void {
-        this.types = typesSelectedBy(features.types);
-        this.alignment = features.unaligned ? "unaligned" : "aligned";
+    apply({ settings }: CustomInstrumentConfig): void {
+        this.types = typesSelectedBy(settings.types);
+        this.alignment = settings.unaligned ? "unaligned" : "aligned";
     }
 }

@@ -9,26 +9,28 @@ export class Cancelled extends Error {
 }
 
 export class Job {
-    private state: "running" | "cancelling" = "running";
-    private lastPause = Date.now();
+    readonly #onProgress: (phase: Phase, fraction: number) => void;
+    #state: "running" | "cancelling" = "running";
+    #lastPause = Date.now();
     progress = 0;
 
-    constructor(private readonly onProgress: (phase: Phase, fraction: number) => void) {
+    constructor(onProgress: (phase: Phase, fraction: number) => void) {
+        this.#onProgress = onProgress;
     }
 
     cancel(): void {
-        this.state = "cancelling";
+        this.#state = "cancelling";
     }
 
     async checkpoint(phase: Phase, fraction: number): Promise<void> {
-        if (Date.now() - this.lastPause < pauseInterval) {
+        if (Date.now() - this.#lastPause < pauseInterval) {
             return;
         }
         this.progress = fraction;
-        this.onProgress(phase, fraction);
+        this.#onProgress(phase, fraction);
         await new Promise(resolve => setImmediate(resolve));
-        this.lastPause = Date.now();
-        if (this.state === "cancelling") {
+        this.#lastPause = Date.now();
+        if (this.#state === "cancelling") {
             throw new Cancelled();
         }
     }

@@ -43,6 +43,9 @@ Other commands:
 - `stop` stops a scan that is running.
 - `help` shows these commands.
 
+**Clear**, in the console's header, empties the console and leaves the scan
+as it is.
+
 The rows of the candidate list can also be kept on their own, discarded,
 locked, or shown in the **Memory** view, which shows the bytes around them
 and can be decoded with a pattern, as when looking for the rest of a
@@ -101,7 +104,9 @@ writes to two locked values took about 180 ms.
 Each write is also counted against the code that made it: **Code that writes
 locked values** shows the address of the instruction, its function or module
 and offset, how many writes it made and to which locked address. This is how
-to find the code that deals the damage. Function names come from Frida's
+to find the code that deals the damage. **Clear**, in the table's header,
+forgets the writes counted so far, so that the next ones are counted from
+zero. Function names come from Frida's
 `DebugSymbol`, which on Apple platforms works only in processes that have
 CoreFoundation loaded, as every app does; in other processes the column shows
 the module and offset.

@@ -57,29 +57,29 @@ function piecesWithinBanks(base: NativePointer, start: number, size: number): Pi
 }
 
 export class Residency {
-    private readonly mincore: NativeFunction<number, [NativePointer, number, NativePointer]> | null;
-    private readonly residentFlags = (Process.platform === "darwin") ? darwinResidentPage : linuxResidentPage;
+    readonly #mincore: NativeFunction<number, [NativePointer, number, NativePointer]> | null;
+    readonly #residentFlags = (Process.platform === "darwin") ? darwinResidentPage : linuxResidentPage;
 
     constructor() {
         const mincore = (Process.platform !== "windows") ? Module.findGlobalExportByName("mincore") : null;
-        this.mincore = (mincore !== null) ? new NativeFunction(mincore, "int", ["pointer", "size_t", "pointer"]) : null;
+        this.#mincore = (mincore !== null) ? new NativeFunction(mincore, "int", ["pointer", "size_t", "pointer"]) : null;
     }
 
     runsOf(piece: Piece): Run[] {
-        if (this.mincore === null) {
+        if (this.#mincore === null) {
             return [{ piece, offset: 0, size: piece.size }];
         }
         const pageSize = Process.pageSize;
         const pageCount = Math.ceil(piece.size / pageSize);
         const vector = Memory.alloc(pageCount);
-        if (this.mincore(piece.base, piece.size, vector) !== 0) {
+        if (this.#mincore(piece.base, piece.size, vector) !== 0) {
             return [];
         }
         const pages = new Uint8Array(vector.readByteArray(pageCount)!);
         const runs: Run[] = [];
         let runStart = -1;
         for (let page = 0; page <= pageCount; page++) {
-            const resident = page < pageCount && (pages[page] & this.residentFlags) !== 0;
+            const resident = page < pageCount && (pages[page] & this.#residentFlags) !== 0;
             if (resident && runStart === -1) {
                 runStart = page;
             } else if (!resident && runStart !== -1) {
@@ -107,43 +107,43 @@ interface ModuleStart {
 }
 
 export class RegionNames {
-    private readonly stacks: Stack[] = [];
-    private readonly modules: ModuleStart[];
-    private readonly writableSpans = new Map<Module, Span[]>();
+    readonly #stacks: Stack[] = [];
+    readonly #modules: ModuleStart[];
+    readonly #writableSpans = new Map<Module, Span[]>();
 
     constructor() {
         for (const thread of Process.enumerateThreads()) {
             const stack = Process.findRangeByAddress(thread.context.sp);
             if (stack !== null) {
                 const start = addressNumber(stack.base);
-                this.stacks.push({ start, end: start + stack.size, thread: thread.id });
+                this.#stacks.push({ start, end: start + stack.size, thread: thread.id });
             }
         }
-        this.modules = Process.enumerateModules()
+        this.#modules = Process.enumerateModules()
             .map(module => ({ start: addressNumber(module.base), module }))
             .sort((a, b) => a.start - b.start);
     }
 
     nameOf(address: number): string {
-        const stack = this.stacks.find(({ start, end }) => address >= start && address < end);
+        const stack = this.#stacks.find(({ start, end }) => address >= start && address < end);
         if (stack !== undefined) {
             return `stack of thread ${stack.thread}`;
         }
-        const owner = this.moduleBelow(address);
-        if (owner !== null && this.spansOf(owner.module).some(({ start, end }) => address >= start && address < end)) {
+        const owner = this.#moduleBelow(address);
+        if (owner !== null && this.#spansOf(owner.module).some(({ start, end }) => address >= start && address < end)) {
             return `${owner.module.name}+0x${(address - owner.start).toString(16)}`;
         }
         return "heap";
     }
 
-    private moduleBelow(address: number): ModuleStart | null {
+    #moduleBelow(address: number): ModuleStart | null {
         let low = 0;
-        let high = this.modules.length - 1;
+        let high = this.#modules.length - 1;
         let below: ModuleStart | null = null;
         while (low <= high) {
             const middle = (low + high) >> 1;
-            if (this.modules[middle].start <= address) {
-                below = this.modules[middle];
+            if (this.#modules[middle].start <= address) {
+                below = this.#modules[middle];
                 low = middle + 1;
             } else {
                 high = middle - 1;
@@ -152,14 +152,14 @@ export class RegionNames {
         return below;
     }
 
-    private spansOf(module: Module): Span[] {
-        let spans = this.writableSpans.get(module);
+    #spansOf(module: Module): Span[] {
+        let spans = this.#writableSpans.get(module);
         if (spans === undefined) {
             spans = module.enumerateRanges("rw-").map(range => {
                 const start = addressNumber(range.base);
                 return { start, end: start + range.size };
             });
-            this.writableSpans.set(module, spans);
+            this.#writableSpans.set(module, spans);
         }
         return spans;
     }

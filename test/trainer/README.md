@@ -14,10 +14,11 @@ by `dec 13`, `same` and `-`, and checks that the three known addresses are
 still listed. It writes new values with `set` and checks the game took its
 next hit from them, then tries `undo` and the table actions. It locks the
 integer and the float, has the poison thread hammer them, and checks that both
-held, that the poison loop and the hit are reported as writers, and that
-unlocking lets them change again. Last, it checks that a fifth lock is
-refused and that `reset` frees the watchpoints. It prints `PASS` at the end,
-or `FAIL:` and what did not hold.
+held, that the poison loop and the hit are reported as writers, that
+**Clear** empties the writers and the next writes are counted from zero, and
+that unlocking lets them change again. It then clears the console. Last, it
+checks that a fifth lock is refused and that `reset` frees the watchpoints. It
+prints `PASS` at the end, or `FAIL:` and what did not hold.
 
 Build the target outside the repository, linked against CoreFoundation so
 that Frida can name the functions that write locked values, generate the typings the app would

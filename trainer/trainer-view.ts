@@ -18,29 +18,33 @@ export interface ListedCandidate extends Candidate {
 
 export class TrainerView {
     listed: ListedCandidate[] = [];
-    private readonly console: CustomInstrumentWidgetMap["console"];
-    private readonly counter: CustomInstrumentWidgetMap["candidates"];
-    private readonly list: CustomInstrumentWidgetMap["list"];
-    private readonly locks: CustomInstrumentWidgetMap["locks"];
-    private readonly writers: CustomInstrumentWidgetMap["writers"];
-    private readonly memory: CustomInstrumentWidgetMap["memory"];
-    private shownCount = 0;
+    readonly #console: CustomInstrumentWidgetMap["console"];
+    readonly #counter: CustomInstrumentWidgetMap["candidates"];
+    readonly #list: CustomInstrumentWidgetMap["list"];
+    readonly #locks: CustomInstrumentWidgetMap["locks"];
+    readonly #writers: CustomInstrumentWidgetMap["writers"];
+    readonly #memory: CustomInstrumentWidgetMap["memory"];
+    #shownCount = 0;
 
     constructor(ctx: CustomInstrumentContext) {
-        this.console = ctx.widget("console");
-        this.counter = ctx.widget("candidates");
-        this.list = ctx.widget("list");
-        this.locks = ctx.widget("locks");
-        this.writers = ctx.widget("writers");
-        this.memory = ctx.widget("memory");
+        this.#console = ctx.widget("console");
+        this.#counter = ctx.widget("candidates");
+        this.#list = ctx.widget("list");
+        this.#locks = ctx.widget("locks");
+        this.#writers = ctx.widget("writers");
+        this.#memory = ctx.widget("memory");
     }
 
     say(text: string): void {
-        this.console.appendOutput(text);
+        this.#console.appendOutput(text);
+    }
+
+    clearConsole(): void {
+        this.#console.clear();
     }
 
     complain(text: string): void {
-        this.console.appendError(text);
+        this.#console.appendError(text);
     }
 
     showMemory(address: NativePointer): void {
@@ -53,29 +57,29 @@ export class TrainerView {
             this.complain(`${address} can no longer be read.`);
             return;
         }
-        this.memory.setHex({ bytes, baseAddress: addressNumber(start) });
+        this.#memory.setHex({ bytes, baseAddress: addressNumber(start) });
     }
 
     clearCandidates(): void {
-        this.shownCount = 0;
+        this.#shownCount = 0;
         this.listed = [];
-        this.counter.clear();
-        this.list.clear();
-        this.memory.clear();
+        this.#counter.clear();
+        this.#list.clear();
+        this.#memory.clear();
     }
 
     clearWriters(): void {
-        this.writers.clear();
+        this.#writers.clear();
     }
 
     showProgress(phase: Phase, fraction: number): void {
-        this.counter.setCounter({ value: Math.floor(fraction * 100), unit: phaseUnits[phase] });
+        this.#counter.setCounter({ value: Math.floor(fraction * 100), unit: phaseUnits[phase] });
     }
 
     showCandidates(set: CandidateSet, previous: CandidateSet | null, names: () => RegionNames): void {
-        this.counter.setCounter({ value: set.count, unit: "candidates", delta: set.count - this.shownCount });
-        this.shownCount = set.count;
-        this.list.clear();
+        this.#counter.setCounter({ value: set.count, unit: "candidates", delta: set.count - this.#shownCount });
+        this.#shownCount = set.count;
+        this.#list.clear();
         this.listed = [];
         if (set.count === 0 || set.count > listLimit) {
             return;
@@ -90,7 +94,7 @@ export class TrainerView {
         for (const candidate of this.listed) {
             const { piece, type, offsets } = candidate.block;
             const before = previous?.valueAt(piece, type, offsets[candidate.index]);
-            this.list.upsertRow({
+            this.#list.upsertRow({
                 id: candidate.id,
                 cells: {
                     row: String(candidate.row),
@@ -105,9 +109,9 @@ export class TrainerView {
     }
 
     showLocks(locks: Lock[], writers: Writer[]): void {
-        this.locks.clear();
+        this.#locks.clear();
         for (const lock of locks) {
-            this.locks.upsertRow({
+            this.#locks.upsertRow({
                 id: String(lock.slot),
                 cells: {
                     lock: String(lock.slot + 1),
@@ -120,7 +124,7 @@ export class TrainerView {
             });
         }
         for (const writer of writers) {
-            this.writers.upsertRow({
+            this.#writers.upsertRow({
                 id: `${writer.code}:${writer.target}`,
                 cells: {
                     code: writer.code.toString(),

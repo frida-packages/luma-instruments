@@ -17,13 +17,13 @@ const statusText = game.getExportByName("game_status");
 const kill = new NativeFunction(Module.getGlobalExportByName("kill"), "int", ["int", "int"]);
 
 class Screen {
-    private waiting: (() => void) | null = null;
+    #waiting: (() => void) | null = null;
 
     constructor() {
         Interceptor.attach(game.getExportByName("game_status_changed"), {
             onEnter: () => {
-                const resolve = this.waiting!;
-                this.waiting = null;
+                const resolve = this.#waiting!;
+                this.#waiting = null;
                 setTimeout(resolve, 0);
             },
         });
@@ -35,7 +35,7 @@ class Screen {
 
     async after(signal: number): Promise<number> {
         const started = Date.now();
-        const changed = new Promise<void>(resolve => this.waiting = resolve);
+        const changed = new Promise<void>(resolve => this.#waiting = resolve);
         kill(Process.id, signal);
         await changed;
         return Date.now() - started;
@@ -44,7 +44,7 @@ class Screen {
 
 const screen = new Screen();
 const widgets = new FakeWidgets();
-const trainer = await instrument.create(widgets.context(), { features: { types: "common", unaligned: false } },
+const trainer = await instrument.create(widgets.context(), { settings: { types: "common", unaligned: false } },
     {} as CustomInstrumentRestoredState);
 const console1: Console = widgets.console(trainer);
 
@@ -106,15 +106,25 @@ expect(poisonWriters.length === 2 && poisonWriters.every(row => Number(row.write
     "the poison thread is reported as writing each locked value 5000 times");
 expect(hitWriters.length === 2, "take_hit is reported as a writer");
 expect(writers.every(row => /^0x[0-9a-f]+$/.test(row.code) && /^0x[0-9a-f]+$/.test(row.target)), "writer addresses are plain hex");
+await widgets.actOnWidget(trainer, "writers", "clear");
+expect(widgets.tableRows("writers").length === 0, "Clear empties the writers table");
 
 await console1.type("unlock 1");
 const unlockedPoisonMs = await screen.after(SIGUSR2);
 expect(screen.shown("int") === String(500 - POISON_TICKS) && screen.shown("float") === lockedFloat,
     `unlocking lock 1 lets the integer change while lock 2 holds (${statusText.readUtf8String()})`);
+await new Promise(resolve => setTimeout(resolve, 300));
+const writersSinceClear = widgets.tableRows("writers");
+expect(writersSinceClear.length === 1 && Number(writersSinceClear[0].writes.replace(/,/g, "")) === POISON_TICKS,
+    "after Clear, writers are counted again from nothing");
 await console1.type("unlock");
 await screen.after(SIGUSR2);
 expect(screen.shown("float") !== lockedFloat, "unlocking everything lets the float change");
 console.log(`poison run: ${lockedPoisonMs} ms with two locks, ${unlockedPoisonMs} ms with one`);
+
+await widgets.actOnWidget(trainer, "console", "clear");
+expect(widgets.cleared.includes("console"), "Clear empties the console");
+expect(widgets.disabledActions.size === 0, "no action was disabled");
 
 await console1.type("reset");
 await console1.type("4242");

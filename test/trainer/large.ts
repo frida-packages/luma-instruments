@@ -7,7 +7,7 @@ const value = "100";
 const waitBetweenStepsMs = 1500;
 
 const widgets = new FakeWidgets();
-const trainer = await instrument.create(widgets.context(), { features: { types: "common", unaligned: false } },
+const trainer = await instrument.create(widgets.context(), { settings: { types: "common", unaligned: false } },
     {} as CustomInstrumentRestoredState);
 const console1 = widgets.console(trainer);
 
@@ -28,10 +28,10 @@ await scan;
 
 await console1.type("0");
 
-trainer.updateConfig!({ features: { types: "all", unaligned: false } });
+trainer.updateConfig!({ settings: { types: "all", unaligned: false } });
 await console1.type("reset");
 await console1.type(value);
-trainer.updateConfig!({ features: { types: "int32", unaligned: true } });
+trainer.updateConfig!({ settings: { types: "int32", unaligned: true } });
 await console1.type("reset");
 await console1.type(value);
 

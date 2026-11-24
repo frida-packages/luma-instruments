@@ -43,19 +43,23 @@ export async function readCandidates(
 
 class BlockReader {
     position = 0;
-    private readonly previous: ValueArray | null;
-    private readonly keptOffsets: Uint32Array;
-    private readonly keptValues: ValueArray;
-    private keptCount = 0;
+    readonly #block: OffsetBlock | CandidateBlock;
+    readonly #test: CandidateTest;
+    readonly #previous: ValueArray | null;
+    readonly #keptOffsets: Uint32Array;
+    readonly #keptValues: ValueArray;
+    #keptCount = 0;
 
-    constructor(private readonly block: OffsetBlock | CandidateBlock, private readonly test: CandidateTest) {
-        this.previous = ("values" in block) ? block.values : null;
-        this.keptOffsets = new Uint32Array(block.offsets.length);
-        this.keptValues = block.type.createArray(block.offsets.length);
+    constructor(block: OffsetBlock | CandidateBlock, test: CandidateTest) {
+        this.#block = block;
+        this.#test = test;
+        this.#previous = ("values" in block) ? block.values : null;
+        this.#keptOffsets = new Uint32Array(block.offsets.length);
+        this.#keptValues = block.type.createArray(block.offsets.length);
     }
 
     readNextWindow(): boolean {
-        const { offsets, piece, type } = this.block;
+        const { offsets, piece, type } = this.#block;
         if (this.position === offsets.length) {
             return false;
         }
@@ -70,13 +74,13 @@ class BlockReader {
         if (bytes !== null) {
             const view = new DataView(bytes);
             for (let index = first; index !== end; index++) {
-                this.consider(index, type.read(view, offsets[index] - windowStart));
+                this.#consider(index, type.read(view, offsets[index] - windowStart));
             }
         } else {
             for (let index = first; index !== end; index++) {
                 const value = readableValue(piece.base.add(offsets[index]), type);
                 if (value !== null) {
-                    this.consider(index, value);
+                    this.#consider(index, value);
                 }
             }
         }
@@ -85,16 +89,16 @@ class BlockReader {
     }
 
     result(): CandidateBlock {
-        const { piece, type } = this.block;
-        return { piece, type, offsets: this.keptOffsets.slice(0, this.keptCount), values: this.keptValues.slice(0, this.keptCount) };
+        const { piece, type } = this.#block;
+        return { piece, type, offsets: this.#keptOffsets.slice(0, this.#keptCount), values: this.#keptValues.slice(0, this.#keptCount) };
     }
 
-    private consider(index: number, current: number): void {
-        const previous = (this.previous !== null) ? this.previous[index] : NaN;
-        if (this.test(this.block.type, current, previous)) {
-            this.keptOffsets[this.keptCount] = this.block.offsets[index];
-            this.keptValues[this.keptCount] = current;
-            this.keptCount++;
+    #consider(index: number, current: number): void {
+        const previous = (this.#previous !== null) ? this.#previous[index] : NaN;
+        if (this.#test(this.#block.type, current, previous)) {
+            this.#keptOffsets[this.#keptCount] = this.#block.offsets[index];
+            this.#keptValues[this.#keptCount] = current;
+            this.#keptCount++;
         }
     }
 }

@@ -40,25 +40,37 @@ const relationWords: Record<Relation, string> = {
 };
 
 export class Trainer {
-    private steps: Step[] = [];
-    private job: Job | null = null;
-    private jobPhase: Phase = "scanning";
-    private regionNames: RegionNames | null = null;
-    private readonly writeLog = new WriteLog(() => this.showLocks());
+    readonly #view: TrainerView;
+    readonly #settings: Settings;
+    #steps: Step[] = [];
+    #job: Job | null = null;
+    #jobPhase: Phase = "scanning";
+    #regionNames: RegionNames | null = null;
+    readonly #writeLog = new WriteLog(() => this.#showLocks());
 
-    constructor(private readonly view: TrainerView, private readonly settings: Settings) {
+    constructor(view: TrainerView, settings: Settings) {
+        this.#view = view;
+        this.#settings = settings;
         view.say(openingHint);
     }
 
-    act({ widget, action, item }: CustomInstrumentAction): void {
-        if (this.job !== null) {
-            this.view.complain(this.busyMessage());
+    act(chosen: CustomInstrumentAction): void {
+        switch (chosen.widget) {
+            case "console":
+                this.#view.clearConsole();
+                return;
+            case "writers":
+                this.#forgetWriters();
+                return;
+        }
+        if (this.#job !== null) {
+            this.#view.complain(this.#busyMessage());
             return;
         }
-        if (widget === "list") {
-            this.actOnCandidate(action, item, this.viewResponder());
+        if (chosen.widget === "list") {
+            this.#actOnCandidate(chosen.action, chosen.item, this.#viewResponder());
         } else {
-            this.actOnLock(action, item, this.viewResponder());
+            this.#actOnLock(chosen.action, chosen.item, this.#viewResponder());
         }
     }
 
@@ -70,91 +82,96 @@ export class Trainer {
             respond.error((e as CommandError).message);
             return;
         }
-        if (this.job !== null) {
-            this.answerWhileBusy(command, respond);
+        if (this.#job !== null) {
+            this.#answerWhileBusy(command, respond);
             return;
         }
-        await this.perform(command, respond);
+        await this.#perform(command, respond);
     }
 
     dispose(): void {
-        this.job?.cancel();
-        this.releaseLocks();
+        this.#job?.cancel();
+        this.#releaseLocks();
     }
 
-    private actOnCandidate(action: "keep" | "discard" | "lock" | "memory", item: string, respond: Responder): void {
-        const candidate = this.view.listed.find(listed => listed.id === item);
+    #forgetWriters(): void {
+        this.#writeLog.writers.clear();
+        this.#view.clearWriters();
+    }
+
+    #actOnCandidate(action: "keep" | "discard" | "lock" | "memory", item: string, respond: Responder): void {
+        const candidate = this.#view.listed.find(listed => listed.id === item);
         if (candidate === undefined) {
             respond.error("That row is no longer listed.");
             return;
         }
         switch (action) {
             case "keep":
-                this.narrowTo(this.current!.only([candidate]), `keep row ${candidate.row}`, respond);
+                this.#narrowTo(this.#current!.only([candidate]), `keep row ${candidate.row}`, respond);
                 break;
             case "discard":
-                this.narrowTo(this.current!.without([candidate]), `discard row ${candidate.row}`, respond);
+                this.#narrowTo(this.#current!.without([candidate]), `discard row ${candidate.row}`, respond);
                 break;
             case "lock":
-                this.lockRows([candidate], null, respond);
+                this.#lockRows([candidate], null, respond);
                 break;
             case "memory":
-                this.view.showMemory(candidate.address);
+                this.#view.showMemory(candidate.address);
                 break;
         }
     }
 
-    private actOnLock(action: "unlock" | "memory", item: string, respond: Responder): void {
-        const lock = this.ownLocks().find(own => String(own.slot) === item);
+    #actOnLock(action: "unlock" | "memory", item: string, respond: Responder): void {
+        const lock = this.#ownLocks().find(own => String(own.slot) === item);
         if (lock === undefined) {
             return;
         }
         if (action === "unlock") {
-            this.unlock([lock], respond);
+            this.#unlock([lock], respond);
         } else {
-            this.view.showMemory(lock.address);
+            this.#view.showMemory(lock.address);
         }
     }
 
-    private answerWhileBusy(command: Command, respond: Responder): void {
+    #answerWhileBusy(command: Command, respond: Responder): void {
         if (command.kind === "stop") {
-            this.job!.cancel();
+            this.#job!.cancel();
             respond.output("Stopping…");
         } else {
-            respond.error(this.busyMessage());
+            respond.error(this.#busyMessage());
         }
     }
 
-    private async perform(command: Command, respond: Responder): Promise<void> {
+    async #perform(command: Command, respond: Responder): Promise<void> {
         switch (command.kind) {
             case "value":
-                if (this.current === null) {
-                    await this.firstScan(command.text, respond);
+                if (this.#current === null) {
+                    await this.#firstScan(command.text, respond);
                 } else {
-                    await this.narrow(command.text, valueTest(queryFor(command.text, this.typesInPlay())), respond);
+                    await this.#narrow(command.text, valueTest(queryFor(command.text, this.#typesInPlay())), respond);
                 }
                 break;
             case "compare":
-                await this.narrow(describeRelation(command.relation, command.amount), relationTest(command.relation, command.amount),
+                await this.#narrow(describeRelation(command.relation, command.amount), relationTest(command.relation, command.amount),
                     respond);
                 break;
             case "set":
-                await this.set(command.rows, command.value, respond);
+                await this.#set(command.rows, command.value, respond);
                 break;
             case "lock":
-                this.lockRows(this.rowsOf(command.rows, respond), command.value, respond);
+                this.#lockRows(this.#rowsOf(command.rows, respond), command.value, respond);
                 break;
             case "unlock":
-                this.unlock(this.locksOf(command.locks, respond), respond);
+                this.#unlock(this.#locksOf(command.locks, respond), respond);
                 break;
             case "undo":
-                this.undo(respond);
+                this.#undo(respond);
                 break;
             case "reset":
-                this.reset(respond);
+                this.#reset(respond);
                 break;
             case "list":
-                await this.refresh(respond);
+                await this.#refresh(respond);
                 break;
             case "stop":
                 respond.output("Nothing is running.");
@@ -165,14 +182,14 @@ export class Trainer {
         }
     }
 
-    private narrowTo(set: CandidateSet, label: string, respond: Responder): void {
-        const before = this.current!.count;
-        this.steps.push({ set, label });
-        respond.output(`${label}: ${grouped(before)} → ${grouped(set.count)}. ${this.guidance(set)}`);
-        this.showCandidates();
+    #narrowTo(set: CandidateSet, label: string, respond: Responder): void {
+        const before = this.#current!.count;
+        this.#steps.push({ set, label });
+        respond.output(`${label}: ${grouped(before)} → ${grouped(set.count)}. ${this.#guidance(set)}`);
+        this.#showCandidates();
     }
 
-    private lockRows(rows: ListedCandidate[], text: string | null, respond: Responder): void {
+    #lockRows(rows: ListedCandidate[], text: string | null, respond: Responder): void {
         for (const candidate of rows) {
             const value = (text !== null) ? Number(text) : candidate.value;
             if (!fits(candidate.type, value)) {
@@ -181,27 +198,27 @@ export class Trainer {
             }
             try {
                 const request = { address: candidate.address, type: candidate.type, value, where: candidate.where };
-                const lock = watchpointLocks.lock(request, this.writeLog);
+                const lock = watchpointLocks.lock(request, this.#writeLog);
                 const what = `row ${candidate.row} (${candidate.address}, ${candidate.type.name})`;
-                respond.output(`Lock ${lock.slot + 1} holds ${what} at ${value}. ${this.freeWatchpoints()}`);
+                respond.output(`Lock ${lock.slot + 1} holds ${what} at ${value}. ${this.#freeWatchpoints()}`);
             } catch (e) {
                 respond.error((e as Error).message);
                 break;
             }
         }
-        this.showLocks();
+        this.#showLocks();
     }
 
-    private unlock(locks: Lock[], respond: Responder): void {
+    #unlock(locks: Lock[], respond: Responder): void {
         for (const lock of locks) {
             watchpointLocks.unlock(lock);
             respond.output(`Lock ${lock.slot + 1} released ${lock.address} after undoing ${grouped(lock.undone)} writes.`);
         }
-        this.showLocks();
+        this.#showLocks();
     }
 
-    private async firstScan(text: string, respond: Responder): Promise<void> {
-        const types = this.settings.types;
+    async #firstScan(text: string, respond: Responder): Promise<void> {
+        const types = this.#settings.types;
         const query = queryFor(text, types);
         if (query.targets.length === 0) {
             respond.error(`${text} cannot be stored as ${typeList(types)}. Choose other types in the settings.`);
@@ -209,8 +226,8 @@ export class Trainer {
         }
         respond.output(`Looking for ${text} as ${typeList(query.targets.map(target => target.type))}…`);
         const started = Date.now();
-        const set = await this.run(respond, async job => {
-            const scan = await scanMemory(query.targets, this.settings.alignment, job);
+        const set = await this.#run(respond, async job => {
+            const scan = await scanMemory(query.targets, this.#settings.alignment, job);
             const found = await readCandidates(scan.blocks, valueTest(query), job);
             respond.output(`Scanned ${formatBytes(scan.scannedBytes)} in ${seconds(Date.now() - started)}.`);
             return found;
@@ -218,29 +235,29 @@ export class Trainer {
         if (set === null) {
             return;
         }
-        this.regionNames = null;
-        this.steps.push({ set, label: text });
-        respond.output(`${grouped(set.count)} candidates${breakdown(set)}. ${this.guidance(set)}`);
-        this.showCandidates();
+        this.#regionNames = null;
+        this.#steps.push({ set, label: text });
+        respond.output(`${grouped(set.count)} candidates${breakdown(set)}. ${this.#guidance(set)}`);
+        this.#showCandidates();
     }
 
-    private async narrow(label: string, test: CandidateTest, respond: Responder): Promise<void> {
-        const current = this.current;
+    async #narrow(label: string, test: CandidateTest, respond: Responder): Promise<void> {
+        const current = this.#current;
         if (current === null) {
             respond.error("Type the value you see first, such as 100.");
             return;
         }
-        const set = await this.run(respond, job => readCandidates(current.blocks, test, job));
+        const set = await this.#run(respond, job => readCandidates(current.blocks, test, job));
         if (set === null) {
             return;
         }
-        this.steps.push({ set, label });
-        respond.output(`${label}: ${grouped(current.count)} → ${grouped(set.count)}${breakdown(set)}. ${this.guidance(set)}`);
-        this.showCandidates();
+        this.#steps.push({ set, label });
+        respond.output(`${label}: ${grouped(current.count)} → ${grouped(set.count)}${breakdown(set)}. ${this.#guidance(set)}`);
+        this.#showCandidates();
     }
 
-    private async set(rows: Rows, text: string, respond: Responder): Promise<void> {
-        const targets = this.rowsOf(rows, respond);
+    async #set(rows: Rows, text: string, respond: Responder): Promise<void> {
+        const targets = this.#rowsOf(rows, respond);
         if (targets.length === 0) {
             return;
         }
@@ -251,10 +268,10 @@ export class Trainer {
                 respond.error(`Row ${candidate.row} is ${candidate.type.name} and cannot hold ${text}.`);
                 continue;
             }
-            const lock = this.ownLocks().find(own => own.address.equals(candidate.address) && own.type === candidate.type);
+            const lock = this.#ownLocks().find(own => own.address.equals(candidate.address) && own.type === candidate.type);
             try {
                 if (lock !== undefined) {
-                    watchpointLocks.lock({ ...lock, value }, this.writeLog);
+                    watchpointLocks.lock({ ...lock, value }, this.#writeLog);
                 } else {
                     candidate.type.writeAt(candidate.address, value);
                 }
@@ -266,64 +283,63 @@ export class Trainer {
         if (written !== 0) {
             respond.output(`Wrote ${text} to ${written === 1 ? "1 address" : `${written} addresses`}.`);
         }
-        this.showLocks();
-        await this.refresh(respond);
+        this.#showLocks();
+        await this.#refresh(respond);
     }
 
-    private undo(respond: Responder): void {
-        if (this.steps.length <= 1) {
-            respond.error((this.steps.length === 0) ? "There is nothing to undo." : "That was the first scan. Type reset to start over.");
+    #undo(respond: Responder): void {
+        if (this.#steps.length <= 1) {
+            respond.error((this.#steps.length === 0) ? "There is nothing to undo." : "That was the first scan. Type reset to start over.");
             return;
         }
-        const undone = this.steps.pop()!;
-        respond.output(`Undid ${undone.label}: back to ${grouped(this.current!.count)} candidates.`);
-        this.showCandidates();
+        const undone = this.#steps.pop()!;
+        respond.output(`Undid ${undone.label}: back to ${grouped(this.#current!.count)} candidates.`);
+        this.#showCandidates();
     }
 
-    private reset(respond: Responder): void {
-        this.releaseLocks();
-        this.steps = [];
-        this.regionNames = null;
-        this.writeLog.writers.clear();
-        this.view.clearCandidates();
-        this.view.clearWriters();
-        this.showLocks();
+    #reset(respond: Responder): void {
+        this.#releaseLocks();
+        this.#steps = [];
+        this.#regionNames = null;
+        this.#forgetWriters();
+        this.#view.clearCandidates();
+        this.#showLocks();
         respond.output("Starting over. Type the value you see.");
     }
 
-    private async refresh(respond: Responder): Promise<void> {
-        const current = this.current;
+    async #refresh(respond: Responder): Promise<void> {
+        const current = this.#current;
         if (current === null) {
             respond.output("No candidates yet. Type the value you see.");
             return;
         }
-        const set = await this.run(respond, job => readCandidates(current.blocks, () => true, job));
+        const set = await this.#run(respond, job => readCandidates(current.blocks, () => true, job));
         if (set !== null) {
-            this.steps[this.steps.length - 1].set = set;
-            this.showCandidates();
+            this.#steps[this.#steps.length - 1].set = set;
+            this.#showCandidates();
         }
     }
 
-    private busyMessage(): string {
-        return `Still ${phaseNames[this.jobPhase]} (${Math.floor(this.job!.progress * 100)}%). Type stop to stop.`;
+    #busyMessage(): string {
+        return `Still ${phaseNames[this.#jobPhase]} (${Math.floor(this.#job!.progress * 100)}%). Type stop to stop.`;
     }
 
-    private viewResponder(): Responder {
-        return { output: text => this.view.say(text), error: text => this.view.complain(text) };
+    #viewResponder(): Responder {
+        return { output: text => this.#view.say(text), error: text => this.#view.complain(text) };
     }
 
-    private releaseLocks(): void {
-        for (const lock of this.ownLocks()) {
+    #releaseLocks(): void {
+        for (const lock of this.#ownLocks()) {
             watchpointLocks.unlock(lock);
         }
     }
 
-    private typesInPlay(): ValueType[] {
-        return [...new Set(this.current!.blocks.map(block => block.type))];
+    #typesInPlay(): ValueType[] {
+        return [...new Set(this.#current!.blocks.map(block => block.type))];
     }
 
-    private rowsOf(rows: Rows, respond: Responder): ListedCandidate[] {
-        const count = this.current?.count ?? 0;
+    #rowsOf(rows: Rows, respond: Responder): ListedCandidate[] {
+        const count = this.#current?.count ?? 0;
         if (count === 0 || count > listLimit) {
             respond.error((count === 0)
                 ? "There are no candidates."
@@ -331,19 +347,19 @@ export class Trainer {
             return [];
         }
         if (rows === "listed") {
-            return this.view.listed;
+            return this.#view.listed;
         }
-        const chosen = rows.map(row => this.view.listed[row - 1]);
+        const chosen = rows.map(row => this.#view.listed[row - 1]);
         const missing = rows.filter((_row, index) => chosen[index] === undefined);
         if (missing.length !== 0) {
-            respond.error(`There is no row ${missing.join(", ")}; rows run from 1 to ${this.view.listed.length}.`);
+            respond.error(`There is no row ${missing.join(", ")}; rows run from 1 to ${this.#view.listed.length}.`);
             return [];
         }
         return chosen;
     }
 
-    private locksOf(selection: LockSelection, respond: Responder): Lock[] {
-        const own = this.ownLocks();
+    #locksOf(selection: LockSelection, respond: Responder): Lock[] {
+        const own = this.#ownLocks();
         if (selection === "all") {
             if (own.length === 0) {
                 respond.output("Nothing is locked.");
@@ -357,38 +373,38 @@ export class Trainer {
         return chosen;
     }
 
-    private freeWatchpoints(): string {
+    #freeWatchpoints(): string {
         return `${watchpointLocks.free} of ${watchpointLocks.capacity} watchpoints left.`;
     }
 
-    private async run(respond: Responder, work: (job: Job) => Promise<CandidateSet>): Promise<CandidateSet | null> {
+    async #run(respond: Responder, work: (job: Job) => Promise<CandidateSet>): Promise<CandidateSet | null> {
         const job = new Job((phase, fraction) => {
-            this.jobPhase = phase;
-            this.view.showProgress(phase, fraction);
+            this.#jobPhase = phase;
+            this.#view.showProgress(phase, fraction);
         });
-        this.job = job;
-        this.jobPhase = "scanning";
+        this.#job = job;
+        this.#jobPhase = "scanning";
         try {
             return await work(job);
         } catch (e) {
             if (e instanceof Cancelled) {
                 respond.output("Stopped. Nothing changed.");
-                this.showCandidates();
+                this.#showCandidates();
                 return null;
             }
             if (e instanceof TooManyMatches) {
                 respond.error(`More than ${grouped(matchLimit)} places match. Wait until the value changes and type the new one, `
                     + "or look for fewer types in the settings.");
-                this.showCandidates();
+                this.#showCandidates();
                 return null;
             }
             throw e;
         } finally {
-            this.job = null;
+            this.#job = null;
         }
     }
 
-    private guidance(set: CandidateSet): string {
+    #guidance(set: CandidateSet): string {
         if (set.count === 0) {
             return "Type undo to go back a step, or reset to start over.";
         }
@@ -400,29 +416,29 @@ export class Trainer {
             : "Listed below: set 999 changes them all, set 2 999 changes row 2, lock 2 holds it.";
     }
 
-    private showCandidates(): void {
-        const current = this.current;
+    #showCandidates(): void {
+        const current = this.#current;
         if (current === null) {
-            this.view.clearCandidates();
+            this.#view.clearCandidates();
             return;
         }
-        this.view.showCandidates(current, this.previous, () => this.regionNames ??= new RegionNames());
+        this.#view.showCandidates(current, this.#previous, () => this.#regionNames ??= new RegionNames());
     }
 
-    private showLocks(): void {
-        this.view.showLocks(this.ownLocks(), [...this.writeLog.writers.values()]);
+    #showLocks(): void {
+        this.#view.showLocks(this.#ownLocks(), [...this.#writeLog.writers.values()]);
     }
 
-    private ownLocks(): Lock[] {
-        return watchpointLocks.active.filter(lock => lock.log === this.writeLog);
+    #ownLocks(): Lock[] {
+        return watchpointLocks.active.filter(lock => lock.log === this.#writeLog);
     }
 
-    private get current(): CandidateSet | null {
-        return this.steps.at(-1)?.set ?? null;
+    get #current(): CandidateSet | null {
+        return this.#steps.at(-1)?.set ?? null;
     }
 
-    private get previous(): CandidateSet | null {
-        return this.steps.at(-2)?.set ?? null;
+    get #previous(): CandidateSet | null {
+        return this.#steps.at(-2)?.set ?? null;
     }
 }
 

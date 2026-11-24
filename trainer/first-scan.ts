@@ -62,14 +62,16 @@ function searchFor(target: TypeTarget, alignment: Alignment): Search {
 }
 
 class WordSearch implements Search {
-    private readonly lanes: { byteOffset: number; values: NativePointer[]; mask: NativePointer }[] = [];
+    readonly #type: ValueType;
+    readonly #lanes: { byteOffset: number; values: NativePointer[]; mask: NativePointer }[] = [];
 
-    constructor(private readonly type: ValueType, bits: MaskedBits[]) {
+    constructor(type: ValueType, bits: MaskedBits[]) {
+        this.#type = type;
         const laneCount = Process.pointerSize / type.size;
         for (let lane = 0; lane !== laneCount; lane++) {
             const shift = BigInt(lane * type.size * 8);
             for (const { values, mask } of bits) {
-                this.lanes.push({
+                this.#lanes.push({
                     byteOffset: lane * type.size,
                     values: values.map(value => pointerFrom(value << shift)),
                     mask: pointerFrom(mask << shift),
@@ -79,24 +81,26 @@ class WordSearch implements Search {
     }
 
     scan(slice: Slice, collector: OffsetCollector): void {
-        for (const { byteOffset, values, mask } of this.lanes) {
+        for (const { byteOffset, values, mask } of this.#lanes) {
             const matches = Memory.findPointers(slice.ranges, values, { mask });
-            collector.collect(slice, this.type, matches, byteOffset);
+            collector.collect(slice, this.#type, matches, byteOffset);
         }
     }
 }
 
 class BytePatternSearch implements Search {
-    private readonly patterns: string[];
+    readonly #type: ValueType;
+    readonly #patterns: string[];
 
-    constructor(private readonly type: ValueType, bits: MaskedBits[]) {
-        this.patterns = bits.flatMap(({ values, mask }) => values.map(value => bytePattern(value, mask, type.size)));
+    constructor(type: ValueType, bits: MaskedBits[]) {
+        this.#type = type;
+        this.#patterns = bits.flatMap(({ values, mask }) => values.map(value => bytePattern(value, mask, type.size)));
     }
 
     scan(slice: Slice, collector: OffsetCollector): void {
-        for (const pattern of this.patterns) {
+        for (const pattern of this.#patterns) {
             for (const range of slice.ranges) {
-                collector.collect(slice, this.type, Memory.scanSync(range.base, range.size, pattern), 0);
+                collector.collect(slice, this.#type, Memory.scanSync(range.base, range.size, pattern), 0);
             }
         }
     }
@@ -119,7 +123,7 @@ function littleEndianHex(value: bigint, size: number): string {
 }
 
 class OffsetCollector {
-    private readonly builders = new Map<Piece, Map<ValueType, OffsetBuilder>>();
+    readonly #builders = new Map<Piece, Map<ValueType, OffsetBuilder>>();
     hitCount = 0;
 
     collect(slice: Slice, type: ValueType, matches: { address: NativePointer }[], byteOffset: number): void {
@@ -135,7 +139,7 @@ class OffsetCollector {
                 runEnd = run.piece.low + run.offset + run.size;
                 builder = null;
             }
-            builder ??= this.builderFor(run.piece, type);
+            builder ??= this.#builderFor(run.piece, type);
             builder.push(low - run.piece.low + byteOffset);
         }
         this.hitCount += matches.length;
@@ -143,7 +147,7 @@ class OffsetCollector {
 
     blocks(): OffsetBlock[] {
         const blocks: OffsetBlock[] = [];
-        for (const [piece, byType] of this.builders) {
+        for (const [piece, byType] of this.#builders) {
             for (const [type, builder] of byType) {
                 blocks.push({ piece, type, offsets: builder.sorted() });
             }
@@ -151,11 +155,11 @@ class OffsetCollector {
         return blocks;
     }
 
-    private builderFor(piece: Piece, type: ValueType): OffsetBuilder {
-        let byType = this.builders.get(piece);
+    #builderFor(piece: Piece, type: ValueType): OffsetBuilder {
+        let byType = this.#builders.get(piece);
         if (byType === undefined) {
             byType = new Map();
-            this.builders.set(piece, byType);
+            this.#builders.set(piece, byType);
         }
         let builder = byType.get(type);
         if (builder === undefined) {
@@ -167,20 +171,20 @@ class OffsetCollector {
 }
 
 class OffsetBuilder {
-    private storage = new Uint32Array(256);
-    private count = 0;
+    #storage = new Uint32Array(256);
+    #count = 0;
 
     push(offset: number): void {
-        if (this.count === this.storage.length) {
-            const grown = new Uint32Array(this.storage.length * 2);
-            grown.set(this.storage);
-            this.storage = grown;
+        if (this.#count === this.#storage.length) {
+            const grown = new Uint32Array(this.#storage.length * 2);
+            grown.set(this.#storage);
+            this.#storage = grown;
         }
-        this.storage[this.count++] = offset;
+        this.#storage[this.#count++] = offset;
     }
 
     sorted(): Uint32Array {
-        return this.storage.slice(0, this.count).sort();
+        return this.#storage.slice(0, this.#count).sort();
     }
 }
 

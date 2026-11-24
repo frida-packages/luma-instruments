@@ -6,15 +6,17 @@ export interface Console {
 }
 
 export class FakeWidgets {
-    private readonly tables = new Map<string, Map<string, Cells>>();
-    private readonly counters = new Map<string, number>();
-    private hexBaseAddress: unknown = null;
+    readonly #tables = new Map<string, Map<string, Cells>>();
+    readonly #counters = new Map<string, number>();
+    #hexBaseAddress: unknown = null;
     readonly appended: string[] = [];
+    readonly cleared: string[] = [];
+    readonly disabledActions = new Set<string>();
 
     context(): CustomInstrumentContext {
         return {
             emit: (value: unknown) => console.log("emit", JSON.stringify(value)),
-            widget: (id: string) => this.widget(id),
+            widget: (id: string) => this.#widget(id),
         } as unknown as CustomInstrumentContext;
     }
 
@@ -50,11 +52,11 @@ export class FakeWidgets {
     }
 
     counter(id: string): number {
-        return this.counters.get(id) ?? 0;
+        return this.#counters.get(id) ?? 0;
     }
 
     listRowId(row: string): string {
-        return [...this.tables.get("list")!].find(([, cells]) => cells.row === row)![0];
+        return [...this.#tables.get("list")!].find(([, cells]) => cells.row === row)![0];
     }
 
     async act(handle: CustomInstrumentHandle, widget: string, action: string, item: string): Promise<void> {
@@ -62,20 +64,25 @@ export class FakeWidgets {
         await handle.onAction!({ widget, action, item } as CustomInstrumentAction);
     }
 
+    async actOnWidget(handle: CustomInstrumentHandle, widget: string, action: string): Promise<void> {
+        console.log(`action ${widget}.${action}`);
+        await handle.onAction!({ widget, action } as CustomInstrumentAction);
+    }
+
     hexBase(): unknown {
-        return this.hexBaseAddress;
+        return this.#hexBaseAddress;
     }
 
     tableRows(id: string): Cells[] {
-        return [...this.tables.get(id)!.values()];
+        return [...this.#tables.get(id)!.values()];
     }
 
-    private widget(id: string): unknown {
+    #widget(id: string): unknown {
         const rows = new Map<string, Cells>();
-        this.tables.set(id, rows);
+        this.#tables.set(id, rows);
         return {
             setCounter: ({ value, unit, delta }: { value: number; unit?: string; delta?: number }) => {
-                this.counters.set(id, value);
+                this.#counters.set(id, value);
                 if (unit === "candidates") {
                     console.log(`  ${id}: ${value} ${unit} (${delta})`);
                 }
@@ -85,7 +92,7 @@ export class FakeWidgets {
                 console.log(`  ${id} | ${Object.values(cells).join(" | ")}`);
             },
             setHex: ({ bytes, baseAddress }: { bytes: ArrayBuffer; baseAddress: unknown }) => {
-                this.hexBaseAddress = baseAddress;
+                this.#hexBaseAddress = baseAddress;
                 console.log(`  ${id}: ${bytes.byteLength} bytes at ${baseAddress}`);
             },
             appendOutput: (text: string) => {
@@ -93,9 +100,17 @@ export class FakeWidgets {
                 console.log(`  ${id}: ${text}`);
             },
             appendError: (text: string) => console.log(`  ${id} error: ${text}`),
+            setActionEnabled: (action: string, enabled: boolean) => {
+                if (enabled) {
+                    this.disabledActions.delete(`${id}.${action}`);
+                } else {
+                    this.disabledActions.add(`${id}.${action}`);
+                }
+            },
             clear: () => {
+                this.cleared.push(id);
                 rows.clear();
-                this.counters.delete(id);
+                this.#counters.delete(id);
             },
         };
     }

@@ -1,5 +1,5 @@
 export type ValueTypeName = "byte" | "int16" | "int32" | "int64" | "float" | "double";
-export type TypeSelection = CustomInstrumentFeatureMap["types"];
+export type TypeSelection = CustomInstrumentSettingMap["types"];
 export type Numeric = "integer" | "real";
 export type ValueArray = Uint8Array | Int16Array | Int32Array | Float32Array | Float64Array;
 

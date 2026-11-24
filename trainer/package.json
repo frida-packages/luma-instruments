@@ -3,10 +3,11 @@
   "displayName": "Trainer",
   "version": "1.0.0",
   "main": "main.ts",
+  "engines": { "luma": ">=4.0.0" },
   "luma": {
     "icon": { "kind": "symbolic", "value": "scope" },
-    "compatibility": { "platforms": ["darwin", "linux", "windows"] },
-    "features": [
+    "compatibility": { "platforms": ["windows", "darwin", "linux"] },
+    "settings": [
       {
         "id": "types",
         "name": "Look for values stored as",
@@ -38,94 +39,89 @@
     "widgets": [
       {
         "id": "console",
-        "name": "Trainer",
-        "kind": {
-          "kind": "console",
-          "config": {
-            "prompt": ">",
-            "placeholder": "The value you see, e.g. 100, or help",
-            "runButtonLabel": "Scan",
-            "maxEntries": 500
-          }
+        "kind": "console",
+        "config": {
+          "maxEntries": 500,
+          "prompt": ">",
+          "placeholder": "The value you see, e.g. 100, or help",
+          "runButtonLabel": "Scan"
         },
+        "actions": [{ "id": "clear", "name": "Clear" }],
         "persistence": "none"
       },
       {
         "id": "candidates",
         "name": "Candidates",
-        "kind": { "kind": "counter", "config": {} },
+        "kind": "counter",
+        "config": {},
         "persistence": "none"
       },
       {
         "id": "list",
         "name": "Candidate addresses",
-        "kind": {
-          "kind": "table",
-          "config": {
-            "columns": [
-              { "id": "row", "name": "#", "alignment": "trailing" },
-              { "id": "address", "name": "Address", "alignment": "leading" },
-              { "id": "type", "name": "Type", "alignment": "leading" },
-              { "id": "value", "name": "Value", "alignment": "trailing" },
-              { "id": "previous", "name": "Previous", "alignment": "trailing" },
-              { "id": "where", "name": "Where", "alignment": "leading" }
-            ],
-            "actions": [
-              { "id": "keep", "name": "Keep only this" },
-              { "id": "discard", "name": "Discard" },
-              { "id": "lock", "name": "Lock" },
-              { "id": "memory", "name": "Show memory" }
-            ],
-            "maxRows": 100
-          }
+        "kind": "table",
+        "config": {
+          "columns": [
+            { "id": "row", "name": "#", "alignment": "trailing" },
+            { "id": "address", "name": "Address", "alignment": "leading" },
+            { "id": "type", "name": "Type", "alignment": "leading" },
+            { "id": "value", "name": "Value", "alignment": "trailing" },
+            { "id": "previous", "name": "Previous", "alignment": "trailing" },
+            { "id": "where", "name": "Where", "alignment": "leading" }
+          ],
+          "rowActions": [
+            { "id": "keep", "name": "Keep only this" },
+            { "id": "discard", "name": "Discard" },
+            { "id": "lock", "name": "Lock" },
+            { "id": "memory", "name": "Show memory" }
+          ],
+          "maxRows": 100
         },
         "persistence": "none"
       },
       {
         "id": "locks",
         "name": "Locked values",
-        "kind": {
-          "kind": "table",
-          "config": {
-            "columns": [
-              { "id": "lock", "name": "#", "alignment": "trailing" },
-              { "id": "address", "name": "Address", "alignment": "leading" },
-              { "id": "type", "name": "Type", "alignment": "leading" },
-              { "id": "value", "name": "Held at", "alignment": "trailing" },
-              { "id": "blocked", "name": "Writes undone", "alignment": "trailing" },
-              { "id": "where", "name": "Where", "alignment": "leading" }
-            ],
-            "actions": [
-              { "id": "unlock", "name": "Unlock" },
-              { "id": "memory", "name": "Show memory" }
-            ],
-            "maxRows": 8
-          }
+        "kind": "table",
+        "config": {
+          "columns": [
+            { "id": "lock", "name": "#", "alignment": "trailing" },
+            { "id": "address", "name": "Address", "alignment": "leading" },
+            { "id": "type", "name": "Type", "alignment": "leading" },
+            { "id": "value", "name": "Held at", "alignment": "trailing" },
+            { "id": "blocked", "name": "Writes undone", "alignment": "trailing" },
+            { "id": "where", "name": "Where", "alignment": "leading" }
+          ],
+          "rowActions": [
+            { "id": "unlock", "name": "Unlock" },
+            { "id": "memory", "name": "Show memory" }
+          ],
+          "maxRows": 8
         },
         "persistence": "none"
       },
       {
         "id": "writers",
         "name": "Code that writes locked values",
-        "kind": {
-          "kind": "table",
-          "config": {
-            "columns": [
-              { "id": "code", "name": "Code", "alignment": "leading" },
-              { "id": "function", "name": "Function", "alignment": "leading" },
-              { "id": "writes", "name": "Writes", "alignment": "trailing" },
-              { "id": "target", "name": "Writes to", "alignment": "leading" }
-            ],
-            "actions": [],
-            "maxRows": 200
-          }
+        "kind": "table",
+        "config": {
+          "columns": [
+            { "id": "code", "name": "Code", "alignment": "leading" },
+            { "id": "function", "name": "Function", "alignment": "leading" },
+            { "id": "writes", "name": "Writes", "alignment": "trailing" },
+            { "id": "target", "name": "Writes to", "alignment": "leading" }
+          ],
+          "rowActions": [],
+          "maxRows": 200
         },
+        "actions": [{ "id": "clear", "name": "Clear" }],
         "persistence": "none"
       },
       {
         "id": "memory",
         "name": "Memory",
-        "kind": { "kind": "hex", "config": { "maxBytes": 4096 } },
+        "kind": "hex",
+        "config": { "maxBytes": 4096 },
         "persistence": "none"
       }
     ],
