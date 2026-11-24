@@ -1,7 +1,7 @@
 {
   "name": "mesh-finder",
   "displayName": "Mesh Finder",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "main": "main.ts",
   "engines": { "luma": ">=4.0.0" },
   "luma": {
