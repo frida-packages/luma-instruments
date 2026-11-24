@@ -48,14 +48,15 @@ folder.
   "name": "module-list",
   "version": "1.0.0",
   "main": "main.ts",
-  "engines": { "luma": ">=3.0.0" },
+  "engines": { "luma": ">=4.0.0" },
   "luma": {
     "icon": { "kind": "symbolic", "value": "memory" },
     "widgets": [
       {
         "id": "modules",
         "name": "Modules",
-        "kind": { "kind": "view", "config": { "class": "ModuleListView" } },
+        "kind": "view",
+        "config": { "class": "ModuleListView" },
         "persistence": "session"
       }
     ]
@@ -170,7 +171,7 @@ a `Float`, a string a `String`, `true` and `false` themselves, and `null`
 
 The Smalltalk of an instrument is exactly its files whose path ends in `.st`,
 in the instrument's folder or below it. Luma reads nothing else in the folder
-into the image. From Luma 3.0.1 the instrument editor colors these files the
+into the image. From Luma 4.0.0 the instrument editor colors these files the
 way the Playground does and completes in method bodies, offering the
 instrument's own classes, selectors and instance variables beside the
 image's. Luma 3.0.0 has that only in the Playground and shows these files as
@@ -243,10 +244,15 @@ A view is a widget like any other in `luma.widgets`, of kind `view`:
 {
   "id": "plot",
   "name": "Plot",
-  "kind": { "kind": "view", "config": { "class": "BytePlotView", "height": 300 } },
+  "kind": "view",
+  "config": { "class": "BytePlotView", "height": 300 },
   "persistence": "session"
 }
 ```
+
+This is the form Luma 4.0.0 reads, with `kind` and `config` side by side; see
+[Widgets](instruments.md#widgets) for the nested form Luma 3.0.0 read. The
+examples here declare `"engines": { "luma": ">=4.0.0" }` for that reason.
 
 - `class` is the name of a class the instrument's `.st` files define. It is
   not checked when the folder is linked: a missing class shows in the widget as
@@ -263,17 +269,18 @@ Luma makes one object of the class for each instance of the instrument and
 each view widget, so two view widgets naming the same class get one object
 each.
 
-An instrument with a view widget or any `.st` file must say that it needs Luma
-3.0.0 or newer, or it cannot be published:
+An instrument with a view widget, or any other widget, must say that it needs
+Luma 4.0.0 or newer, or it cannot be published:
 
 ```json
-"engines": { "luma": ">=3.0.0" }
+"engines": { "luma": ">=4.0.0" }
 ```
 
 The value has to be exactly `>=` followed by `MAJOR.MINOR.PATCH`, without
 spaces; anything else makes Luma refuse the `package.json`. When a view widget
-is added in Luma's own editor, or a `.st` file is added or renamed into the
-instrument there, Luma writes this line itself. An edit made on disk is taken as
+is added in Luma's own editor, Luma writes this line itself, and raises it
+when it says less; a `.st` file added or renamed into an instrument with no
+widget there raises it to `>=3.0.0`. An edit made on disk is taken as
 it is, so a folder edited elsewhere has to say so itself.
 
 ## What a view class implements
@@ -295,7 +302,9 @@ class does not implement is skipped.
 
 `state:data:` is always sent once after `openIn:`, with `nil` and `nil` when
 there is no state yet, and it is sent with `nil` and `nil` again whenever the
-agent calls `clear()`. Handle `nil` there.
+agent calls `clear()`. Handle `nil` there. Luma never clears a view on its own;
+a view widget that should have a Clear button declares it as one of its
+`actions`, and the agent calls `clear()` when it is chosen.
 
 A view starts the first time its widget is shown, not when the instrument
 starts. Once started, it keeps running while its widget is out of sight and
@@ -329,21 +338,28 @@ latest 64 of them, and delivered after the state when it starts.
 | `changed` | Has the widget collect the `<gtView>` methods again and redraw what they show. |
 | `send: aValue` | Sends `aValue` to the agent's `onViewMessage`. Answers whether it was sent. |
 | `send: aValue data: aByteArray` | The same, with binary data, which has to be a `ByteArray`. |
-| `canSend` | Whether `send:` reaches the agent right now. |
+| `canSend` | Whether `send:` reaches the agent right now: false until the instance's `create` has resolved. |
+| `spawn: anObject` | Opens `anObject` in the column beside the view, as opening a row opens what its `send:` answers. Answers whether the widget was on screen to open it. Needs Luma 4.0.0; see [Opening what was clicked](#opening-what-was-clicked). |
 | `fork: aBlock` | Runs `aBlock` in a new process that stops with the view. An error in it stops the view. It has no deadline. |
 | `instanceID` | The instrument instance's id, as a string. |
 | `widgetID` | The widget's `id` from `package.json`. |
-| `widgetName` | The widget's `name`. |
+| `widgetName` | The widget's `name`, or its id when it has none. |
 
 `aValue` for `send:` has to be something STON can write as JSON: a
 `Dictionary` with string keys, an `Array`, a `String`, a number, `true`,
 `false` or `nil`, nested as deep as needed.
 
-`send:` answers `false` without sending when `canSend` is false: in your own
-Luma, while the instrument is not attached to its process; in a lab, for a
-member who is not an owner (see [Labs](#labs)). A message over the
-[limits](#limits) raises an error instead, which stops the view unless it is
-handled.
+`send:` answers `false` without sending when `canSend` is false: until the
+instance's `create` has resolved; while the instance is disabled, after its
+load failed or its `create` threw, and while it is being loaded again; and in
+a lab, for a member who is not an owner (see [Labs](#labs)). A message over
+the [limits](#limits) raises an error instead, which stops the view unless it
+is handled.
+
+A view's own drawing and interaction run in Luma and need no agent: it draws,
+pans, zooms and opens what is clicked before `create` has resolved, while the
+instance is disabled, and with no process attached. Only `send:` waits for the
+agent.
 
 Anything the view starts belongs to it and stops with it: canvases,
 subscriptions, `LumaSynth` voices, `LumaTune`s, and every process it forks,
@@ -393,19 +409,33 @@ The builders a view can start from:
 | `aView forward` | Another object's view | `object:`, `view:` |
 
 Every builder takes `title:` and `priority:`. Longer lists, tables and trees
-can be filtered in the widget; selecting a row opens what `send:` answers for
-it, or the item itself, in an inspector. There the object's own views are
-collected the way Glamorous Toolkit collects them: one that raises or answers
-no view shows its error in its place, and nothing stops.
+can be filtered in the widget; double-clicking a row opens what `send:`
+answers for it, or the item itself, in an inspector. There the object's own
+views are collected the way Glamorous Toolkit collects them: one that raises or
+answers no view shows its error in its place, and nothing stops.
+
+From Luma 4.0.0 the inspector opens inside the widget, the way the Playground
+opens what a snippet produced: the widget becomes a row of columns, its own
+views in the first and the object in the one beside it. Double-clicking a row
+in a column opens what it holds in the next column, replacing the columns to
+its right, and opening a row of the view itself starts the columns over. The
+columns share the widget's height and scroll sideways, and each can be
+collapsed, maximized over the widget or closed, as in the Playground. While
+there are columns, the Playground's overview strip stands above them, making
+the widget that much taller: a square for the view, named after the widget,
+and one for each column, the one in sight marked, and a click on one brings
+its column into sight. Closing the last column takes the strip away and gives
+the view the whole widget again. Luma 3.0.0 opens the object in a separate
+inspector instead: a sheet on macOS and iOS, a window on Linux.
 
 A `forward` view shows the view that the method `view:` names builds for the
 object `object:` gives, or its block answers. When that method raises or
 answers no view, the view stops naming both methods: `views: gtForwardFor:
 raised Error: gtRaisingFor: raised …`.
 
-A view has nowhere to show an action button, so the twelve messages Glamorous
-Toolkit views declare them with are refused: `action:`, `actionStencil:`,
-`actionButtonDo:`, `actionButtonIcon:action:`,
+A view has nowhere to show an action button of its own, so the twelve
+messages Glamorous Toolkit views declare them with are refused: `action:`,
+`actionStencil:`, `actionButtonDo:`, `actionButtonIcon:action:`,
 `actionButtonIcon:label:action:`, `actionButtonIcon:tooltip:action:`,
 `actionButtonLabel:action:`, `actionButtonLabel:tooltip:action:`,
 `actionDropdownButtonIcon:tooltip:content:`,
@@ -414,7 +444,10 @@ Toolkit views declare them with are refused: `action:`, `actionStencil:`,
 from the `<gtView>` method or any method it calls, stops the view naming it:
 `views: gtModulesFor: declares an action button with
 actionButtonIcon:tooltip:action:, which a view cannot show`. The refusal is
-not an `Error`, so an `on: Error do:` around the send does not swallow it. The
+not an `Error`, so an `on: Error do:` around the send does not swallow it. A
+button in the widget's header is declared in `package.json` instead, as one
+of the widget's `actions`; choosing it calls the agent's `onAction`, as
+[instruments.md](instruments.md#actions-and-console-input) describes. The
 other messages Glamorous Toolkit views take for updates, `addAutoUpdate:`,
 `updateWhen:in:` and `buildContext:`, are accepted and do nothing.
 
@@ -484,14 +517,15 @@ and pressing **r** asks the agent for the next 256.
   "name": "byte-plot",
   "version": "1.0.0",
   "main": "main.ts",
-  "engines": { "luma": ">=3.0.0" },
+  "engines": { "luma": ">=4.0.0" },
   "luma": {
     "icon": { "kind": "symbolic", "value": "scope" },
     "widgets": [
       {
         "id": "plot",
         "name": "Plot",
-        "kind": { "kind": "view", "config": { "class": "BytePlotView", "height": 300 } },
+        "kind": "view",
+        "config": { "class": "BytePlotView", "height": 300 },
         "persistence": "none"
       }
     ]
@@ -678,7 +712,124 @@ through `transform:`, or in uniforms of the drawable's own.
 
 `LumaText on: aDrawable pointSize: aSize` letters a drawable with text from a
 glyph atlas Luma draws: `show: aString` says something else, `pad: #(x y)
-tint: #(r g b)` places and colors it.
+tint: #(r g b)` places and colors it. It takes the drawable over, declaring its
+own attributes and shaders. Two messages measure what it would show:
+`widthOf: aString` answers the string's width in points, the units `pad:` takes,
+which is how text is laid out beside other text; `advanceOf: aCharacter`
+answers how far one character moves the pen, in the pixels of the atlas it
+letters from. From Luma 4.0.0, `glyphs` answers that atlas, a `LumaGlyphs`
+(below), and `widthOf:` is new; Luma 3.0.0 has only `advanceOf:`.
+
+### Lettering a drawable of your own
+
+From Luma 4.0.0, the atlas `LumaText` letters from is a `LumaGlyphs` of its own,
+which a drawable with the author's own attributes and shaders can sample too.
+That is how many labels are drawn at once, in a space of the author's choosing,
+such as a graph that a camera pans and zooms: every letter of every label is
+two triangles in one drawable, over one atlas.
+
+The atlas is the printable ASCII range, codes 32 to 126, drawn by Luma in the
+platform's monospaced font onto one sheet, a grid of equal cells, each holding
+one character's ink in its alpha channel. Every measure it answers is in the
+atlas's own pixels.
+
+| Message | Answers or does |
+| --- | --- |
+| `LumaGlyphs pointSize: aSize for: aDrawable` | A new atlas for text of `aSize` points, drawn at as many pixels as that covers where `aDrawable` is drawn: `aSize` times the drawable's `scale`, rounded, or times 2 before the drawable has been drawn. |
+| `LumaGlyphs pixelSize: anInteger` | A new atlas drawn at `anInteger` pixels. |
+| `applyTo: aDrawable` | Gives the drawable the atlas's picture, which its shaders sample as `glyphs`. Answers `aDrawable`. |
+| `pixelSize` | The size it was drawn at, in pixels. |
+| `first`, `last` | 32 and 126, the codes it holds. |
+| `columns` | How many cells a row of the sheet holds. |
+| `cellWidth`, `cellHeight` | The size of a cell. |
+| `sheetWidth`, `sheetHeight` | The size of the sheet. |
+| `inkTop`, `inkBottom` | The rows of a cell, from its top, between which ink lies; above and below them a cell is empty. |
+| `cellOrigin: aCode` | The top-left corner of a code's cell on the sheet, as a `Point`. |
+| `advanceOf: aCharacter` | How far the pen moves after the character. |
+
+The cell of code `c` is at index `c - 32`, row by row: its column is the index
+modulo `columns` and its row the index divided by `columns`, so `cellOrigin:`
+answers `(index \\ columns * cellWidth) @ (index // columns * cellHeight)`.
+In texture coordinates `0 @ 0` is the top-left corner of the sheet, `u` grows to
+the right and `v` downwards, so a point `x @ y` on the sheet is `(x /
+sheetWidth) @ (y / sheetHeight)` on every platform.
+
+`applyTo:` declares the sampler, so send it before `commit`, as for any picture.
+The drawable keeps its own copy of the picture: what it draws does not depend
+on the `LumaGlyphs` afterwards, and a drawable can be given the same atlas
+again after `clearLayout`, or another one. The atlas itself, which answers the
+measures, is held by Luma until the `LumaGlyphs` is garbage collected. It is
+drawn once, at the size it was made at: when the drawable moves to a screen of
+another density, make a new one to stay sharp.
+
+This view letters three labels at once, in pixels from the top-left corner,
+each in a tone of its own:
+
+```smalltalk
+{ #category : 'opening' }
+LabelsView >> openIn: aContext [
+	| canvas labels glyphs |
+	canvas := aContext canvas.
+	labels := canvas addDrawable.
+	glyphs := LumaGlyphs pointSize: 18 for: labels.
+	glyphs applyTo: labels.
+	labels
+		attribute: 'p' components: 2;
+		attribute: 'glyph' components: 2;
+		attribute: 'shade' components: 1;
+		varying: 'uv' components: 2;
+		varying: 'tone' components: 1;
+		vertexSource: 'void main() {
+			uv = glyph;
+			tone = shade;
+			gl_Position = vec4(p.x / u_resolution.x * 2.0 - 1.0, 1.0 - p.y / u_resolution.y * 2.0, 0.5, 1.0); }'
+		fragmentSource: 'void main() {
+			float ink = texture(glyphs, uv).a;
+			if (ink < 0.02) discard;
+			frag_color = vec4(mix(vec3(0.95, 0.55, 0.2), vec3(0.3, 0.8, 0.95), tone) * ink, ink); }'.
+	labels commit ifFalse: [ self error: LumaCanvas lastError ].
+	self letter: #('videotestsrc0' 'capsfilter0' 'autovideosink0') with: glyphs on: labels
+]
+
+{ #category : 'drawing' }
+LabelsView >> letter: someLabels with: glyphs on: aDrawable [
+	| band bytes at held |
+	band := glyphs inkBottom - glyphs inkTop.
+	bytes := ByteArray new: (someLabels inject: 0 into: [ :sum :each | sum + each size ]) * 6 * 5 * 4.
+	at := 0.
+	someLabels doWithIndex: [ :label :row | | pen top |
+		pen := 16.
+		top := 8 + (row - 1 * (band + 6)).
+		label do: [ :each | | origin |
+			origin := glyphs cellOrigin: each asInteger.
+			#( #( 0 0 ) #( 1 0 ) #( 0 1 ) #( 1 0 ) #( 1 1 ) #( 0 1 ) ) do: [ :corner |
+				{ pen + (corner first * glyphs cellWidth).
+				  top + (corner last * band).
+				  origin x + (corner first * glyphs cellWidth) / glyphs sheetWidth.
+				  origin y + glyphs inkTop + (corner last * band) / glyphs sheetHeight.
+				  row - 1 / 2 } do: [ :value |
+					bytes float32AtOffset: at put: value asFloat.
+					at := at + 4 ] ].
+			pen := pen + (glyphs advanceOf: each) ] ].
+	held := LumaBytes holding: bytes.
+	(aDrawable vertices: held primitive: #triangles) ifFalse: [ self error: LumaCanvas lastError ].
+	held release
+]
+```
+
+Each letter covers its cell's ink band, `inkTop` to `inkBottom`, so lines of
+labels can be stacked as close as `inkBottom - inkTop`. Here a pixel of the
+atlas lands on a pixel of the canvas; to draw a label at another size, scale
+the quad and the pen by the size wanted over `pixelSize` and leave the texture
+coordinates as they are. A space has no ink and needs no quad, only its
+advance. A character outside 32 to 126 has no cell: substitute one, such as
+`$?`, before looking it up.
+
+From Luma 4.0.0 the atlas is mipmapped and sampled trilinearly wherever it is
+drawn smaller than its own pixels, down to an eighth, so small labels stay
+legible; at its own size and larger it is sampled as before. Each cell keeps
+at least eight blank pixels after its ink, so a neighbor never bleeds into it
+at those sizes.
 
 ## The agent side
 
@@ -772,6 +923,24 @@ with the same words in `LumaCanvas lastError`.
 Data from the view to the agent is a `ByteArray`: `context send: aValue data:
 aByteArray`.
 
+From Luma 4.0.0, bytes built in Smalltalk can be handed to a drawable the same
+way: `LumaBytes holding: aByteArray` copies the `ByteArray` into Luma, once, and
+answers a `LumaBytes` over the copy, which takes every message above and goes
+to `vertices:primitive:` and `vertices:indices:primitive:` like the bytes of a
+state. This is the way to give a drawable many vertices computed in the view:
+`mesh:primitive:` and `remesh:primitive:` take an `Array` and pass it on a
+number at a time, which is fine for a few hundred and slow for many thousands.
+Write the floats into the `ByteArray` with `float32AtOffset:put:` and the
+indices with `uint32AtOffset:put:`, both counting the offset in bytes from 0,
+in the machine's byte order. One `ByteArray` can carry the vertices and the
+indices after them, handed over as two slices of the same `LumaBytes`.
+
+Changing the `ByteArray` afterwards changes nothing Luma holds; hand over a new
+copy instead. A `LumaBytes` made this way is the view's alone, so it is let go
+of when it is sent `release` or garbage collected, not when the view stops; a
+drawable it was handed to keeps the bytes all the same, so sending `release`
+right after `vertices:primitive:` is the usual thing to do.
+
 ## Input
 
 A canvas made with `context canvas` sends `input:` a `LumaInputEvent` for
@@ -793,8 +962,17 @@ What each platform reports:
   event's no longer includes the one released.
 - A touch is the primary button. On iOS a two-finger pan is `#scroll`, and a
   pinch is `#zoom` there and on GTK; a trackpad pinch is `#zoom` on macOS.
-- Keys reach a canvas once it has been clicked or touched. The position of a
-  key event says nothing on macOS.
+- Scrolls and keys reach a canvas only while it is engaged: from a click or
+  touch on it until the pointer leaves it, the keyboard focus moves elsewhere or
+  its window stops being the active one. The click that engages it arrives as
+  `#down` and `#up` like any other, and a drag that starts on it engages it
+  too. Before that, and again afterwards, a scroll over the canvas scrolls the
+  page it sits in. A key still held when the canvas stops being engaged gets
+  its `#keyUp` then. On iOS, where no pointer leaves, a two-finger pan engages
+  it as a touch does. `#zoom` reaches a canvas engaged or not. This is new in
+  Luma 4.0.0: Luma 3.0.0 gave a canvas every scroll over it, and went on
+  giving it keys after the pointer left.
+- The position of a key event says nothing on macOS.
 
 While the view is busy, consecutive `#move`, `#scroll` or `#zoom` events of
 the same kind are merged into one: the latest position, `dx` and `dy` summed,
@@ -804,7 +982,53 @@ behind.
 A canvas can also be asked instead of told: `canvas pointer` answers an array
 of the pointer's `x` and `y`, `canvas hasPointer` whether the pointer is over
 it, `canvas buttons` the buttons held, and `canvas isDown: $a` or `canvas
-isDown: #left` whether a key is held.
+isDown: #left` whether a key is held. These agree with what `input:` is sent:
+the pointer and the buttons are answered whether or not the canvas is engaged,
+and no key is held while it is not.
+
+### Opening what was clicked
+
+A canvas has no rows to select, so the view opens what was clicked itself,
+with `context spawn:`. Luma opens the object exactly as it opens a row of a
+list: in the column beside the view, starting the columns over, with its own
+`<gtView>` methods collected the same way and a view of it that raises showing
+its error in its place. Each `spawn:` replaces what the last one opened, along
+with any columns opened from it.
+
+```smalltalk
+{ #category : 'receiving' }
+MeshView >> input: anEvent [
+	anEvent kind = #down ifFalse: [ ^ self ].
+	(self vertexNear: anEvent position) ifNotNil: [ :vertex |
+		context spawn: vertex ]
+]
+```
+
+`spawn:` answers `true` when Luma opened the object. When the widget is not on
+screen, nothing is opened, now or later, and it answers `false`; a view that
+goes on running out of sight, such as one that spawns from a process started
+with `fork:`, can therefore never open columns the user did not ask for. Which
+object it is and whether it opened stay in your own Luma: in a lab nothing is
+sent to the host or to other members, so `spawn:` works for every member and
+does not depend on `canSend`.
+
+Luma describes the object, as it does a row, before it opens it: its class
+name and `printString`. An error raised there is the view's own, as any other
+error in the message it was sent in: from `input:` it stops the view with
+`input: raised …`, from a process started with `context fork:` with `a process
+it forked: …`, unless the view handles it. `spawn:` takes as long as a
+description takes and counts against the deadline of the message it is sent
+in.
+
+`spawn:` is new in Luma 4.0.0. In Luma 3.0.0 the context does not understand
+it, and sending it stops the view. An instrument that sends it has to say so:
+
+```json
+"engines": { "luma": ">=4.0.0" }
+```
+
+Since a view is a widget, Luma writes this line itself when the instrument is
+edited in its own editor, and refuses to publish one that does not say it.
 
 ## Deadlines and errors
 
@@ -880,10 +1104,11 @@ feeds it the states and events the host's instrument produces:
 - A member's view reaches the host's agent only when the member is an owner of
   the lab; the message then arrives with `from`, the member's id and name. For
   any other member, `canSend` is false and `send:` answers false without
-  sending. A message is delivered only while the host's instrument is
-  attached. One over the [limits](#limits) is dropped, with a warning in the
-  host's event log, such as `A message from Alice's view was refused: its data
-  is 1048577 bytes; the most is 1048576`, and the host's view goes on running.
+  sending. A message is delivered only once the host's instance has finished
+  `create`, and not while it is disabled or being loaded again. One over the
+  [limits](#limits) is dropped, with a warning in the host's event log, such as
+  `A message from Alice's view was refused: its data is 1048577 bytes; the most
+  is 1048576`, and the host's view goes on running.
 
 A view's state is the same for everyone, so keep anything one member should
 not see out of it.
@@ -935,4 +1160,5 @@ Luma before 3.0.0 does not know the `view` widget kind and refuses a
 `package.json` that declares one, so it cannot link the folder. The store and
 labs need Luma 3.0.0 as well. In Luma 3.0.0 and later, a store item whose
 `engines.luma` names a newer version is shown with that requirement and cannot
-be installed until Luma is updated.
+be installed until Luma is updated. `spawn:` needs Luma 4.0.0; see
+[Opening what was clicked](#opening-what-was-clicked).

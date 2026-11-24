@@ -12,7 +12,7 @@ Instruments for [Luma](https://luma.frida.re), published in its store.
 | [Mesh Finder](mesh-finder) | UI | The 3D meshes a game or app holds in its Direct3D 11, Metal, Vulkan and OpenGL buffers, as OBJ |
 
 Each folder is one instrument: TypeScript sources beside a `package.json`
-whose `luma` object carries its icon, compatibility, features, widgets and
+whose `luma` object carries its icon, compatibility, settings, widgets and
 store listing. Its `README.md` is its description in the store.
 
 ## Writing one
