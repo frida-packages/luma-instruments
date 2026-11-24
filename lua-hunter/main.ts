@@ -4,23 +4,33 @@ import { LuaHunt } from "./lua-hunt.js";
 import { Settings } from "./settings.js";
 
 export const instrument: CustomInstrument = {
-    async create(ctx, config) {
+    create(ctx, config) {
         const settings = new Settings(config);
         const table = new InterpreterTable(ctx.widget("interpreters"));
         const luaConsole = new LuaConsole(ctx.widget("console"), table, settings);
-        const hunt = new LuaHunt(settings, luaConsole);
+        const hunt = new LuaHunt(settings, luaConsole, table);
         table.attach(luaConsole);
         luaConsole.attach(hunt);
         hunt.registry.observe(table);
         hunt.registry.observe(luaConsole);
-        await hunt.start();
+        hunt.start().catch(error => luaConsole.fail(error));
 
         return {
             updateConfig(next) {
                 settings.apply(next);
             },
-            onAction({ item }) {
-                luaConsole.use(hunt.registry.numbered(Number(item))!);
+            onAction({ action, item }) {
+                switch (action) {
+                    case "use":
+                        luaConsole.use(hunt.registry.numbered(Number(item))!);
+                        break;
+                    case "scan":
+                        void hunt.rescan();
+                        break;
+                    case "clear":
+                        luaConsole.clear();
+                        break;
+                }
             },
             async onConsoleInput({ text }, respond) {
                 await luaConsole.handle(text, respond);

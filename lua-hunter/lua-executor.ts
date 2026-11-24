@@ -9,14 +9,17 @@ export interface LuaExecutor {
 }
 
 export class ApiExecutor implements LuaExecutor {
-    constructor(private readonly api: LuaApi) {
+    readonly #api: LuaApi;
+
+    constructor(api: LuaApi) {
+        this.#api = api;
     }
 
     evaluate(L: NativePointer, source: string, limits: ReadLimits): Outcome {
-        return evaluate(this.api, L, source, limits);
+        return evaluate(this.#api, L, source, limits);
     }
 
     census(L: NativePointer): Census | null {
-        return takeCensus(this.api, L);
+        return takeCensus(this.#api, L);
     }
 }

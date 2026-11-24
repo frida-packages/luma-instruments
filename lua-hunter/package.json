@@ -3,10 +3,11 @@
   "displayName": "Lua Hunter",
   "version": "1.0.0",
   "main": "main.ts",
+  "engines": { "luma": ">=4.0.0" },
   "luma": {
     "icon": { "kind": "symbolic", "value": "scope" },
-    "compatibility": { "platforms": ["darwin", "linux", "windows"] },
-    "features": [
+    "compatibility": { "platforms": ["windows", "darwin", "linux"] },
+    "settings": [
       {
         "id": "scanMemory",
         "name": "Find idle interpreters in memory",
@@ -26,38 +27,34 @@
       {
         "id": "interpreters",
         "name": "Interpreters",
-        "kind": {
-          "kind": "table",
-          "config": {
-            "columns": [
-              { "id": "number", "name": "#", "alignment": "trailing" },
-              { "id": "lua", "name": "Lua", "alignment": "leading" },
-              { "id": "code", "name": "Code in", "alignment": "leading" },
-              { "id": "state", "name": "Main lua_State", "alignment": "leading" },
-              { "id": "thread", "name": "Thread", "alignment": "trailing" },
-              { "id": "globals", "name": "Globals", "alignment": "leading" },
-              { "id": "console", "name": "Console", "alignment": "leading" }
-            ],
-            "actions": [
-              { "id": "use", "name": "Use in Console" }
-            ],
-            "maxRows": 256
-          }
+        "kind": "table",
+        "config": {
+          "columns": [
+            { "id": "number", "name": "#", "alignment": "trailing" },
+            { "id": "lua", "name": "Lua", "alignment": "leading" },
+            { "id": "code", "name": "Code in", "alignment": "leading" },
+            { "id": "state", "name": "Main lua_State", "alignment": "leading" },
+            { "id": "thread", "name": "Thread", "alignment": "trailing" },
+            { "id": "globals", "name": "Globals", "alignment": "leading" },
+            { "id": "console", "name": "Console", "alignment": "leading" }
+          ],
+          "rowActions": [{ "id": "use", "name": "Use in Console" }],
+          "maxRows": 256
         },
+        "actions": [{ "id": "scan", "name": "Scan" }],
         "persistence": "none"
       },
       {
         "id": "console",
         "name": "Lua",
-        "kind": {
-          "kind": "console",
-          "config": {
-            "prompt": ">",
-            "placeholder": "Lua to run in the interpreter in use, or :help",
-            "runButtonLabel": "Run",
-            "maxEntries": 1000
-          }
+        "kind": "console",
+        "config": {
+          "maxEntries": 1000,
+          "prompt": ">",
+          "placeholder": "Lua to run in the interpreter in use, or :help",
+          "runButtonLabel": "Run"
         },
+        "actions": [{ "id": "clear", "name": "Clear" }],
         "persistence": "none"
       }
     ],

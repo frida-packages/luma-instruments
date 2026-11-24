@@ -10,6 +10,10 @@ export interface HuntLog {
     onStillWaiting(interpreter: Interpreter): void;
 }
 
+export interface SweepActivity {
+    showSweeping(sweeping: boolean): void;
+}
+
 type Phase = "starting" | "running" | "disposed";
 
 interface AdoptedRuntime {
@@ -22,67 +26,76 @@ const CENSUS_MAX_AGE_MS = 2000;
 export class LuaHunt implements RendezvousObserver {
     readonly registry = new InterpreterRegistry();
     readonly rendezvous: Rendezvous;
-    private readonly adopted = new Map<string, AdoptedRuntime>();
-    private readonly embeddedCandidates: Module[] = [];
-    private readonly anchorsLearnedFrom = new Set<Interpreter>();
-    private moduleObserver!: ModuleObserver;
-    private phase: Phase = "starting";
-    private sweep: Promise<void> | null = null;
-    private sweepWanted = false;
-    private checkingModules: Promise<void> | null = null;
+    readonly #settings: Settings;
+    readonly #log: HuntLog;
+    readonly #activity: SweepActivity;
+    readonly #adopted = new Map<string, AdoptedRuntime>();
+    readonly #embeddedCandidates: Module[] = [];
+    readonly #anchorsLearnedFrom = new Set<Interpreter>();
+    #moduleObserver!: ModuleObserver;
+    #phase: Phase = "starting";
+    #sweep: Promise<void> | null = null;
+    #sweepWanted = false;
+    #checkingModules: Promise<void> | null = null;
 
-    constructor(private readonly settings: Settings, private readonly log: HuntLog) {
+    constructor(settings: Settings, log: HuntLog, activity: SweepActivity) {
+        this.#settings = settings;
+        this.#log = log;
+        this.#activity = activity;
         this.rendezvous = new Rendezvous(this.registry, this);
     }
 
     async start(): Promise<void> {
-        this.moduleObserver = Process.attachModuleObserver({
-            onAdded: module => this.consider(module),
-            onRemoved: module => this.abandon(module),
+        this.#moduleObserver = Process.attachModuleObserver({
+            onAdded: module => this.#consider(module),
+            onRemoved: module => this.#abandon(module),
         });
-        await this.checkEmbeddedCandidates();
-        this.phase = "running";
-        if (this.adopted.size === 0) {
-            this.log.note("No Lua found yet. Libraries loaded later are checked as they load.");
+        await this.#checkEmbeddedCandidates();
+        if (this.#phase === "disposed") {
+            return;
+        }
+        this.#phase = "running";
+        if (this.#adopted.size === 0) {
+            this.#log.note("No Lua found yet. Libraries loaded later are checked as they load.");
         }
         await this.rescan();
     }
 
-    private consider(module: Module): void {
+    #consider(module: Module): void {
         const runtime = findExportedLuaRuntime(module);
         if (runtime !== null) {
-            this.adopt(runtime);
+            this.#adopt(runtime);
             return;
         }
-        this.embeddedCandidates.push(module);
-        if (this.phase === "running") {
-            void this.checkEmbeddedCandidates();
+        this.#embeddedCandidates.push(module);
+        if (this.#phase === "running") {
+            void this.#checkEmbeddedCandidates();
         }
     }
 
-    private adopt(runtime: LuaRuntime): void {
-        this.adopted.set(runtime.image.module.path, { runtime, lifecycle: this.watchLifecycle(runtime) });
+    #adopt(runtime: LuaRuntime): void {
+        this.#adopted.set(runtime.image.module.path, { runtime, lifecycle: this.#watchLifecycle(runtime) });
         this.rendezvous.add(runtime);
-        this.log.note(`Found ${runtime.release.name} in ${runtime.moduleName}, ${howFound(runtime)}.`);
-        if (this.phase === "running" && this.checkingModules === null) {
+        this.#log.note(`Found ${runtime.release.name} in ${runtime.moduleName}, ${howFound(runtime)}.`);
+        if (this.#phase === "running" && this.#checkingModules === null) {
             void this.rescan();
         }
     }
 
-    private watchLifecycle(runtime: LuaRuntime): InvocationListener[] {
+    #watchLifecycle(runtime: LuaRuntime): InvocationListener[] {
         const hunt = this;
         const { creators, closer } = runtime.lifecycle;
         const listeners = creators.map(creator => Interceptor.attach(creator, {
             onLeave(retval) {
                 if (!retval.isNull()) {
-                    hunt.onCreated(runtime, retval);
+                    hunt.#onCreated(runtime, retval);
                 }
             },
         }));
         if (closer !== null) {
             listeners.push(Interceptor.attach(closer, {
                 onEnter(args) {
-                    this.closing = hunt.onClosing(runtime, args[0]);
+                    this.closing = hunt.#onClosing(runtime, args[0]);
                 },
                 onLeave() {
                     if (this.closing !== null) {
@@ -94,7 +107,7 @@ export class LuaHunt implements RendezvousObserver {
         return listeners;
     }
 
-    private onCreated(runtime: LuaRuntime, L: NativePointer): void {
+    #onCreated(runtime: LuaRuntime, L: NativePointer): void {
         runtime.layout ??= deriveLayout(runtime.flavor, L);
         const pair = (runtime.layout !== null) ? pairOf(runtime.flavor, runtime.layout, L) : null;
         if (pair !== null) {
@@ -103,7 +116,7 @@ export class LuaHunt implements RendezvousObserver {
         }
     }
 
-    private onClosing(runtime: LuaRuntime, L: NativePointer): Interpreter | null {
+    #onClosing(runtime: LuaRuntime, L: NativePointer): Interpreter | null {
         const pair = (runtime.layout !== null) ? pairOf(runtime.flavor, runtime.layout, L) : null;
         const interpreter = (pair !== null) ? this.registry.lookup(pair.global) : undefined;
         if (interpreter === undefined) {
@@ -115,32 +128,38 @@ export class LuaHunt implements RendezvousObserver {
     }
 
     async rescan(): Promise<void> {
-        if (this.settings.scanMemory) {
-            await this.requestSweep();
+        if (this.#settings.scanMemory) {
+            await this.#requestSweep();
         }
-        if (this.phase !== "disposed") {
+        if (this.#phase !== "disposed") {
             this.rendezvous.explore();
         }
     }
 
-    private requestSweep(): Promise<void> {
-        if (this.sweep !== null) {
-            this.sweepWanted = true;
-            return this.sweep;
+    #requestSweep(): Promise<void> {
+        if (this.#sweep !== null) {
+            this.#sweepWanted = true;
+            return this.#sweep;
         }
-        this.sweep = this.sweepOnce().finally(() => {
-            this.sweep = null;
-            if (this.sweepWanted && this.phase === "running") {
-                this.sweepWanted = false;
-                void this.requestSweep();
+        this.#activity.showSweeping(true);
+        this.#sweep = this.#sweepOnce().finally(() => {
+            this.#sweep = null;
+            if (this.#phase === "disposed") {
+                return;
+            }
+            if (this.#sweepWanted) {
+                this.#sweepWanted = false;
+                void this.#requestSweep();
+            } else {
+                this.#activity.showSweeping(false);
             }
         });
-        return this.sweep;
+        return this.#sweep;
     }
 
-    private async sweepOnce(): Promise<void> {
+    async #sweepOnce(): Promise<void> {
         const owners = new Map<string, LuaRuntime>();
-        for (const runtime of this.runtimes) {
+        for (const runtime of this.#runtimes) {
             for (const anchor of runtime.anchors) {
                 owners.set(pointerKey(ptr(anchor)), runtime);
             }
@@ -161,49 +180,49 @@ export class LuaHunt implements RendezvousObserver {
             }
         }
         const added = this.registry.all.length - knownBefore;
-        this.log.note(`Swept ${formatBytes(bytesScanned)} of writable memory in ${durationMs} ms: `
+        this.#log.note(`Swept ${formatBytes(bytesScanned)} of writable memory in ${durationMs} ms: `
             + `${located.size} interpreter${(located.size === 1) ? "" : "s"} in memory, ${added} not known before.`);
     }
 
-    private get runtimes(): LuaRuntime[] {
-        return [...this.adopted.values()].map(({ runtime }) => runtime);
+    get #runtimes(): LuaRuntime[] {
+        return [...this.#adopted.values()].map(({ runtime }) => runtime);
     }
 
-    private checkEmbeddedCandidates(): Promise<void> {
-        this.checkingModules ??= this.drainEmbeddedCandidates().finally(() => {
-            this.checkingModules = null;
+    #checkEmbeddedCandidates(): Promise<void> {
+        this.#checkingModules ??= this.#drainEmbeddedCandidates().finally(() => {
+            this.#checkingModules = null;
         });
-        return this.checkingModules;
+        return this.#checkingModules;
     }
 
-    private async drainEmbeddedCandidates(): Promise<void> {
-        const adoptedBefore = this.adopted.size;
-        while (this.embeddedCandidates.length !== 0) {
-            const module = this.embeddedCandidates.shift()!;
+    async #drainEmbeddedCandidates(): Promise<void> {
+        const adoptedBefore = this.#adopted.size;
+        while (this.#embeddedCandidates.length !== 0) {
+            const module = this.#embeddedCandidates.shift()!;
             const runtime = findEmbeddedLuaRuntime(module);
             if (runtime !== null) {
-                this.adopt(runtime);
+                this.#adopt(runtime);
             }
             await yieldToEventLoop();
         }
-        if (this.phase === "running" && this.adopted.size !== adoptedBefore) {
+        if (this.#phase === "running" && this.#adopted.size !== adoptedBefore) {
             await this.rescan();
         }
     }
 
-    private abandon(module: Module): void {
-        const adopted = this.adopted.get(module.path);
+    #abandon(module: Module): void {
+        const adopted = this.#adopted.get(module.path);
         if (adopted === undefined) {
             return;
         }
-        this.adopted.delete(module.path);
+        this.#adopted.delete(module.path);
         this.rendezvous.remove(adopted.runtime);
         for (const interpreter of this.registry.live.filter(candidate => candidate.runtime === adopted.runtime)) {
-            this.close(interpreter);
+            this.#close(interpreter);
         }
     }
 
-    private close(interpreter: Interpreter): void {
+    #close(interpreter: Interpreter): void {
         this.rendezvous.forget(interpreter, `${interpreter.label} was closed before it came by.`);
         this.registry.update(interpreter, subject => {
             subject.presence = "closed";
@@ -211,15 +230,15 @@ export class LuaHunt implements RendezvousObserver {
     }
 
     dispose(): void {
-        this.phase = "disposed";
-        this.moduleObserver.detach();
+        this.#phase = "disposed";
+        this.#moduleObserver.detach();
         this.rendezvous.dispose();
-        for (const { lifecycle } of this.adopted.values()) {
+        for (const { lifecycle } of this.#adopted.values()) {
             for (const listener of lifecycle) {
                 listener.detach();
             }
         }
-        this.adopted.clear();
+        this.#adopted.clear();
     }
 
     refreshCensus(interpreter: Interpreter, L: NativePointer, threadId: ThreadId): void {
@@ -242,23 +261,23 @@ export class LuaHunt implements RendezvousObserver {
                 subject.censusTakenAt = Date.now();
             }
         });
-        this.learnAnchorsFrom(interpreter);
+        this.#learnAnchorsFrom(interpreter);
     }
 
-    private learnAnchorsFrom(interpreter: Interpreter): void {
-        if (this.anchorsLearnedFrom.has(interpreter)) {
+    #learnAnchorsFrom(interpreter: Interpreter): void {
+        if (this.#anchorsLearnedFrom.has(interpreter)) {
             return;
         }
-        this.anchorsLearnedFrom.add(interpreter);
+        this.#anchorsLearnedFrom.add(interpreter);
         const { runtime } = interpreter;
         const learned = runtime.learnAnchors(codePointersIn(interpreter.global, address => runtime.image.isCode(address)));
-        if (learned && this.settings.scanMemory && this.phase === "running") {
-            setTimeout(() => void this.requestSweep(), 0);
+        if (learned && this.#settings.scanMemory && this.#phase === "running") {
+            setTimeout(() => void this.#requestSweep(), 0);
         }
     }
 
     onStillWaiting(interpreter: Interpreter): void {
-        this.log.onStillWaiting(interpreter);
+        this.#log.onStillWaiting(interpreter);
     }
 }
 

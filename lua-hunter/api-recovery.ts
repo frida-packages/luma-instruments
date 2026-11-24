@@ -50,27 +50,29 @@ export function recoverApi(flavor: Flavor, library: LibraryFunction[], image: Mo
 }
 
 class CallGraph {
-    private readonly cache = new Map<string, CallSite[]>();
+    readonly #library: LibraryFunction[];
+    readonly #cache = new Map<string, CallSite[]>();
 
-    constructor(private readonly library: LibraryFunction[]) {
+    constructor(library: LibraryFunction[]) {
+        this.#library = library;
     }
 
     callee(name: string, pick: Pick): NativePointer | null {
-        const address = this.library.find(candidate => candidate.name === name)?.address;
+        const address = this.#library.find(candidate => candidate.name === name)?.address;
         return (address !== undefined) ? pick(this.sitesOf(address))?.target ?? null : null;
     }
 
     calleesOf(name: string): NativePointer[] {
-        const address = this.library.find(candidate => candidate.name === name)?.address;
+        const address = this.#library.find(candidate => candidate.name === name)?.address;
         return (address !== undefined) ? this.sitesOf(address).map(site => site.target) : [];
     }
 
     sitesOf(address: NativePointer): CallSite[] {
         const key = address.toString();
-        let sites = this.cache.get(key);
+        let sites = this.#cache.get(key);
         if (sites === undefined) {
             sites = callSitesOf(address);
-            this.cache.set(key, sites);
+            this.#cache.set(key, sites);
         }
         return sites;
     }

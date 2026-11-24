@@ -25,22 +25,26 @@ test/lua-hunter/build-targets.sh /tmp/lua-hunter-targets
 ```
 
 `harness.ts` loads the instrument with a fake `ctx` that prints every widget
-call, and exposes the console and the table's action over RPC. It is checked
-against the typings Luma would write into the instrument's folder:
+call, and exposes the console, the table's actions and the console's **Clear**
+over RPC. It is checked against the typings Luma would write into the
+instrument's folder:
 
 ```sh
 python3 test/xpc-spy/generate-typings.py ~/src/luma lua-hunter lua-hunter/luma.d.ts
 ```
 
 `run.py` spawns a host with two interpreters, one looping in C and one in Lua,
-finds both, reads, sets and checks a global in each (the host's own script must
-report the change), runs chunks that fail to compile, raise an error and return
-tables and several values, checks that `print` is captured and given back, then
-evaluates 300 chunks in each, alternating, and checks every answer. After
-disposing it checks that the code of the main program and of any Lua library is
-back to what it was, and that the host is still running and reported nothing
-corrupt. Run it from the repository root with the Python that has the `frida`
-module:
+and finds both. It checks that **Scan** was disabled during the sweep `create`
+ran and enabled after, and that it is disabled during a sweep it starts and
+enabled again once that ends. It reads, sets and checks a global in each
+interpreter (the host's own script must report the change), runs chunks that
+fail to compile, raise an error and return tables and several values, checks
+that `print` is captured and given back, checks that **Clear** empties the
+console and touches no other widget, then evaluates 300 chunks in each,
+alternating, and checks every answer. After disposing it checks that the code
+of the main program and of any Lua library is back to what it was, and that the
+host is still running and reported nothing corrupt. Run it from the repository
+root with the Python that has the `frida` module:
 
 ```sh
 python3 test/lua-hunter/run.py /tmp/lua-hunter-targets/bin/host-5.4-stripped

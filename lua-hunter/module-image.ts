@@ -31,14 +31,14 @@ export class ModuleImage {
 
     findCStrings(text: string, extent: StringExtent): NativePointer[] {
         const pattern = ["00", bytePatternOf(text), ...((extent === "whole") ? ["00"] : [])].join(" ");
-        return this.scan(pattern).map(match => match.add(1));
+        return this.#scan(pattern).map(match => match.add(1));
     }
 
     findText(text: string): NativePointer[] {
-        return this.scan(bytePatternOf(text));
+        return this.#scan(bytePatternOf(text));
     }
 
-    private scan(pattern: string): NativePointer[] {
+    #scan(pattern: string): NativePointer[] {
         return this.readable.flatMap(range => Memory.scanSync(range.base, range.size, pattern).map(match => match.address));
     }
 }

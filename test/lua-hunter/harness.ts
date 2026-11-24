@@ -4,10 +4,12 @@ import { instrument } from "../../lua-hunter/main.js";
 
 type Reply = [kind: "output" | "error" | "value", payload: unknown];
 
-const config: CustomInstrumentConfig = { features: { scanMemory: true, entriesPerTable: 100 } };
+const config: CustomInstrumentConfig = { settings: { scanMemory: true, entriesPerTable: 100 } };
 const pristineCode = snapshotLuaCode();
 const SETTLE_AFTER_DISPOSE_MS = 250;
 let widgetLogging = true;
+let widgetCalls: string[] = [];
+const scanStates: boolean[] = [];
 
 const ctx = {
     emit(value: unknown) {
@@ -17,6 +19,10 @@ const ctx = {
         return new Proxy({}, {
             get(_target, method: string) {
                 return (...args: unknown[]) => {
+                    widgetCalls.push(`${id}.${method}`);
+                    if (id === "interpreters" && method === "setActionEnabled" && args[0] === "scan") {
+                        scanStates.push(args[1] as boolean);
+                    }
                     if (widgetLogging) {
                         console.log(`widget ${id}.${method}`, printable(args));
                     }
@@ -29,6 +35,8 @@ const ctx = {
 const startedAt = Date.now();
 const handle = await instrument.create(ctx, config, {} as CustomInstrumentRestoredState);
 console.log(`created in ${Date.now() - startedAt} ms`);
+await firstSweepEnded();
+console.log(`first sweep ended ${Date.now() - startedAt} ms after create began`);
 
 rpc.exports = {
     async input(text: string): Promise<string> {
@@ -43,6 +51,18 @@ rpc.exports = {
     },
     use(number: number): void {
         handle.onAction!({ widget: "interpreters", action: "use", item: String(number) });
+    },
+    scanStates(): boolean[] {
+        return scanStates;
+    },
+    scan(): boolean[] {
+        handle.onAction!({ widget: "interpreters", action: "scan" });
+        return scanStates;
+    },
+    clear(): string[] {
+        widgetCalls = [];
+        handle.onAction!({ widget: "console", action: "clear" });
+        return widgetCalls;
     },
     logWidgets(enabled: boolean): void {
         widgetLogging = enabled;
@@ -64,6 +84,12 @@ function snapshotLuaCode(): Map<string, Uint8Array> {
         }
     }
     return snapshot;
+}
+
+async function firstSweepEnded(): Promise<void> {
+    while (!scanStates.includes(true)) {
+        await new Promise(resolve => setTimeout(resolve, 20));
+    }
 }
 
 function printable(value: unknown): string {

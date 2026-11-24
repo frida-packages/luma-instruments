@@ -35,45 +35,54 @@ export function evaluate(api: LuaApi, L: NativePointer, source: string, limits: 
 }
 
 class Evaluation {
-    private readonly chunk: number;
-    private readonly buffer: number;
-    private readonly globals: number;
-    private readonly print: number;
-    private readonly environment: number;
+    readonly #api: LuaApi;
+    readonly #L: NativePointer;
+    readonly #base: number;
+    readonly #limits: ReadLimits;
+    readonly #chunk: number;
+    readonly #buffer: number;
+    readonly #globals: number;
+    readonly #print: number;
+    readonly #environment: number;
 
     constructor(
-        private readonly api: LuaApi,
-        private readonly L: NativePointer,
-        private readonly base: number,
-        private readonly limits: ReadLimits,
+        api: LuaApi,
+        L: NativePointer,
+        base: number,
+        limits: ReadLimits,
     ) {
-        this.chunk = base + 1;
-        this.buffer = base + 2;
-        this.globals = base + 3;
-        this.print = base + 4;
-        this.environment = base + 5;
+        this.#api = api;
+        this.#L = L;
+        this.#base = base;
+        this.#limits = limits;
+        this.#chunk = base + 1;
+        this.#buffer = base + 2;
+        this.#globals = base + 3;
+        this.#print = base + 4;
+        this.#environment = base + 5;
     }
 
     run(source: string): Outcome {
-        const { api, L } = this;
-        const compileError = this.compile(source);
+        const api = this.#api;
+        const L = this.#L;
+        const compileError = this.#compile(source);
         if (compileError !== null) {
             return { kind: "failed", printed: [], error: compileError };
         }
         api.pushNewTable(L);
         api.pushGlobals(L);
-        if (api.typeOf(L, this.globals) !== luaTypes.table) {
+        if (api.typeOf(L, this.#globals) !== luaTypes.table) {
             return { kind: "rejected", error: "The interpreter's globals are not a table." };
         }
-        const captureError = this.preparePrintCapture();
+        const captureError = this.#preparePrintCapture();
         if (captureError !== null) {
             return { kind: "rejected", error: `Could not capture print: ${captureError}` };
         }
-        this.prepareEnvironment();
-        api.pushCopy(L, this.chunk);
+        this.#prepareEnvironment();
+        api.pushCopy(L, this.#chunk);
         const firstResult = api.top(L);
         const succeeded = api.protectedCall(L, 0);
-        const reader = new LuaValueReader(api, L, this.limits);
+        const reader = new LuaValueReader(api, L, this.#limits);
         const resultCount = api.top(L) - firstResult + 1;
         const results: unknown[] = [];
         for (let offset = 0; offset < Math.min(resultCount, MAX_RESULTS); offset++) {
@@ -82,73 +91,79 @@ class Evaluation {
         if (resultCount > MAX_RESULTS) {
             results.push(`… ${resultCount - MAX_RESULTS} more values`);
         }
-        this.releasePrintCapture();
-        const printed = this.printedLines(reader);
+        this.#releasePrintCapture();
+        const printed = this.#printedLines(reader);
         return succeeded
             ? { kind: "returned", printed, values: results }
             : { kind: "failed", printed, error: results[0] ?? null };
     }
 
-    private compile(source: string): unknown {
-        const { api, L } = this;
+    #compile(source: string): unknown {
+        const api = this.#api;
+        const L = this.#L;
         if (api.load(L, `return ${source}`, CHUNK_NAME)) {
             return null;
         }
-        api.setTop(L, this.base);
+        api.setTop(L, this.#base);
         if (api.load(L, source, CHUNK_NAME)) {
             return null;
         }
-        return new LuaValueReader(api, L, this.limits).read(-1);
+        return new LuaValueReader(api, L, this.#limits).read(-1);
     }
 
-    private preparePrintCapture(): string | null {
-        const { api, L } = this;
+    #preparePrintCapture(): string | null {
+        const api = this.#api;
+        const L = this.#L;
         if (!api.load(L, printCaptureSource, "=print capture")) {
-            return new LuaValueReader(api, L, this.limits).text(-1);
+            return new LuaValueReader(api, L, this.#limits).text(-1);
         }
-        api.pushCopy(L, this.buffer);
+        api.pushCopy(L, this.#buffer);
         for (const name of ["tostring", "select"]) {
             api.pushString(L, name);
-            api.rawGet(L, this.globals);
+            api.rawGet(L, this.#globals);
         }
         if (!api.protectedCall(L, 3)) {
-            return new LuaValueReader(api, L, this.limits).text(-1);
+            return new LuaValueReader(api, L, this.#limits).text(-1);
         }
-        api.setTop(L, this.print);
+        api.setTop(L, this.#print);
         return null;
     }
 
-    private prepareEnvironment(): void {
-        const { api, L, environment } = this;
+    #prepareEnvironment(): void {
+        const api = this.#api;
+        const L = this.#L;
+        const environment = this.#environment;
         const metatable = environment + 1;
         api.pushNewTable(L);
-        api.pushCopy(L, this.print);
+        api.pushCopy(L, this.#print);
         api.setField(L, environment, "print");
         api.pushNewTable(L);
-        api.pushCopy(L, this.globals);
+        api.pushCopy(L, this.#globals);
         api.setField(L, metatable, "__index");
-        api.pushCopy(L, this.globals);
+        api.pushCopy(L, this.#globals);
         api.setField(L, metatable, "__newindex");
         api.setMetatable(L, environment);
         api.pushCopy(L, environment);
-        if (!api.setEnvironment(L, this.chunk)) {
+        if (!api.setEnvironment(L, this.#chunk)) {
             api.setTop(L, environment);
         }
     }
 
-    private releasePrintCapture(): void {
-        const { api, L } = this;
+    #releasePrintCapture(): void {
+        const api = this.#api;
+        const L = this.#L;
         api.pushString(L, "print");
         api.pushNil(L);
-        api.rawSet(L, this.environment);
+        api.rawSet(L, this.#environment);
     }
 
-    private printedLines(reader: LuaValueReader): string[] {
-        const { api, L } = this;
+    #printedLines(reader: LuaValueReader): string[] {
+        const api = this.#api;
+        const L = this.#L;
         const lines: string[] = [];
-        const count = api.rawLength(L, this.buffer);
+        const count = api.rawLength(L, this.#buffer);
         for (let n = 1; n <= count; n++) {
-            api.rawGetIndex(L, this.buffer, n);
+            api.rawGetIndex(L, this.#buffer, n);
             lines.push((api.typeOf(L, -1) === luaTypes.string) ? reader.text(-1) : "");
             api.setTop(L, -2);
         }

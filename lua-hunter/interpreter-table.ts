@@ -1,4 +1,5 @@
 import type { Interpreter, InterpreterObserver } from "./interpreters.js";
+import type { SweepActivity } from "./lua-hunt.js";
 
 type InterpreterTableWidget = CustomInstrumentWidgetMap["interpreters"];
 
@@ -10,16 +11,22 @@ const FLUSH_DELAY_MS = 100;
 const NOTABLE_NAMES_SHOWN = 4;
 const missing = "—";
 
-export class InterpreterTable implements InterpreterObserver {
-    private readonly changed = new Set<Interpreter>();
-    private pendingFlush: ReturnType<typeof setTimeout> | null = null;
-    private status!: ConsoleStatus;
+export class InterpreterTable implements InterpreterObserver, SweepActivity {
+    readonly #table: InterpreterTableWidget;
+    readonly #changed = new Set<Interpreter>();
+    #pendingFlush: ReturnType<typeof setTimeout> | null = null;
+    #status!: ConsoleStatus;
 
-    constructor(private readonly table: InterpreterTableWidget) {
+    constructor(table: InterpreterTableWidget) {
+        this.#table = table;
     }
 
     attach(status: ConsoleStatus): void {
-        this.status = status;
+        this.#status = status;
+    }
+
+    showSweeping(sweeping: boolean): void {
+        this.#table.setActionEnabled("scan", !sweeping);
     }
 
     onInterpreterAdded(interpreter: Interpreter): void {
@@ -31,26 +38,26 @@ export class InterpreterTable implements InterpreterObserver {
     }
 
     show(interpreter: Interpreter): void {
-        this.changed.add(interpreter);
-        this.pendingFlush ??= setTimeout(() => this.flush(), FLUSH_DELAY_MS);
+        this.#changed.add(interpreter);
+        this.#pendingFlush ??= setTimeout(() => this.#flush(), FLUSH_DELAY_MS);
     }
 
     dispose(): void {
-        if (this.pendingFlush !== null) {
-            clearTimeout(this.pendingFlush);
-            this.flush();
+        if (this.#pendingFlush !== null) {
+            clearTimeout(this.#pendingFlush);
+            this.#flush();
         }
     }
 
-    private flush(): void {
-        this.pendingFlush = null;
-        for (const interpreter of this.changed) {
-            this.table.upsertRow({ id: String(interpreter.number), cells: this.cellsOf(interpreter) });
+    #flush(): void {
+        this.#pendingFlush = null;
+        for (const interpreter of this.#changed) {
+            this.#table.upsertRow({ id: String(interpreter.number), cells: this.#cellsOf(interpreter) });
         }
-        this.changed.clear();
+        this.#changed.clear();
     }
 
-    private cellsOf(interpreter: Interpreter) {
+    #cellsOf(interpreter: Interpreter) {
         const { runtime, census } = interpreter;
         return {
             number: `#${interpreter.number}`,
@@ -59,7 +66,7 @@ export class InterpreterTable implements InterpreterObserver {
             state: interpreter.main.toString(),
             thread: (interpreter.thread !== null) ? String(interpreter.thread) : missing,
             globals: (census !== null) ? globalsSummary(census.globals, census.notable) : missing,
-            console: this.status.statusOf(interpreter),
+            console: this.#status.statusOf(interpreter),
         };
     }
 }

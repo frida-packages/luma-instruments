@@ -160,21 +160,21 @@ return '{"globals":' .. count .. ',"names":[' .. concat(names, ",") .. ']}'
 `;
 
 export class RecoveredExecutor implements LuaExecutor {
-    private readonly gettop: NativeFunction<number, [NativePointerValue]>;
-    private readonly settop: NativeFunction<void, [NativePointerValue, number]>;
-    private readonly tolstring: NativeFunction<NativePointer, [NativePointerValue, number, NativePointerValue]>;
-    private readonly pcall: NativeFunction<number, [NativePointerValue, number, number, number, NativePointerValue, NativePointerValue]>;
-    private readonly load: NativeFunction<number, [NativePointerValue, NativePointerValue, NativePointerValue, NativePointerValue,
+    readonly #gettop: NativeFunction<number, [NativePointerValue]>;
+    readonly #settop: NativeFunction<void, [NativePointerValue, number]>;
+    readonly #tolstring: NativeFunction<NativePointer, [NativePointerValue, number, NativePointerValue]>;
+    readonly #pcall: NativeFunction<number, [NativePointerValue, number, number, number, NativePointerValue, NativePointerValue]>;
+    readonly #load: NativeFunction<number, [NativePointerValue, NativePointerValue, NativePointerValue, NativePointerValue,
         NativePointerValue]>;
-    private readonly environment: string;
+    readonly #environment: string;
 
     constructor(api: RecoveredApi, flavor: Flavor) {
-        this.gettop = new NativeFunction(api.gettop, "int", ["pointer"]);
-        this.settop = new NativeFunction(api.settop, "void", ["pointer", "int"]);
-        this.tolstring = new NativeFunction(api.tolstring, "pointer", ["pointer", "int", "pointer"]);
-        this.pcall = new NativeFunction(api.pcall, "int", ["pointer", "int", "int", "int", "pointer", "pointer"]);
-        this.load = new NativeFunction(api.load, "int", ["pointer", "pointer", "pointer", "pointer", "pointer"]);
-        this.environment = environmentSetup[(flavor === "5.1" || flavor === "luajit") ? "5.1" : "5.2"];
+        this.#gettop = new NativeFunction(api.gettop, "int", ["pointer"]);
+        this.#settop = new NativeFunction(api.settop, "void", ["pointer", "int"]);
+        this.#tolstring = new NativeFunction(api.tolstring, "pointer", ["pointer", "int", "pointer"]);
+        this.#pcall = new NativeFunction(api.pcall, "int", ["pointer", "int", "int", "int", "pointer", "pointer"]);
+        this.#load = new NativeFunction(api.load, "int", ["pointer", "pointer", "pointer", "pointer", "pointer"]);
+        this.#environment = environmentSetup[(flavor === "5.1" || flavor === "luajit") ? "5.1" : "5.2"];
     }
 
     evaluate(L: NativePointer, source: string, limits: ReadLimits): Outcome {
@@ -182,11 +182,11 @@ export class RecoveredExecutor implements LuaExecutor {
             prelude,
             `local SOURCE = sub(${longString(source)}, 1, -2)`,
             `local ENTRIES, MAX_RESULTS = ${limits.entriesPerTable}, ${MAX_RESULTS}`,
-            this.environment,
+            this.#environment,
             serializer,
             evaluationBody,
         ].join("\n");
-        const run = this.run(L, program);
+        const run = this.#run(L, program);
         if (run.kind === "failed") {
             return { kind: "rejected", error: `The console's own Lua failed in this interpreter: ${run.text}` };
         }
@@ -201,7 +201,7 @@ export class RecoveredExecutor implements LuaExecutor {
     }
 
     census(L: NativePointer): Census | null {
-        const run = this.run(L, [prelude, this.environment, censusBody].join("\n"));
+        const run = this.#run(L, [prelude, this.#environment, censusBody].join("\n"));
         if (run.kind === "failed") {
             return null;
         }
@@ -209,24 +209,24 @@ export class RecoveredExecutor implements LuaExecutor {
         return (census !== null) ? { globals: census.globals, notable: notableGlobals(census.names) } : null;
     }
 
-    private run(L: NativePointer, program: string): Run {
-        const base = this.gettop(L);
+    #run(L: NativePointer, program: string): Run {
+        const base = this.#gettop(L);
         try {
             const chunk = new ChunkReader(program);
-            if (this.load(L, chunk.reader, chunk.state, CHUNK_NAME, NULL) !== LUA_OK) {
-                return { kind: "failed", text: this.stringAtTop(L) };
+            if (this.#load(L, chunk.reader, chunk.state, CHUNK_NAME, NULL) !== LUA_OK) {
+                return { kind: "failed", text: this.#stringAtTop(L) };
             }
-            const status = this.pcall(L, 0, 1, 0, NULL, NULL);
-            const text = this.stringAtTop(L);
+            const status = this.#pcall(L, 0, 1, 0, NULL, NULL);
+            const text = this.#stringAtTop(L);
             return (status === LUA_OK) ? { kind: "replied", text } : { kind: "failed", text };
         } finally {
-            this.settop(L, base);
+            this.#settop(L, base);
         }
     }
 
-    private stringAtTop(L: NativePointer): string {
+    #stringAtTop(L: NativePointer): string {
         const length = Memory.alloc(Process.pointerSize);
-        const data = this.tolstring(L, -1, length);
+        const data = this.#tolstring(L, -1, length);
         if (data.isNull()) {
             return "(not a string)";
         }
@@ -266,12 +266,12 @@ function fromWire(value: WireValue): unknown {
 class ChunkReader {
     readonly state: NativePointer;
     readonly reader = chunkReader;
-    private readonly text: NativePointer;
+    readonly #text: NativePointer;
 
     constructor(program: string) {
-        this.text = Memory.allocUtf8String(program);
+        this.#text = Memory.allocUtf8String(program);
         this.state = Memory.alloc(2 * Process.pointerSize);
-        this.state.writePointer(this.text);
+        this.state.writePointer(this.#text);
         this.state.add(Process.pointerSize).writePointer(ptr(utf8Length(program)));
     }
 }

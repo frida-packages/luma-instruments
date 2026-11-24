@@ -6,8 +6,8 @@ export class Settings {
         this.apply(config);
     }
 
-    apply({ features }: CustomInstrumentConfig): void {
-        this.scanMemory = features.scanMemory;
-        this.entriesPerTable = features.entriesPerTable;
+    apply({ settings }: CustomInstrumentConfig): void {
+        this.scanMemory = settings.scanMemory;
+        this.entriesPerTable = settings.entriesPerTable;
     }
 }

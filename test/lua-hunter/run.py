@@ -32,9 +32,12 @@ def main():
         try:
             check = Check()
             numbers = interpreter_numbers(harness, check, len(INTERPRETERS))
+            scan_button(harness, check)
             if expectation == "runs":
                 names = interpreter_names(harness, numbers, check)
                 exercise(harness, target, names, check)
+                calls = harness.clear()
+                check.expect(calls == ["console.clear"], f"Clear empties the console and nothing else: {calls}")
                 stress(harness, names, rounds, check)
             else:
                 refusal(harness, numbers, check)
@@ -107,6 +110,18 @@ def interpreter_numbers(harness, check, expected=None):
     if expected is not None:
         check.expect(len(found) == expected, f"{expected} interpreters listed, got {len(found)}")
     return list(found)
+
+
+def scan_button(harness, check):
+    at_start = harness.scan_states()
+    check.expect(at_start[:2] == [False, True], f"the sweep create ran disabled Scan and enabled it again: {at_start}")
+    during = harness.scan()
+    check.expect(during[-1] is False, f"Scan is disabled while its sweep runs: {during}")
+    deadline = time.time() + 10
+    while harness.scan_states()[-1] is False and time.time() < deadline:
+        time.sleep(0.1)
+    after = harness.scan_states()
+    check.expect(after[-1] is True, f"Scan is enabled again once the sweep ends: {after}")
 
 
 def interpreter_names(harness, numbers, check):
@@ -202,8 +217,17 @@ class Harness:
             print(f"    {kind}: {json.dumps(payload) if kind == 'value' else payload}", flush=True)
         return replies
 
+    def scan_states(self):
+        return self.script.exports_sync.scan_states()
+
+    def scan(self):
+        return self.script.exports_sync.scan()
+
     def use(self, number):
         self.script.exports_sync.use(number)
+
+    def clear(self):
+        return self.script.exports_sync.clear()
 
     def log_widgets(self, enabled):
         self.script.exports_sync.log_widgets(enabled)

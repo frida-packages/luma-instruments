@@ -12,38 +12,46 @@ const SUMMARY_ENTRIES = 8;
 const UNCOUNTED_REMAINDER = 100000;
 
 export class LuaValueReader {
-    private readonly path = new Set<string>();
+    readonly #api: LuaApi;
+    readonly #L: NativePointer;
+    readonly #limits: ReadLimits;
+    readonly #path = new Set<string>();
 
     constructor(
-        private readonly api: LuaApi,
-        private readonly L: NativePointer,
-        private readonly limits: ReadLimits,
+        api: LuaApi,
+        L: NativePointer,
+        limits: ReadLimits,
     ) {
+        this.#api = api;
+        this.#L = L;
+        this.#limits = limits;
     }
 
     read(index: number): unknown {
-        return this.convert(index, 0);
+        return this.#convert(index, 0);
     }
 
     text(index: number): string {
-        const { api, L } = this;
+        const api = this.#api;
+        const L = this.#L;
         const type = api.typeOf(L, index);
         switch (type) {
             case luaTypes.string:
-                return this.stringAt(index);
+                return this.#stringAt(index);
             case luaTypes.number:
-                return String(this.numberAt(index));
+                return String(this.#numberAt(index));
             case luaTypes.boolean:
                 return String(api.toBoolean(L, index));
             case luaTypes.nil:
                 return "nil";
             default:
-                return this.identity(index, type);
+                return this.#identity(index, type);
         }
     }
 
-    private convert(index: number, level: number): unknown {
-        const { api, L } = this;
+    #convert(index: number, level: number): unknown {
+        const api = this.#api;
+        const L = this.#L;
         const type = api.typeOf(L, index);
         switch (type) {
             case luaTypes.nil:
@@ -51,20 +59,21 @@ export class LuaValueReader {
             case luaTypes.boolean:
                 return api.toBoolean(L, index);
             case luaTypes.number:
-                return this.numberAt(index);
+                return this.#numberAt(index);
             case luaTypes.string:
-                return this.stringAt(index);
+                return this.#stringAt(index);
             case luaTypes.table:
-                return (level < EXPANDED_LEVELS) ? this.tableAt(index, level) : this.summaryOf(index);
+                return (level < EXPANDED_LEVELS) ? this.#tableAt(index, level) : this.#summaryOf(index);
             case luaTypes.function:
-                return this.functionAt(index);
+                return this.#functionAt(index);
             default:
-                return this.identity(index, type);
+                return this.#identity(index, type);
         }
     }
 
-    private numberAt(index: number): number | string | Int64 {
-        const { api, L } = this;
+    #numberAt(index: number): number | string | Int64 {
+        const api = this.#api;
+        const L = this.#L;
         if (api.isInteger(L, index)) {
             const integer = api.toInteger(L, index);
             const value = integer.toNumber();
@@ -77,8 +86,9 @@ export class LuaValueReader {
         return Number.isNaN(value) ? "nan" : (value > 0) ? "inf" : "-inf";
     }
 
-    private stringAt(index: number): string {
-        const { api, L } = this;
+    #stringAt(index: number): string {
+        const api = this.#api;
+        const L = this.#L;
         api.pushCopy(L, index);
         const bytes = api.toBytes(L, -1)!;
         api.setTop(L, -2);
@@ -86,34 +96,36 @@ export class LuaValueReader {
         return (bytes.length > STRING_BYTES) ? `${text}… (${bytes.length} bytes)` : text;
     }
 
-    private tableAt(index: number, level: number): unknown {
-        const { api, L } = this;
-        const identity = this.identity(index, luaTypes.table);
-        if (this.path.has(identity)) {
+    #tableAt(index: number, level: number): unknown {
+        const api = this.#api;
+        const L = this.#L;
+        const identity = this.#identity(index, luaTypes.table);
+        if (this.#path.has(identity)) {
             return `${identity} (already shown)`;
         }
         if (!api.ensureStack(L, STACK_SLOTS_PER_LEVEL)) {
             return identity;
         }
-        this.path.add(identity);
+        this.#path.add(identity);
         const table = absolute(api, L, index);
         const entries: [unknown, unknown][] = [];
         let omitted = 0;
         api.pushNil(L);
         while (api.next(L, table)) {
-            if (entries.length === this.limits.entriesPerTable) {
-                omitted = 1 + this.countRemaining(table);
+            if (entries.length === this.#limits.entriesPerTable) {
+                omitted = 1 + this.#countRemaining(table);
                 break;
             }
-            entries.push([this.keyAt(-2), this.convert(api.top(L), level + 1)]);
+            entries.push([this.#keyAt(-2), this.#convert(api.top(L), level + 1)]);
             api.setTop(L, -2);
         }
-        this.path.delete(identity);
+        this.#path.delete(identity);
         return shapeOf(entries, omitted);
     }
 
-    private countRemaining(table: number): number {
-        const { api, L } = this;
+    #countRemaining(table: number): number {
+        const api = this.#api;
+        const L = this.#L;
         let remaining = 0;
         api.setTop(L, -2);
         while (api.next(L, table)) {
@@ -126,22 +138,24 @@ export class LuaValueReader {
         return remaining;
     }
 
-    private keyAt(index: number): unknown {
-        const { api, L } = this;
+    #keyAt(index: number): unknown {
+        const api = this.#api;
+        const L = this.#L;
         const type = api.typeOf(L, index);
         if (type === luaTypes.string) {
-            return this.stringAt(index);
+            return this.#stringAt(index);
         }
         if (type === luaTypes.number) {
-            return this.numberAt(index);
+            return this.#numberAt(index);
         }
         return `[${this.text(index)}]`;
     }
 
-    private summaryOf(index: number): string {
-        const { api, L } = this;
+    #summaryOf(index: number): string {
+        const api = this.#api;
+        const L = this.#L;
         if (!api.ensureStack(L, STACK_SLOTS_PER_LEVEL)) {
-            return this.identity(index, luaTypes.table);
+            return this.#identity(index, luaTypes.table);
         }
         const table = absolute(api, L, index);
         const parts: string[] = [];
@@ -153,28 +167,28 @@ export class LuaValueReader {
                 more = true;
                 break;
             }
-            const value = (api.typeOf(L, -1) === luaTypes.table) ? "{…}" : this.leafText(-1);
-            parts.push((api.typeOf(L, -2) === luaTypes.string) ? `${this.stringAt(-2)} = ${value}` : value);
+            const value = (api.typeOf(L, -1) === luaTypes.table) ? "{…}" : this.#leafText(-1);
+            parts.push((api.typeOf(L, -2) === luaTypes.string) ? `${this.#stringAt(-2)} = ${value}` : value);
             api.setTop(L, -2);
         }
         const summary = `{ ${parts.join(", ")}${more ? ", …" : ""} }`;
         return (summary.length > SUMMARY_LENGTH) ? summary.slice(0, SUMMARY_LENGTH - 1) + "…" : summary;
     }
 
-    private leafText(index: number): string {
-        return (this.api.typeOf(this.L, index) === luaTypes.string) ? JSON.stringify(this.stringAt(index)) : this.text(index);
+    #leafText(index: number): string {
+        return (this.#api.typeOf(this.#L, index) === luaTypes.string) ? JSON.stringify(this.#stringAt(index)) : this.text(index);
     }
 
-    private functionAt(index: number): string {
-        const cFunction = this.api.cFunctionAt(this.L, index);
+    #functionAt(index: number): string {
+        const cFunction = this.#api.cFunctionAt(this.#L, index);
         if (cFunction === null) {
-            return this.identity(index, luaTypes.function);
+            return this.#identity(index, luaTypes.function);
         }
         return `function: builtin ${cFunction} (${whereIs(cFunction)})`;
     }
 
-    private identity(index: number, type: number): string {
-        return `${luaTypeNames.get(type) ?? "value"}: ${this.api.toPointer(this.L, index)}`;
+    #identity(index: number, type: number): string {
+        return `${luaTypeNames.get(type) ?? "value"}: ${this.#api.toPointer(this.#L, index)}`;
     }
 }
 

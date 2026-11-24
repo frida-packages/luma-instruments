@@ -150,56 +150,61 @@ function bindGeneration52(binder: Binder, generation: Generation) {
 }
 
 export class LuaApi {
+    readonly #core: CoreFunctions;
+    readonly #flavored: FlavoredFunctions;
+
     constructor(
-        private readonly core: CoreFunctions,
-        private readonly flavored: FlavoredFunctions,
+        core: CoreFunctions,
+        flavored: FlavoredFunctions,
     ) {
+        this.#core = core;
+        this.#flavored = flavored;
     }
 
     top(L: NativePointer): number {
-        return this.core.gettop(L);
+        return this.#core.gettop(L);
     }
 
     setTop(L: NativePointer, index: number): void {
-        this.core.settop(L, index);
+        this.#core.settop(L, index);
     }
 
     ensureStack(L: NativePointer, slots: number): boolean {
-        return this.core.checkstack(L, slots) !== 0;
+        return this.#core.checkstack(L, slots) !== 0;
     }
 
     load(L: NativePointer, source: string, chunkName: string): boolean {
         const buffer = Memory.allocUtf8String(source);
-        return this.flavored.load(L, buffer, utf8Length(source), Memory.allocUtf8String(chunkName)) === LUA_OK;
+        return this.#flavored.load(L, buffer, utf8Length(source), Memory.allocUtf8String(chunkName)) === LUA_OK;
     }
 
     protectedCall(L: NativePointer, argumentCount: number): boolean {
-        return this.flavored.pcall(L, argumentCount, LUA_MULTRET) === LUA_OK;
+        return this.#flavored.pcall(L, argumentCount, LUA_MULTRET) === LUA_OK;
     }
 
     typeOf(L: NativePointer, index: number): number {
-        return this.core.type(L, index);
+        return this.#core.type(L, index);
     }
 
     toBoolean(L: NativePointer, index: number): boolean {
-        return this.core.toboolean(L, index) !== 0;
+        return this.#core.toboolean(L, index) !== 0;
     }
 
     toNumber(L: NativePointer, index: number): number {
-        return this.flavored.toNumber(L, index);
+        return this.#flavored.toNumber(L, index);
     }
 
     isInteger(L: NativePointer, index: number): boolean {
-        return this.flavored.isInteger(L, index);
+        return this.#flavored.isInteger(L, index);
     }
 
     toInteger(L: NativePointer, index: number): Int64 {
-        return this.flavored.toInteger(L, index);
+        return this.#flavored.toInteger(L, index);
     }
 
     toBytes(L: NativePointer, index: number): Uint8Array | null {
         const length = Memory.alloc(Process.pointerSize);
-        const data = this.core.tolstring(L, index, length);
+        const data = this.#core.tolstring(L, index, length);
         if (data.isNull()) {
             return null;
         }
@@ -207,75 +212,77 @@ export class LuaApi {
     }
 
     toPointer(L: NativePointer, index: number): NativePointer {
-        return this.core.topointer(L, index);
+        return this.#core.topointer(L, index);
     }
 
     cFunctionAt(L: NativePointer, index: number): NativePointer | null {
-        return (this.core.iscfunction(L, index) !== 0) ? this.core.tocfunction(L, index) : null;
+        return (this.#core.iscfunction(L, index) !== 0) ? this.#core.tocfunction(L, index) : null;
     }
 
     rawLength(L: NativePointer, index: number): number {
-        return this.flavored.rawLength(L, index);
+        return this.#flavored.rawLength(L, index);
     }
 
     next(L: NativePointer, tableIndex: number): boolean {
-        return this.core.next(L, tableIndex) !== 0;
+        return this.#core.next(L, tableIndex) !== 0;
     }
 
     pushNil(L: NativePointer): void {
-        this.core.pushnil(L);
+        this.#core.pushnil(L);
     }
 
     pushCopy(L: NativePointer, index: number): void {
-        this.core.pushvalue(L, index);
+        this.#core.pushvalue(L, index);
     }
 
     pushString(L: NativePointer, text: string): void {
-        this.core.pushlstring(L, Memory.allocUtf8String(text), utf8Length(text));
+        this.#core.pushlstring(L, Memory.allocUtf8String(text), utf8Length(text));
     }
 
     pushGlobals(L: NativePointer): void {
-        this.flavored.pushGlobals(L);
+        this.#flavored.pushGlobals(L);
     }
 
     pushNewTable(L: NativePointer): void {
-        this.core.createtable(L, 0, 0);
+        this.#core.createtable(L, 0, 0);
     }
 
     rawGet(L: NativePointer, tableIndex: number): number {
-        this.core.rawget(L, tableIndex);
-        return this.core.type(L, -1);
+        this.#core.rawget(L, tableIndex);
+        return this.#core.type(L, -1);
     }
 
     rawGetIndex(L: NativePointer, tableIndex: number, n: number): void {
-        this.flavored.rawGetIndex(L, tableIndex, n);
+        this.#flavored.rawGetIndex(L, tableIndex, n);
     }
 
     rawSet(L: NativePointer, tableIndex: number): void {
-        this.core.rawset(L, tableIndex);
+        this.#core.rawset(L, tableIndex);
     }
 
     setField(L: NativePointer, tableIndex: number, name: string): void {
-        this.core.setfield(L, tableIndex, Memory.allocUtf8String(name));
+        this.#core.setfield(L, tableIndex, Memory.allocUtf8String(name));
     }
 
     setMetatable(L: NativePointer, index: number): void {
-        this.core.setmetatable(L, index);
+        this.#core.setmetatable(L, index);
     }
 
     setEnvironment(L: NativePointer, functionIndex: number): boolean {
-        return this.flavored.setEnvironment(L, functionIndex);
+        return this.#flavored.setEnvironment(L, functionIndex);
     }
 }
 
 class Binder {
     readonly missing: string[] = [];
+    readonly #resolve: SymbolResolver;
 
-    constructor(private readonly resolve: SymbolResolver) {
+    constructor(resolve: SymbolResolver) {
+        this.#resolve = resolve;
     }
 
     bind<R extends NativeFunctionReturnType, A extends NativeFunctionArgumentType[] | []>(name: string, returnType: R, argumentTypes: A) {
-        const address = this.resolve(name);
+        const address = this.#resolve(name);
         if (address === null) {
             this.missing.push(name);
         }

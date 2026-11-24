@@ -91,33 +91,38 @@ export function openVisitGate(): VisitGate {
 }
 
 class NativeVisitGate implements VisitGate {
-    constructor(private readonly module: CModule) {
+    readonly #module: CModule;
+
+    constructor(module: CModule) {
+        this.#module = module;
     }
 
     filter(visitor: Visitor, onForeignVisits: () => void): VisitFilter {
-        return new NativeVisitFilter(this.module.on_enter, visitor, onForeignVisits);
+        return new NativeVisitFilter(this.#module.on_enter, visitor, onForeignVisits);
     }
 }
 
 class NativeVisitFilter implements VisitFilter {
-    private readonly memory = Memory.alloc(FILTER_SIZE);
-    private readonly visit: NativeCallback<"void", ["pointer"]>;
-    private readonly notice: NativeCallback<"void", []>;
+    readonly #onEnter: NativePointer;
+    readonly #memory = Memory.alloc(FILTER_SIZE);
+    readonly #visit: NativeCallback<"void", ["pointer"]>;
+    readonly #notice: NativeCallback<"void", []>;
 
-    constructor(private readonly onEnter: NativePointer, visitor: Visitor, onForeignVisits: () => void) {
-        this.visit = new NativeCallback(state => visitor(state, Process.getCurrentThreadId()), "void", ["pointer"]);
-        this.notice = new NativeCallback(onForeignVisits, "void", []);
-        this.memory.writePointer(this.visit);
-        this.memory.add(POINTER_SIZE).writePointer(this.notice);
+    constructor(onEnter: NativePointer, visitor: Visitor, onForeignVisits: () => void) {
+        this.#onEnter = onEnter;
+        this.#visit = new NativeCallback(state => visitor(state, Process.getCurrentThreadId()), "void", ["pointer"]);
+        this.#notice = new NativeCallback(onForeignVisits, "void", []);
+        this.#memory.writePointer(this.#visit);
+        this.#memory.add(POINTER_SIZE).writePointer(this.#notice);
         this.admitEverything();
     }
 
     attach(target: NativePointer): InvocationListener {
-        return Interceptor.attach(target, { onEnter: this.onEnter }, this.memory);
+        return Interceptor.attach(target, { onEnter: this.#onEnter }, this.#memory);
     }
 
     admitEverything(): void {
-        this.memory.add(MODE_OFFSET).writeS32(nativeModes.everything);
+        this.#memory.add(MODE_OFFSET).writeS32(nativeModes.everything);
     }
 
     admitOnly(globalOffset: number, globals: NativePointer[], noticeAfter: number): void {
@@ -125,7 +130,7 @@ class NativeVisitFilter implements VisitFilter {
             this.admitEverything();
             return;
         }
-        const field = (offset: number) => this.memory.add(offset);
+        const field = (offset: number) => this.#memory.add(offset);
         field(WANTED_COUNT_OFFSET).writeU32(0);
         field(GLOBAL_OFFSET_OFFSET).writeU32(globalOffset);
         globals.forEach((global, index) => field(WANTED_OFFSET + index * POINTER_SIZE).writePointer(global));
@@ -143,43 +148,47 @@ class ScriptVisitGate implements VisitGate {
 }
 
 class ScriptVisitFilter implements VisitFilter {
-    private admission: Admission = "everything";
-    private globalOffset = 0;
-    private wanted = new Set<string>();
-    private rejected = 0;
-    private noticeAfter = 0;
+    readonly #visitor: Visitor;
+    readonly #onForeignVisits: () => void;
+    #admission: Admission = "everything";
+    #globalOffset = 0;
+    #wanted = new Set<string>();
+    #rejected = 0;
+    #noticeAfter = 0;
 
-    constructor(private readonly visitor: Visitor, private readonly onForeignVisits: () => void) {
+    constructor(visitor: Visitor, onForeignVisits: () => void) {
+        this.#visitor = visitor;
+        this.#onForeignVisits = onForeignVisits;
     }
 
     attach(target: NativePointer): InvocationListener {
         const filter = this;
         return Interceptor.attach(target, {
             onEnter(args) {
-                filter.consider(args[0], this.threadId);
+                filter.#consider(args[0], this.threadId);
             },
         });
     }
 
     admitEverything(): void {
-        this.admission = "everything";
+        this.#admission = "everything";
     }
 
     admitOnly(globalOffset: number, globals: NativePointer[], noticeAfter: number): void {
-        this.globalOffset = globalOffset;
-        this.wanted = new Set(globals.map(global => global.toString()));
-        this.rejected = 0;
-        this.noticeAfter = noticeAfter;
-        this.admission = "wanted";
+        this.#globalOffset = globalOffset;
+        this.#wanted = new Set(globals.map(global => global.toString()));
+        this.#rejected = 0;
+        this.#noticeAfter = noticeAfter;
+        this.#admission = "wanted";
     }
 
-    private consider(state: NativePointer, threadId: ThreadId): void {
-        if (this.admission === "wanted" && !this.wanted.has(state.add(this.globalOffset).readPointer().toString())) {
-            if (++this.rejected === this.noticeAfter) {
-                this.onForeignVisits();
+    #consider(state: NativePointer, threadId: ThreadId): void {
+        if (this.#admission === "wanted" && !this.#wanted.has(state.add(this.#globalOffset).readPointer().toString())) {
+            if (++this.#rejected === this.#noticeAfter) {
+                this.#onForeignVisits();
             }
             return;
         }
-        this.visitor(state, threadId);
+        this.#visitor(state, threadId);
     }
 }

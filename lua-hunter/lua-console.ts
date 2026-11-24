@@ -21,46 +21,56 @@ const helpLines = [
 ];
 
 export class LuaConsole implements InterpreterObserver, HuntLog {
-    private current: Interpreter | null = null;
-    private hunt!: LuaHunt;
+    readonly #widget: ConsoleWidget;
+    readonly #table: InterpreterTable;
+    readonly #settings: Settings;
+    #current: Interpreter | null = null;
+    #hunt!: LuaHunt;
 
     constructor(
-        private readonly widget: ConsoleWidget,
-        private readonly table: InterpreterTable,
-        private readonly settings: Settings,
+        widget: ConsoleWidget,
+        table: InterpreterTable,
+        settings: Settings,
     ) {
+        this.#widget = widget;
+        this.#table = table;
+        this.#settings = settings;
     }
 
     attach(hunt: LuaHunt): void {
-        this.hunt = hunt;
+        this.#hunt = hunt;
+    }
+
+    fail(error: Error): void {
+        this.#widget.appendError(error.stack!);
     }
 
     note(text: string): void {
-        this.widget.appendOutput(text);
+        this.#widget.appendOutput(text);
     }
 
     onStillWaiting(interpreter: Interpreter): void {
-        this.widget.appendOutput(`${interpreter.label} still has not come by, while other interpreters keep calling into Lua. `
+        this.#widget.appendOutput(`${interpreter.label} still has not come by, while other interpreters keep calling into Lua. `
             + "It may be idle; :cancel drops what is waiting for it.");
     }
 
     onInterpreterAdded(interpreter: Interpreter): void {
-        this.widget.appendOutput(`${describe(interpreter)} found ${sightingLabels[interpreter.sighting]}.`);
-        if (this.current === null && interpreter.canRun) {
+        this.#widget.appendOutput(`${describe(interpreter)} found ${sightingLabels[interpreter.sighting]}.`);
+        if (this.#current === null && interpreter.canRun) {
             this.use(interpreter);
         }
     }
 
     onInterpreterChanged(interpreter: Interpreter): void {
-        if (interpreter === this.current && interpreter.presence === "closed") {
-            this.widget.appendError(`${interpreter.label} was closed. :use another one.`);
+        if (interpreter === this.#current && interpreter.presence === "closed") {
+            this.#widget.appendError(`${interpreter.label} was closed. :use another one.`);
         }
     }
 
     statusOf(interpreter: Interpreter): string {
-        const pending = this.hunt.rendezvous.pendingFor(interpreter);
+        const pending = this.#hunt.rendezvous.pendingFor(interpreter);
         const parts = [
-            (interpreter === this.current) ? "● in use" : null,
+            (interpreter === this.#current) ? "● in use" : null,
             (pending !== 0) ? `${pending} waiting` : null,
             presenceLabel(interpreter),
         ];
@@ -68,39 +78,43 @@ export class LuaConsole implements InterpreterObserver, HuntLog {
     }
 
     use(interpreter: Interpreter): void {
-        const previous = this.current;
-        this.current = interpreter;
+        const previous = this.#current;
+        this.#current = interpreter;
         if (previous !== null) {
-            this.table.show(previous);
+            this.#table.show(previous);
         }
-        this.table.show(interpreter);
-        this.widget.appendOutput(`Console now runs in ${describe(interpreter)}.`);
+        this.#table.show(interpreter);
+        this.#widget.appendOutput(`Console now runs in ${describe(interpreter)}.`);
+    }
+
+    clear(): void {
+        this.#widget.clear();
     }
 
     async handle(text: string, respond: Responder): Promise<void> {
         const trimmed = text.trim();
         if (!trimmed.startsWith(":")) {
-            await this.run(trimmed, respond, "owner");
+            await this.#run(trimmed, respond, "owner");
             return;
         }
         const [directive, ...rest] = trimmed.slice(1).split(/\s+/);
         const argument = trimmed.slice(1 + directive.length).trim();
         switch (directive) {
             case "list":
-                this.list(respond);
+                this.#list(respond);
                 break;
             case "use":
-                this.useNumber(rest[0] ?? "", respond);
+                this.#useNumber(rest[0] ?? "", respond);
                 break;
             case "cancel":
-                this.cancel(respond);
+                this.#cancel(respond);
                 break;
             case "scan":
                 respond.output("Looking again…");
-                await this.hunt.rescan();
+                await this.#hunt.rescan();
                 break;
             case "now":
-                await this.run(argument, respond, "instrument");
+                await this.#run(argument, respond, "instrument");
                 break;
             case "help":
                 helpLines.forEach(line => respond.output(line));
@@ -110,8 +124,8 @@ export class LuaConsole implements InterpreterObserver, HuntLog {
         }
     }
 
-    private run(source: string, respond: Responder, thread: "owner" | "instrument"): Promise<void> {
-        const interpreter = this.current;
+    #run(source: string, respond: Responder, thread: "owner" | "instrument"): Promise<void> {
+        const interpreter = this.#current;
         if (interpreter === null) {
             respond.error("No interpreter to run in yet. :list shows what was found.");
             return Promise.resolve();
@@ -121,7 +135,7 @@ export class LuaConsole implements InterpreterObserver, HuntLog {
             respond.error(cannotRunReason(interpreter));
             return Promise.resolve();
         }
-        const limits = { entriesPerTable: this.settings.entriesPerTable };
+        const limits = { entriesPerTable: this.#settings.entriesPerTable };
         if (thread === "instrument") {
             respond.output(`${interpreter.label} on the instrument's thread, unsafely:`);
             report(executor.evaluate(interpreter.main, source, limits), respond);
@@ -131,34 +145,34 @@ export class LuaConsole implements InterpreterObserver, HuntLog {
             const notice = setTimeout(() => {
                 respond.output(`Waiting for ${interpreter.label} to call into Lua on its thread…`);
             }, WAITING_NOTICE_DELAY_MS);
-            this.hunt.rendezvous.send(interpreter, {
+            this.#hunt.rendezvous.send(interpreter, {
                 run: (L, threadId) => {
                     clearTimeout(notice);
                     const outcome = executor.evaluate(L, source, limits);
-                    this.hunt.refreshCensus(interpreter, L, threadId);
+                    this.#hunt.refreshCensus(interpreter, L, threadId);
                     respond.output(`${interpreter.label} on thread ${threadId}:`);
                     report(outcome, respond);
-                    this.table.show(interpreter);
+                    this.#table.show(interpreter);
                     resolve();
                 },
                 abandon: reason => {
                     clearTimeout(notice);
                     respond.error(reason);
-                    this.table.show(interpreter);
+                    this.#table.show(interpreter);
                     resolve();
                 },
             });
-            this.table.show(interpreter);
+            this.#table.show(interpreter);
         });
     }
 
-    private list(respond: Responder): void {
-        const interpreters = this.hunt.registry.all;
+    #list(respond: Responder): void {
+        const interpreters = this.#hunt.registry.all;
         if (interpreters.length === 0) {
             respond.output("No interpreters found yet.");
         }
         for (const interpreter of interpreters) {
-            const marker = (interpreter === this.current) ? "●" : " ";
+            const marker = (interpreter === this.#current) ? "●" : " ";
             const census = interpreter.census;
             const globals = (census !== null) ? `, ${census.globals} globals` : "";
             const thread = (interpreter.thread !== null) ? `, thread ${interpreter.thread}` : "";
@@ -166,8 +180,8 @@ export class LuaConsole implements InterpreterObserver, HuntLog {
         }
     }
 
-    private useNumber(text: string, respond: Responder): void {
-        const interpreter = this.hunt.registry.numbered(Number(text.replace(/^#/, "")));
+    #useNumber(text: string, respond: Responder): void {
+        const interpreter = this.#hunt.registry.numbered(Number(text.replace(/^#/, "")));
         if (interpreter === undefined) {
             respond.error(`There is no interpreter ${text}. :list shows them.`);
             return;
@@ -178,12 +192,12 @@ export class LuaConsole implements InterpreterObserver, HuntLog {
         }
     }
 
-    private cancel(respond: Responder): void {
-        const interpreter = this.current;
-        const dropped = (interpreter !== null) ? this.hunt.rendezvous.recall(interpreter, "Canceled.") : 0;
+    #cancel(respond: Responder): void {
+        const interpreter = this.#current;
+        const dropped = (interpreter !== null) ? this.#hunt.rendezvous.recall(interpreter, "Canceled.") : 0;
         respond.output(`Dropped ${dropped} waiting chunk${(dropped === 1) ? "" : "s"}.`);
         if (interpreter !== null) {
-            this.table.show(interpreter);
+            this.#table.show(interpreter);
         }
     }
 }

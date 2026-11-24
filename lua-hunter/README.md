@@ -74,12 +74,15 @@ console is using, how many chunks are waiting for it, and whether it was
 closed, has not been seen running yet, or cannot run code.
 
 Choose **Use in Console** on a row to run what you type next in that
-interpreter.
+interpreter. **Scan**, in the table's header, does what `:scan` does; it is
+disabled while memory is being searched. `:scan` typed during a search asks
+for one more once it ends.
 
 ## The console
 
 What you type runs in the interpreter in use. Every reply starts with which
-interpreter ran it and on which thread.
+interpreter ran it and on which thread. **Clear**, in the console's header,
+empties it.
 
 A `lua_State` can only be used by the thread running it, so the chunk waits
 until that thread next calls into the Lua API (or the standard library, when
