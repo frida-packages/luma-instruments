@@ -3,11 +3,11 @@
   "displayName": "Mesh Finder",
   "version": "1.0.1",
   "main": "main.ts",
-  "engines": { "luma": ">=3.0.0" },
+  "engines": { "luma": ">=4.0.0" },
   "luma": {
     "icon": { "kind": "symbolic", "value": "magnifyingglass" },
     "compatibility": { "platforms": ["windows", "darwin", "linux"] },
-    "features": [
+    "settings": [
       {
         "id": "watchDraws",
         "name": "Learn meshes from draw calls",
@@ -41,46 +41,45 @@
       {
         "id": "meshes",
         "name": "Meshes",
-        "kind": {
-          "kind": "table",
-          "config": {
-            "columns": [
-              { "id": "mesh", "name": "Mesh", "alignment": "leading" },
-              { "id": "api", "name": "API", "alignment": "leading" },
-              { "id": "vertices", "name": "Vertices", "alignment": "trailing" },
-              { "id": "triangles", "name": "Triangles", "alignment": "trailing" },
-              { "id": "size", "name": "Size", "alignment": "leading" },
-              { "id": "layout", "name": "Layout", "alignment": "leading" },
-              { "id": "learned", "name": "Learned from", "alignment": "leading" },
-              { "id": "buffers", "name": "Buffers", "alignment": "leading" }
-            ],
-            "actions": [
-              { "id": "show", "name": "Show" },
-              { "id": "obj", "name": "Export OBJ" }
-            ],
-            "maxRows": 5000
-          }
+        "kind": "table",
+        "config": {
+          "columns": [
+            { "id": "mesh", "name": "Mesh", "alignment": "leading" },
+            { "id": "api", "name": "API", "alignment": "leading" },
+            { "id": "vertices", "name": "Vertices", "alignment": "trailing" },
+            { "id": "triangles", "name": "Triangles", "alignment": "trailing" },
+            { "id": "size", "name": "Size", "alignment": "leading" },
+            { "id": "layout", "name": "Layout", "alignment": "leading" },
+            { "id": "learned", "name": "Learned from", "alignment": "leading" },
+            { "id": "buffers", "name": "Buffers", "alignment": "leading" }
+          ],
+          "rowActions": [
+            { "id": "show", "name": "Show" },
+            { "id": "obj", "name": "Export OBJ" }
+          ],
+          "maxRows": 5000
         },
+        "actions": [{ "id": "scan", "name": "Scan" }],
         "persistence": "none"
       },
       {
         "id": "mesh",
         "name": "Mesh",
-        "kind": { "kind": "view", "config": { "class": "MeshView", "height": 420 } },
+        "kind": "view",
+        "config": { "class": "MeshView", "height": 420 },
         "persistence": "session"
       },
       {
         "id": "viewer",
         "name": "Console",
-        "kind": {
-          "kind": "console",
-          "config": {
-            "prompt": ">",
-            "placeholder": "show 3, obj 3, scan, help",
-            "runButtonLabel": "Run",
-            "maxEntries": 500
-          }
+        "kind": "console",
+        "config": {
+          "maxEntries": 500,
+          "prompt": ">",
+          "placeholder": "show 3, obj 3, scan, help",
+          "runButtonLabel": "Run"
         },
+        "actions": [{ "id": "clear", "name": "Clear" }],
         "persistence": "none"
       }
     ],

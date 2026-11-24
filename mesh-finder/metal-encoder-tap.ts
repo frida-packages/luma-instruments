@@ -875,31 +875,31 @@ const encoderCalls: [string, number][] = [
 ];
 
 export class EncoderTap {
-    private readonly onNewDraw: NativeCallback<"void", ["pointer"]>;
-    private readonly onScratchBuffer: NativeCallback<"void", ["pointer"]>;
-    private readonly state: NativePointer;
-    private readonly tap: CModule;
-    private readonly listeners: InvocationListener[] = [];
-    private readonly setSlots: NativeFunction<void, [NativePointerValue, number]>;
-    private readonly noteGuessed: NativeFunction<void, [NativePointerValue, number]>;
-    private readonly ignore: NativeFunction<void, [number | UInt64, number | UInt64]>;
-    private readonly waitUntilIdle: NativeFunction<void, []>;
+    readonly #onNewDraw: NativeCallback<"void", ["pointer"]>;
+    readonly #onScratchBuffer: NativeCallback<"void", ["pointer"]>;
+    readonly #state: NativePointer;
+    readonly #tap: CModule;
+    readonly #listeners: InvocationListener[] = [];
+    readonly #setSlots: NativeFunction<void, [NativePointerValue, number]>;
+    readonly #noteGuessed: NativeFunction<void, [NativePointerValue, number]>;
+    readonly #ignore: NativeFunction<void, [number | UInt64, number | UInt64]>;
+    readonly #waitUntilIdle: NativeFunction<void, []>;
 
     constructor(deliver: (draw: EncodedDraw) => void, scratchFound: (buffer: NativePointer) => void) {
-        this.onNewDraw = new NativeCallback(draw => deliver(encodedDrawOf(Draw.at(draw))), "void", ["pointer"]);
-        this.onScratchBuffer = new NativeCallback(scratchFound, "void", ["pointer"]);
-        this.state = Memory.alloc(TAP_STATE_SIZE);
-        this.tap = new CModule(source, {
-            tap: this.state,
-            deliver_new_draw: this.onNewDraw,
-            deliver_scratch_buffer: this.onScratchBuffer,
+        this.#onNewDraw = new NativeCallback(draw => deliver(encodedDrawOf(Draw.at(draw))), "void", ["pointer"]);
+        this.#onScratchBuffer = new NativeCallback(scratchFound, "void", ["pointer"]);
+        this.#state = Memory.alloc(TAP_STATE_SIZE);
+        this.#tap = new CModule(source, {
+            tap: this.#state,
+            deliver_new_draw: this.#onNewDraw,
+            deliver_scratch_buffer: this.#onScratchBuffer,
             objc_msgSend: Module.getGlobalExportByName("objc_msgSend"),
             sel_registerName: Module.getGlobalExportByName("sel_registerName"),
         });
-        this.setSlots = new NativeFunction(this.tap.set_pipeline_slots, "void", ["pointer", "uint32"]);
-        this.noteGuessed = new NativeFunction(this.tap.note_guessed_slot, "void", ["pointer", "uint32"]);
-        this.ignore = new NativeFunction(this.tap.ignore_callers, "void", ["uint64", "uint64"]);
-        this.waitUntilIdle = new NativeFunction(this.tap.wait_until_idle, "void", []);
+        this.#setSlots = new NativeFunction(this.#tap.set_pipeline_slots, "void", ["pointer", "uint32"]);
+        this.#noteGuessed = new NativeFunction(this.#tap.note_guessed_slot, "void", ["pointer", "uint32"]);
+        this.#ignore = new NativeFunction(this.#tap.ignore_callers, "void", ["uint64", "uint64"]);
+        this.#waitUntilIdle = new NativeFunction(this.#tap.wait_until_idle, "void", []);
     }
 
     start(encoderClasses: NativePointer[]): void {
@@ -911,30 +911,30 @@ export class EncoderTap {
                     continue;
                 }
                 hooked.add(implementation.toString());
-                this.listeners.push(Interceptor.attach(implementation, { onEnter: this.tap.on_encoder_call }, ptr(call)));
+                this.#listeners.push(Interceptor.attach(implementation, { onEnter: this.#tap.on_encoder_call }, ptr(call)));
             }
         }
     }
 
     ignoreCallsFrom(module: Module): void {
-        this.ignore(uint64(module.base.toString()), uint64(module.base.add(module.size).toString()));
+        this.#ignore(uint64(module.base.toString()), uint64(module.base.add(module.size).toString()));
     }
 
     narrowPipeline(pipeline: NativePointer, slots: number): void {
-        this.setSlots(pipeline, slots >>> 0);
+        this.#setSlots(pipeline, slots >>> 0);
     }
 
     noteGuessedSlot(pipeline: NativePointer, slot: number): void {
-        this.noteGuessed(pipeline, slot);
+        this.#noteGuessed(pipeline, slot);
     }
 
     dispose(): void {
-        for (const listener of this.listeners) {
+        for (const listener of this.#listeners) {
             listener.detach();
         }
         Interceptor.flush();
-        this.waitUntilIdle();
-        this.tap.dispose();
+        this.#waitUntilIdle();
+        this.#tap.dispose();
     }
 }
 

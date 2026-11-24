@@ -182,8 +182,16 @@ declared by the API comes with a confidence.
   copy into a file and open in any 3D tool. Point clouds are written as `p`
   elements. Meshes that would make more than 16 MiB of OBJ are refused.
 
-The **Console** also takes commands: `show 3`, `obj 3`, `list`, and
-`scan`, which looks for buffers again, such as after a new level has loaded.
+**Scan**, in the table's header, looks for buffers again, such as after a new
+level has loaded. It is disabled while a search is under way, and while
+**Guess meshes in buffers never drawn** is off, since buffers are then only
+learned from draws. An OpenGL or Direct3D 11 search reads the buffers on the
+thread that draws, the next time it does, and gives up after 3 seconds when
+it does not.
+
+The **Console** also takes commands: `show 3`, `obj 3`, `list`, and `scan`,
+which does what **Scan** does, or says why it cannot.
+**Clear**, in its header, empties it.
 
 The view keeps the last mesh shown with the session, so it is still there
 when the project is opened again; the table is filled afresh each time the

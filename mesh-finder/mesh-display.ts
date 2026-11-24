@@ -11,18 +11,23 @@ const BYTES_PER_VERTEX = 12;
 const BYTES_PER_TRIANGLE = 12;
 
 export class MeshDisplay {
-    constructor(private readonly view: MeshView, private readonly console: Console) {
+    readonly #view: MeshView;
+    readonly #console: Console;
+
+    constructor(view: MeshView, console: Console) {
+        this.#view = view;
+        this.#console = console;
     }
 
     showMesh(mesh: Mesh): void {
-        const picture = this.picture(mesh);
+        const picture = this.#picture(mesh);
         if (picture.kind === "not-shown") {
-            this.console.appendError(picture.reason);
+            this.#console.appendError(picture.reason);
         }
-        this.console.appendOutput(summaryOf(mesh, picture));
+        this.#console.appendOutput(summaryOf(mesh, picture));
     }
 
-    private picture(mesh: Mesh): Picture {
+    #picture(mesh: Mesh): Picture {
         if (mesh.positions === null) {
             return { kind: "not-shown", reason: `${meshTitle(mesh)} has nothing to show. ${whyUnreadable(mesh)}.` };
         }
@@ -40,8 +45,8 @@ export class MeshDisplay {
         if (mesh.indices !== null) {
             new Uint32Array(data, mesh.vertexCount * BYTES_PER_VERTEX, triangles * 3).set(mesh.indices);
         }
-        this.view.setState({ vertices: mesh.vertexCount, triangles, title: `${meshTitle(mesh)} · ${mesh.api}` }, data);
-        this.view.sendEvent({ say: learnedFrom(mesh) });
+        this.#view.setState({ vertices: mesh.vertexCount, triangles, title: `${meshTitle(mesh)} · ${mesh.api}` }, data);
+        this.#view.sendEvent({ say: learnedFrom(mesh) });
         return { kind: "shown" };
     }
 }

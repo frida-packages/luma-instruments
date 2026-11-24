@@ -8,10 +8,10 @@ export class Settings {
         this.apply(config);
     }
 
-    apply({ features }: CustomInstrumentConfig): void {
-        this.watchDraws = features.watchDraws;
-        this.guessUndrawn = features.guessUndrawn;
-        this.minimumConfidence = features.minimumConfidence / 100;
-        this.minimumVertices = features.minimumVertices;
+    apply({ settings }: CustomInstrumentConfig): void {
+        this.watchDraws = settings.watchDraws;
+        this.guessUndrawn = settings.guessUndrawn;
+        this.minimumConfidence = settings.minimumConfidence / 100;
+        this.minimumVertices = settings.minimumVertices;
     }
 }

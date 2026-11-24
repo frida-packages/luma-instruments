@@ -696,17 +696,19 @@ static void leave_js (void)
 `;
 
 export class GLTap {
-    private readonly state = Memory.alloc(TAP_STATE_SIZE);
-    private readonly callbacks: NativeCallback<any, any>[];
-    private readonly tap: CModule;
-    private readonly listeners: InvocationListener[] = [];
-    private readonly hooked = new Set<string>();
-    private readonly requestFrameNow: NativeFunction<void, []>;
-    private readonly setObserving: NativeFunction<void, [number]>;
-    private readonly addShadow: NativeFunction<void, [NativePointerValue, number | UInt64]>;
-    private readonly waitUntilIdle: NativeFunction<void, []>;
+    readonly #platform: GLTapPlatform;
+    readonly #state = Memory.alloc(TAP_STATE_SIZE);
+    readonly #callbacks: NativeCallback<any, any>[];
+    readonly #tap: CModule;
+    readonly #listeners: InvocationListener[] = [];
+    readonly #hooked = new Set<string>();
+    readonly #requestFrameNow: NativeFunction<void, []>;
+    readonly #setObserving: NativeFunction<void, [number]>;
+    readonly #addShadow: NativeFunction<void, [NativePointerValue, number | UInt64]>;
+    readonly #waitUntilIdle: NativeFunction<void, []>;
 
-    constructor(private readonly platform: GLTapPlatform, events: GLTapEvents) {
+    constructor(platform: GLTapPlatform, events: GLTapEvents) {
+        this.#platform = platform;
         const onNewDraw = new NativeCallback(draw => events.newDraw(glDrawOf(Draw.at(draw))), "void", ["pointer"]);
         const onFrame = new NativeCallback(shareGroup => events.frame(shareGroup), "void", ["pointer"]);
         const onUpload = new NativeCallback((kind, shareGroup, buffer, offset, length, data) => events.upload({
@@ -719,55 +721,55 @@ export class GLTap {
         }), "void", ["uint32", "pointer", "uint64", "uint64", "uint64", "pointer"]);
         const onDeleted = new NativeCallback((shareGroup, buffer) => events.deleted(shareGroup, buffer.toNumber()), "void",
             ["pointer", "uint64"]);
-        this.callbacks = [onNewDraw, onFrame, onUpload, onDeleted];
-        this.tap = new CModule(source.replace("SHARE_GROUP_SOURCE", platform.shareGroupSource), {
+        this.#callbacks = [onNewDraw, onFrame, onUpload, onDeleted];
+        this.#tap = new CModule(source.replace("SHARE_GROUP_SOURCE", platform.shareGroupSource), {
             ...platform.shareGroupSymbols,
-            tap: this.state,
+            tap: this.#state,
             glGetIntegerv: platform.entryPoint("glGetIntegerv")!,
             deliver_new_draw: onNewDraw,
             deliver_frame: onFrame,
             deliver_upload: onUpload,
             deliver_deleted: onDeleted,
         });
-        this.requestFrameNow = new NativeFunction(this.tap.request_frame, "void", []);
-        this.setObserving = new NativeFunction(this.tap.set_observing, "void", ["int"]);
-        this.addShadow = new NativeFunction(this.tap.shadow_add, "void", ["pointer", "uint64"]);
-        this.waitUntilIdle = new NativeFunction(this.tap.wait_until_idle, "void", []);
+        this.#requestFrameNow = new NativeFunction(this.#tap.request_frame, "void", []);
+        this.#setObserving = new NativeFunction(this.#tap.set_observing, "void", ["int"]);
+        this.#addShadow = new NativeFunction(this.#tap.shadow_add, "void", ["pointer", "uint64"]);
+        this.#waitUntilIdle = new NativeFunction(this.#tap.wait_until_idle, "void", []);
         this.hookEntryPoints();
     }
 
     hookEntryPoints(): void {
         for (const [call, names] of Object.entries(entryPointNames) as [GLCall, string[]][]) {
-            for (const target of names.flatMap(name => this.platform.hookTargets(name))) {
-                if (this.hooked.has(target.toString())) {
+            for (const target of names.flatMap(name => this.#platform.hookTargets(name))) {
+                if (this.#hooked.has(target.toString())) {
                     continue;
                 }
-                this.hooked.add(target.toString());
-                const leave = (call === "mapBufferRange" || call === "mapBuffer") ? { onLeave: this.tap.on_leave } : {};
-                this.listeners.push(Interceptor.attach(target, { onEnter: this.tap.on_enter, ...leave }, ptr(callIds[call])));
+                this.#hooked.add(target.toString());
+                const leave = (call === "mapBufferRange" || call === "mapBuffer") ? { onLeave: this.#tap.on_leave } : {};
+                this.#listeners.push(Interceptor.attach(target, { onEnter: this.#tap.on_enter, ...leave }, ptr(callIds[call])));
             }
         }
     }
 
     observeDraws(watch: DrawWatch): void {
-        this.setObserving((watch === "observed") ? 1 : 0);
+        this.#setObserving((watch === "observed") ? 1 : 0);
     }
 
     requestFrame(): void {
-        this.requestFrameNow();
+        this.#requestFrameNow();
     }
 
     shadow(shareGroup: NativePointer, buffer: number): void {
-        this.addShadow(shareGroup, buffer);
+        this.#addShadow(shareGroup, buffer);
     }
 
     dispose(): void {
-        for (const listener of this.listeners) {
+        for (const listener of this.#listeners) {
             listener.detach();
         }
         Interceptor.flush();
-        this.waitUntilIdle();
-        this.tap.dispose();
+        this.#waitUntilIdle();
+        this.#tap.dispose();
     }
 }
 

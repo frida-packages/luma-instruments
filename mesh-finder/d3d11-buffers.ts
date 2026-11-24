@@ -36,8 +36,12 @@ export class D3D11Buffer implements GpuBuffer {
     readonly byteLength: number;
     readonly access: BufferAccess = "cpu-readable";
     readonly creationOrder: number;
+    readonly #retained: RetainedBuffer;
+    readonly #contents: BufferContents;
 
-    constructor(private readonly retained: RetainedBuffer, private readonly contents: BufferContents) {
+    constructor(retained: RetainedBuffer, contents: BufferContents) {
+        this.#retained = retained;
+        this.#contents = contents;
         this.id = `${API}:${retained.handle}`;
         this.address = retained.handle.toString();
         this.label = retained.description.label;
@@ -49,15 +53,15 @@ export class D3D11Buffer implements GpuBuffer {
         if (offset < 0 || length < 0 || offset + length > this.byteLength) {
             throw new Error(`read of ${length} bytes at ${offset} is outside ${this.address}, which holds ${this.byteLength}`);
         }
-        return this.contents.read(this.retained, offset, length);
+        return this.#contents.read(this.#retained, offset, length);
     }
 }
 
 export class BufferDescriber {
-    private readonly description = BufferDesc.at(Memory.alloc(BufferDesc.size));
-    private readonly device = Memory.alloc(Process.pointerSize);
-    private readonly labelSize = Memory.alloc(4);
-    private readonly label = Memory.alloc(LONGEST_LABEL);
+    readonly #description = BufferDesc.at(Memory.alloc(BufferDesc.size));
+    readonly #device = Memory.alloc(Process.pointerSize);
+    readonly #labelSize = Memory.alloc(4);
+    readonly #label = Memory.alloc(LONGEST_LABEL);
 
     retainLive(candidates: NativePointer[], bufferClass: BufferClass): RetainedBuffer[] {
         const retained: RetainedBuffer[] = [];
@@ -77,32 +81,32 @@ export class BufferDescriber {
 
     retain(handle: NativePointer): RetainedBuffer {
         addRef(handle);
-        return { handle, description: this.describe(handle) };
+        return { handle, description: this.#describe(handle) };
     }
 
-    private describe(handle: NativePointer): BufferDescription {
-        const description = this.description;
+    #describe(handle: NativePointer): BufferDescription {
+        const description = this.#description;
         comMethod(handle, bufferSlots.getDesc, "void", ["pointer"])(handle, description.$address);
-        comMethod(handle, bufferSlots.getDevice, "void", ["pointer"])(handle, this.device);
-        const device = this.device.readPointer();
+        comMethod(handle, bufferSlots.getDevice, "void", ["pointer"])(handle, this.#device);
+        const device = this.#device.readPointer();
         release(device);
         return {
             byteLength: description.byteWidth,
             usage: description.usage,
             bindFlags: description.bindFlags,
             device,
-            label: this.labelOf(handle),
+            label: this.#labelOf(handle),
         };
     }
 
-    private labelOf(handle: NativePointer): string | null {
-        this.labelSize.writeU32(LONGEST_LABEL);
+    #labelOf(handle: NativePointer): string | null {
+        this.#labelSize.writeU32(LONGEST_LABEL);
         const result = comMethod(handle, bufferSlots.getPrivateData, "int", ["pointer", "pointer", "pointer"])(handle,
-            WKPDID_D3D_DEBUG_OBJECT_NAME, this.labelSize, this.label);
+            WKPDID_D3D_DEBUG_OBJECT_NAME, this.#labelSize, this.#label);
         if (!succeeded(result)) {
             return null;
         }
-        return this.label.readUtf8String(this.labelSize.readU32())!.replace(/\0+$/, "") || null;
+        return this.#label.readUtf8String(this.#labelSize.readU32())!.replace(/\0+$/, "") || null;
     }
 }
 

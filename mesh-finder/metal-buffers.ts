@@ -95,26 +95,26 @@ export function findMetalBuffers(bufferClasses: NativePointer[], describer: Meta
 }
 
 export class MetalBufferDescriber {
-    private readonly facts = BufferFacts.at(Memory.alloc(BufferFacts.size));
-    private readonly label = Memory.alloc(LABEL_CAPACITY);
-    private readonly selectors = Memory.alloc(5 * Process.pointerSize);
-    private readonly describer = new CModule(source, {
-        selectors: this.selectors,
+    readonly #facts = BufferFacts.at(Memory.alloc(BufferFacts.size));
+    readonly #label = Memory.alloc(LABEL_CAPACITY);
+    readonly #selectors = Memory.alloc(5 * Process.pointerSize);
+    readonly #describer = new CModule(source, {
+        selectors: this.#selectors,
         objc_msgSend: Module.getGlobalExportByName("objc_msgSend"),
         sel_registerName: Module.getGlobalExportByName("sel_registerName"),
         objc_autoreleasePoolPush: Module.getGlobalExportByName("objc_autoreleasePoolPush"),
         objc_autoreleasePoolPop: Module.getGlobalExportByName("objc_autoreleasePoolPop"),
         CFStringGetCString: Module.getGlobalExportByName("CFStringGetCString"),
     });
-    private readonly describeBuffer = new NativeFunction(this.describer.describe_buffer, "uint8",
+    readonly #describeBuffer = new NativeFunction(this.#describer.describe_buffer, "uint8",
         ["pointer", "uint64", "pointer", "pointer", "pointer"]);
-    private readonly isa = IsaBits.at(Memory.alloc(IsaBits.size));
+    readonly #isa = IsaBits.at(Memory.alloc(IsaBits.size));
 
     constructor() {
         const { mask, magicMask, magicValue } = isaBits();
-        this.isa.classMask = mask;
-        this.isa.magicMask = magicMask;
-        this.isa.magicValue = magicValue;
+        this.#isa.classMask = mask;
+        this.#isa.magicMask = magicMask;
+        this.#isa.magicValue = magicValue;
     }
 
     describeLive(object: NativePointer): MetalBuffer | null {
@@ -122,9 +122,9 @@ export class MetalBufferDescriber {
     }
 
     describe(object: NativePointer, cls: NativePointer): MetalBuffer | null {
-        const facts = this.facts;
+        const facts = this.#facts;
         if (!isReadable(object)
-            || this.describeBuffer(object, uint64(cls.toString()), this.isa.$address, facts.$address, this.label) === 0) {
+            || this.#describeBuffer(object, uint64(cls.toString()), this.#isa.$address, facts.$address, this.#label) === 0) {
             return null;
         }
         return new MetalBuffer(
@@ -133,7 +133,7 @@ export class MetalBufferDescriber {
             facts.length.toNumber(),
             facts.storageMode.toNumber(),
             facts.gpuAddress.toNumber(),
-            this.label.readUtf8String() || null,
+            this.#label.readUtf8String() || null,
         );
     }
 }
@@ -146,15 +146,17 @@ export class MetalBuffer implements GpuBuffer {
     readonly byteLength: number;
     readonly access: BufferAccess;
     readonly creationOrder: number;
+    readonly #contents: NativePointer;
 
     constructor(
         object: NativePointer,
-        private readonly contents: NativePointer,
+        contents: NativePointer,
         byteLength: number,
         storageMode: number,
         creationOrder: number,
         label: string | null,
     ) {
+        this.#contents = contents;
         this.id = metalBufferId(object);
         this.address = object.toString();
         this.label = label;
@@ -170,7 +172,7 @@ export class MetalBuffer implements GpuBuffer {
         if (offset < 0 || length < 0 || offset + length > this.byteLength) {
             throw new Error(`read of ${length} bytes at ${offset} is outside ${this.address}, which holds ${this.byteLength}`);
         }
-        return this.contents.add(offset).readByteArray(length)!;
+        return this.#contents.add(offset).readByteArray(length)!;
     }
 }
 
@@ -186,11 +188,11 @@ export class BytesBuffer implements GpuBuffer {
     readonly byteLength: number;
     readonly access: BufferAccess = "cpu-readable";
     readonly creationOrder = 0;
-    private readonly bytes: ArrayBuffer;
+    readonly #bytes: ArrayBuffer;
 
     constructor(source: NativePointer, byteLength: number, digest: string) {
         this.byteLength = byteLength;
-        this.bytes = source.readByteArray(byteLength)!;
+        this.#bytes = source.readByteArray(byteLength)!;
         this.id = `Metal:bytes:${digest}x${byteLength}`;
     }
 
@@ -198,7 +200,7 @@ export class BytesBuffer implements GpuBuffer {
         if (offset < 0 || length < 0 || offset + length > this.byteLength) {
             throw new Error(`read of ${length} bytes at ${offset} is outside ${this.byteLength} bytes set with setVertexBytes`);
         }
-        return this.bytes.slice(offset, offset + length);
+        return this.#bytes.slice(offset, offset + length);
     }
 }
 

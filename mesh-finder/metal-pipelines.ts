@@ -29,8 +29,8 @@ const metalFormats = new Map<number, [ComponentType, number]>([
 let selectorTable: ReturnType<typeof selectorsByName> | null = null;
 
 export class PipelineWatch {
-    private readonly layouts = new Map<string, PipelineLayout>();
-    private readonly listeners: InvocationListener[] = [];
+    readonly #layouts = new Map<string, PipelineLayout>();
+    readonly #listeners: InvocationListener[] = [];
 
     constructor(pipelineClasses: NativePointer[], learned: (pipeline: NativePointer, layout: PipelineLayout) => void) {
         const watch = this;
@@ -41,13 +41,13 @@ export class PipelineWatch {
                 continue;
             }
             hooked.add(implementation.toString());
-            this.listeners.push(Interceptor.attach(implementation, {
+            this.#listeners.push(Interceptor.attach(implementation, {
                 onEnter(args) {
                     this.layout = layoutOfDescriptor(args[3]);
                 },
                 onLeave(pipeline) {
                     if (!pipeline.isNull()) {
-                        watch.layouts.set(pipeline.toString(), this.layout);
+                        watch.#layouts.set(pipeline.toString(), this.layout);
                         learned(pipeline, this.layout);
                     }
                 },
@@ -56,11 +56,11 @@ export class PipelineWatch {
     }
 
     layoutOf(pipeline: NativePointer): PipelineLayout | undefined {
-        return this.layouts.get(pipeline.toString());
+        return this.#layouts.get(pipeline.toString());
     }
 
     dispose(): void {
-        for (const listener of this.listeners) {
+        for (const listener of this.#listeners) {
             listener.detach();
         }
     }

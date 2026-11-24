@@ -727,15 +727,15 @@ static guint layout_index (gpointer layout)
 `;
 
 export class ContextTap {
-    private readonly state = Memory.alloc(TAP_STATE_SIZE);
-    private readonly callbacks: NativeCallback<any, any>[];
-    private readonly tap: CModule;
-    private readonly listeners: InvocationListener[] = [];
-    private readonly observe: NativeFunction<void, [number]>;
-    private readonly requestTurnOf: NativeFunction<void, [NativePointerValue]>;
-    private readonly requestAnyTurnNow: NativeFunction<void, []>;
-    private readonly narrow: NativeFunction<void, [NativePointerValue, number]>;
-    private readonly waitUntilIdle: NativeFunction<void, []>;
+    readonly #state = Memory.alloc(TAP_STATE_SIZE);
+    readonly #callbacks: NativeCallback<any, any>[];
+    readonly #tap: CModule;
+    readonly #listeners: InvocationListener[] = [];
+    readonly #observe: NativeFunction<void, [number]>;
+    readonly #requestTurnOf: NativeFunction<void, [NativePointerValue]>;
+    readonly #requestAnyTurnNow: NativeFunction<void, []>;
+    readonly #narrow: NativeFunction<void, [NativePointerValue, number]>;
+    readonly #waitUntilIdle: NativeFunction<void, []>;
 
     constructor(targets: HookTarget[], events: TapEvents) {
         const onNewDraw = new NativeCallback(draw => events.newDraw(tappedDrawOf(Draw.at(draw))), "void", ["pointer"]);
@@ -743,51 +743,51 @@ export class ContextTap {
         const onBufferCreated = new NativeCallback(buffer => events.bufferCreated(buffer), "void", ["pointer"]);
         const onInputLayout = new NativeCallback((layout, elements, count) => events.inputLayoutCreated(layout, elements, count), "void",
             ["pointer", "pointer", "uint32"]);
-        this.callbacks = [onNewDraw, onTurn, onBufferCreated, onInputLayout];
+        this.#callbacks = [onNewDraw, onTurn, onBufferCreated, onInputLayout];
         const comCall = (Process.arch === "ia32") ? "__attribute__ ((stdcall))" : "";
-        this.tap = new CModule(`#define COM_CALL ${comCall}\n${source}`, {
-            tap: this.state,
+        this.#tap = new CModule(`#define COM_CALL ${comCall}\n${source}`, {
+            tap: this.#state,
             deliver_new_draw: onNewDraw,
             deliver_turn: onTurn,
             deliver_buffer_created: onBufferCreated,
             deliver_input_layout: onInputLayout,
         });
-        this.observe = new NativeFunction(this.tap.observe_draws, "void", ["int"]);
-        this.requestTurnOf = new NativeFunction(this.tap.request_turn, "void", ["pointer"]);
-        this.requestAnyTurnNow = new NativeFunction(this.tap.request_any_turn, "void", []);
-        this.narrow = new NativeFunction(this.tap.narrow_layout, "void", ["pointer", "uint32"]);
-        this.waitUntilIdle = new NativeFunction(this.tap.wait_until_idle, "void", []);
+        this.#observe = new NativeFunction(this.#tap.observe_draws, "void", ["int"]);
+        this.#requestTurnOf = new NativeFunction(this.#tap.request_turn, "void", ["pointer"]);
+        this.#requestAnyTurnNow = new NativeFunction(this.#tap.request_any_turn, "void", []);
+        this.#narrow = new NativeFunction(this.#tap.narrow_layout, "void", ["pointer", "uint32"]);
+        this.#waitUntilIdle = new NativeFunction(this.#tap.wait_until_idle, "void", []);
 
         for (const { call, address } of targets) {
-            const leave = creationCalls.has(call) ? { onLeave: this.tap.on_leave } : {};
-            this.listeners.push(Interceptor.attach(address, { onEnter: this.tap.on_enter, ...leave }, ptr(callIds[call])));
+            const leave = creationCalls.has(call) ? { onLeave: this.#tap.on_leave } : {};
+            this.#listeners.push(Interceptor.attach(address, { onEnter: this.#tap.on_enter, ...leave }, ptr(callIds[call])));
         }
     }
 
     observeDraws(watch: DrawWatch): void {
-        this.observe((watch === "observed") ? 1 : 0);
+        this.#observe((watch === "observed") ? 1 : 0);
     }
 
     requestTurn(device: NativePointer): void {
-        this.requestTurnOf(device);
+        this.#requestTurnOf(device);
     }
 
     requestAnyTurn(): void {
-        this.requestAnyTurnNow();
+        this.#requestAnyTurnNow();
     }
 
     narrowLayout(layout: NativePointer, slots: number): void {
-        this.narrow(layout, slots >>> 0);
+        this.#narrow(layout, slots >>> 0);
     }
 
     dispose(): void {
-        this.observe(0);
-        for (const listener of this.listeners) {
+        this.#observe(0);
+        for (const listener of this.#listeners) {
             listener.detach();
         }
         Interceptor.flush();
-        this.waitUntilIdle();
-        this.tap.dispose();
+        this.#waitUntilIdle();
+        this.#tap.dispose();
     }
 }
 

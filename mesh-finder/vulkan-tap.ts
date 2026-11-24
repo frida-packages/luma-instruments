@@ -1331,26 +1331,26 @@ static guint64 mix (guint64 hash, guint64 value)
 `;
 
 export class VulkanTap {
-    private readonly state: NativePointer;
-    private readonly callbacks: NativeCallback<any, any>[];
-    private readonly tap: CModule;
-    private readonly listeners: InvocationListener[] = [];
-    private readonly describe: NativeFunction<number, [number | UInt64, NativePointerValue]>;
-    private readonly markKnown: NativeFunction<void, [number | UInt64]>;
-    private readonly listBuffers: NativeFunction<number, [number | UInt64, NativePointerValue, number]>;
-    private readonly listMappings: NativeFunction<number, [NativePointerValue, number]>;
-    private readonly deviceFor: NativeFunction<NativePointer, [NativePointerValue, NativePointerValue]>;
-    private readonly setDrawWatch: NativeFunction<void, [number]>;
-    private readonly setBindings: NativeFunction<void, [number | UInt64, number]>;
-    private readonly renew: NativeFunction<void, [number | UInt64, number]>;
-    private readonly waitUntilIdle: NativeFunction<void, []>;
-    private readonly facts = tapFacts.BufferFacts.at(Memory.alloc(tapFacts.BufferFacts.size));
-    private readonly driverOut = Memory.alloc(8);
+    readonly #state: NativePointer;
+    readonly #callbacks: NativeCallback<any, any>[];
+    readonly #tap: CModule;
+    readonly #listeners: InvocationListener[] = [];
+    readonly #describe: NativeFunction<number, [number | UInt64, NativePointerValue]>;
+    readonly #markKnown: NativeFunction<void, [number | UInt64]>;
+    readonly #listBuffers: NativeFunction<number, [number | UInt64, NativePointerValue, number]>;
+    readonly #listMappings: NativeFunction<number, [NativePointerValue, number]>;
+    readonly #deviceFor: NativeFunction<NativePointer, [NativePointerValue, NativePointerValue]>;
+    readonly #setDrawWatch: NativeFunction<void, [number]>;
+    readonly #setBindings: NativeFunction<void, [number | UInt64, number]>;
+    readonly #renew: NativeFunction<void, [number | UInt64, number]>;
+    readonly #waitUntilIdle: NativeFunction<void, []>;
+    readonly #facts = tapFacts.BufferFacts.at(Memory.alloc(tapFacts.BufferFacts.size));
+    readonly #driverOut = Memory.alloc(8);
 
     constructor(drivers: VulkanDriver[], events: VulkanTapEvents) {
         const sizer = new CModule(sizeSource);
-        this.state = Memory.alloc(new NativeFunction(sizer.tap_size, "uint64", [])().toNumber());
-        this.callbacks = [
+        this.#state = Memory.alloc(new NativeFunction(sizer.tap_size, "uint64", [])().toNumber());
+        this.#callbacks = [
             new NativeCallback(draw => events.newDraw(recordedDrawOf(Draw.at(draw))), "void", ["pointer"]),
             new NativeCallback((id, bindings, bindingCount, attributes, attributeCount) =>
                 events.vertexInput(id, bindings, bindingCount, attributes, attributeCount), "void",
@@ -1365,9 +1365,9 @@ export class VulkanTap {
             new NativeCallback((buffer, name) => events.named(buffer, name.readUtf8String()!), "void", ["uint64", "pointer"]),
             new NativeCallback((kind, handle) => events.forgotten(objectKinds.get(kind.toNumber())!, handle), "void", ["uint64", "uint64"]),
         ];
-        const [onNewDraw, onVertexInput, onCopied, onUpdated, onUnmapping, onNamed, onForgotten] = this.callbacks;
-        this.tap = new CModule(source, {
-            tap: this.state,
+        const [onNewDraw, onVertexInput, onCopied, onUpdated, onUnmapping, onNamed, onForgotten] = this.#callbacks;
+        this.#tap = new CModule(source, {
+            tap: this.#state,
             deliver_new_draw: onNewDraw,
             deliver_vertex_input: onVertexInput,
             deliver_copied: onCopied,
@@ -1376,21 +1376,21 @@ export class VulkanTap {
             deliver_named: onNamed,
             deliver_forgotten: onForgotten,
         });
-        this.describe = new NativeFunction(this.tap.describe_buffer, "uint8", ["uint64", "pointer"]);
-        this.markKnown = new NativeFunction(this.tap.mark_buffer_known, "void", ["uint64"]);
-        this.listBuffers = new NativeFunction(this.tap.list_buffers, "uint", ["uint64", "pointer", "uint"]);
-        this.listMappings = new NativeFunction(this.tap.list_mappings, "uint", ["pointer", "uint"]);
-        this.deviceFor = new NativeFunction(this.tap.device_for, "pointer", ["pointer", "pointer"]);
-        this.setDrawWatch = new NativeFunction(this.tap.set_draw_watch, "void", ["uint"]);
-        this.setBindings = new NativeFunction(this.tap.set_pipeline_bindings, "void", ["uint64", "uint32"]);
-        this.renew = new NativeFunction(this.tap.renew_pipeline, "void", ["uint64", "uint32"]);
-        this.waitUntilIdle = new NativeFunction(this.tap.wait_until_idle, "void", []);
-        this.attach(drivers);
+        this.#describe = new NativeFunction(this.#tap.describe_buffer, "uint8", ["uint64", "pointer"]);
+        this.#markKnown = new NativeFunction(this.#tap.mark_buffer_known, "void", ["uint64"]);
+        this.#listBuffers = new NativeFunction(this.#tap.list_buffers, "uint", ["uint64", "pointer", "uint"]);
+        this.#listMappings = new NativeFunction(this.#tap.list_mappings, "uint", ["pointer", "uint"]);
+        this.#deviceFor = new NativeFunction(this.#tap.device_for, "pointer", ["pointer", "pointer"]);
+        this.#setDrawWatch = new NativeFunction(this.#tap.set_draw_watch, "void", ["uint"]);
+        this.#setBindings = new NativeFunction(this.#tap.set_pipeline_bindings, "void", ["uint64", "uint32"]);
+        this.#renew = new NativeFunction(this.#tap.renew_pipeline, "void", ["uint64", "uint32"]);
+        this.#waitUntilIdle = new NativeFunction(this.#tap.wait_until_idle, "void", []);
+        this.#attach(drivers);
     }
 
     describeBuffer(handle: UInt64): BufferFacts | null {
-        const facts = this.facts;
-        if (this.describe(handle, facts.$address) === 0) {
+        const facts = this.#facts;
+        if (this.#describe(handle, facts.$address) === 0) {
             return null;
         }
         const { mappedSize } = facts;
@@ -1407,18 +1407,18 @@ export class VulkanTap {
     }
 
     rememberBuffer(handle: UInt64): void {
-        this.markKnown(handle);
+        this.#markKnown(handle);
     }
 
     buffers(boundTo: UInt64 | 0 = 0): UInt64[] {
         const handles = Memory.alloc(LARGEST_BUFFER_COUNT * 8);
-        const count = this.listBuffers(boundTo, handles, LARGEST_BUFFER_COUNT);
+        const count = this.#listBuffers(boundTo, handles, LARGEST_BUFFER_COUNT);
         return Array.from({ length: count }, (_, i) => handles.add(i * 8).readU64());
     }
 
     mappings(): KnownMapping[] {
         const entries = Memory.alloc(LARGEST_MAPPING_COUNT * tapFacts.Mapping.size);
-        const count = this.listMappings(entries, LARGEST_MAPPING_COUNT);
+        const count = this.#listMappings(entries, LARGEST_MAPPING_COUNT);
         return Array.from({ length: count }, (_, i) => {
             const { mapped, mappedSize } = tapFacts.Mapping.at(entries.add(i * tapFacts.Mapping.size));
             return { mapped, mappedSize: mappedSize.equals(UNSET) ? null : mappedSize.toNumber() };
@@ -1426,32 +1426,32 @@ export class VulkanTap {
     }
 
     deviceOf(dispatchable: NativePointer): { device: NativePointer; driver: number } | null {
-        const device = this.deviceFor(dispatchable.readPointer(), this.driverOut);
-        return device.isNull() ? null : { device, driver: this.driverOut.readU64().toNumber() };
+        const device = this.#deviceFor(dispatchable.readPointer(), this.#driverOut);
+        return device.isNull() ? null : { device, driver: this.#driverOut.readU64().toNumber() };
     }
 
     observeDraws(watch: DrawWatch): void {
-        this.setDrawWatch(drawWatches[watch]);
+        this.#setDrawWatch(drawWatches[watch]);
     }
 
     narrowPipeline(pipeline: UInt64, bindings: number): void {
-        this.setBindings(pipeline, bindings >>> 0);
+        this.#setBindings(pipeline, bindings >>> 0);
     }
 
     renewPipeline(pipeline: UInt64, positionSlot: number | null): void {
-        this.renew(pipeline, (positionSlot !== null) ? (1 << positionSlot) >>> 0 : ALL_BINDINGS);
+        this.#renew(pipeline, (positionSlot !== null) ? (1 << positionSlot) >>> 0 : ALL_BINDINGS);
     }
 
     dispose(): void {
-        for (const listener of this.listeners) {
+        for (const listener of this.#listeners) {
             listener.detach();
         }
         Interceptor.flush();
-        this.waitUntilIdle();
-        this.tap.dispose();
+        this.#waitUntilIdle();
+        this.#tap.dispose();
     }
 
-    private attach(drivers: VulkanDriver[]): void {
+    #attach(drivers: VulkanDriver[]): void {
         const hooked = new Set<string>();
         for (const driver of drivers) {
             tapCalls.forEach(([call, names], index) => {
@@ -1461,8 +1461,8 @@ export class VulkanTap {
                         continue;
                     }
                     hooked.add(target.toString());
-                    const leave = callsWithResults.has(call) ? { onLeave: this.tap.on_leave } : {};
-                    this.listeners.push(Interceptor.attach(target, { onEnter: this.tap.on_enter, ...leave },
+                    const leave = callsWithResults.has(call) ? { onLeave: this.#tap.on_leave } : {};
+                    this.#listeners.push(Interceptor.attach(target, { onEnter: this.#tap.on_enter, ...leave },
                         ptr((driver.index << 8) | (index + 1))));
                 }
             });

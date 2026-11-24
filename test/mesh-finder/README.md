@@ -33,14 +33,16 @@ the harness checks that it is not listed. Each target exports
 `mesh_finder_expectations`, a JSON list of what should be found.
 
 `harness.ts` loads the instrument with a fake `ctx`, raises `SIGUSR1` halfway
-through and asks for a `scan`, then exports every mesh in the table as OBJ and
-checks each expected one by its counts, bounding box and first vertices,
-writing it to the output directory. A row that matches nothing expected
-fails the run. It then shows each one and checks what
+through and chooses **Scan**, checks that it is disabled during the searches
+and enabled after, and that a typed `scan` meanwhile is refused, checks that
+**Clear** empties the console and leaves the table as it was, then exports
+every mesh in the table as OBJ and checks each expected one by its counts,
+bounding box and first vertices, writing it to the output directory. A row that
+matches nothing expected fails the run. It then shows each one and checks what
 the viewer was handed: the counts, the size of the data, the first vertices,
-and that every index is in range. Last, it disposes the instrument and
-checks that every hooked function is back to its original bytes; on Windows,
-that all of `d3d11.dll`'s code and read-only data, vtables included, are.
+and that every index is in range. Last, it disposes the instrument and checks
+that every hooked function is back to its original bytes; on Windows, that all
+of `d3d11.dll`'s code and read-only data, vtables included, are.
 `explore.ts` is for other processes: it lists what was found after a number
 of seconds and exports the five largest meshes.
 

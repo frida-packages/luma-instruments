@@ -87,26 +87,26 @@ function runtime(): ObjCRuntime {
 }
 
 class ObjCRuntime {
-    private readonly export = (name: string) => Module.getGlobalExportByName(name);
+    readonly #export = (name: string) => Module.getGlobalExportByName(name);
 
-    readonly copyClassList = new NativeFunction(this.export("objc_copyClassList"), "pointer", ["pointer"]);
-    readonly getProtocol = new NativeFunction(this.export("objc_getProtocol"), "pointer", ["pointer"]);
-    readonly conformsToProtocol = new NativeFunction(this.export("class_conformsToProtocol"), "bool", ["pointer", "pointer"]);
-    readonly superclassOf = new NativeFunction(this.export("class_getSuperclass"), "pointer", ["pointer"]);
-    readonly imageOfClass = new NativeFunction(this.export("class_getImageName"), "pointer", ["pointer"]);
-    readonly instanceMethod = new NativeFunction(this.export("class_getInstanceMethod"), "pointer", ["pointer", "pointer"]);
-    readonly implementationOfMethod = new NativeFunction(this.export("method_getImplementation"), "pointer", ["pointer"]);
-    readonly registerSelector = new NativeFunction(this.export("sel_registerName"), "pointer", ["pointer"]);
-    readonly freeMemory = new NativeFunction(this.export("free"), "void", ["pointer"]);
-    readonly stringIntoBuffer = new NativeFunction(this.export("CFStringGetCString"), "bool", ["pointer", "pointer", "long", "uint32"]);
+    readonly copyClassList = new NativeFunction(this.#export("objc_copyClassList"), "pointer", ["pointer"]);
+    readonly getProtocol = new NativeFunction(this.#export("objc_getProtocol"), "pointer", ["pointer"]);
+    readonly conformsToProtocol = new NativeFunction(this.#export("class_conformsToProtocol"), "bool", ["pointer", "pointer"]);
+    readonly superclassOf = new NativeFunction(this.#export("class_getSuperclass"), "pointer", ["pointer"]);
+    readonly imageOfClass = new NativeFunction(this.#export("class_getImageName"), "pointer", ["pointer"]);
+    readonly instanceMethod = new NativeFunction(this.#export("class_getInstanceMethod"), "pointer", ["pointer", "pointer"]);
+    readonly implementationOfMethod = new NativeFunction(this.#export("method_getImplementation"), "pointer", ["pointer"]);
+    readonly registerSelector = new NativeFunction(this.#export("sel_registerName"), "pointer", ["pointer"]);
+    readonly freeMemory = new NativeFunction(this.#export("free"), "void", ["pointer"]);
+    readonly stringIntoBuffer = new NativeFunction(this.#export("CFStringGetCString"), "bool", ["pointer", "pointer", "long", "uint32"]);
     readonly isa: IsaBits = {
-        mask: this.export("objc_debug_isa_class_mask").readPointer(),
-        magicMask: this.export("objc_debug_isa_magic_mask").readPointer(),
-        magicValue: this.export("objc_debug_isa_magic_value").readPointer(),
+        mask: this.#export("objc_debug_isa_class_mask").readPointer(),
+        magicMask: this.#export("objc_debug_isa_magic_mask").readPointer(),
+        magicValue: this.#export("objc_debug_isa_magic_value").readPointer(),
     };
     readonly send = {
-        pointer: new NativeFunction(this.export("objc_msgSend"), "pointer", ["pointer", "pointer"]),
-        uint64: new NativeFunction(this.export("objc_msgSend"), "uint64", ["pointer", "pointer"]),
-        pointerAtIndex: new NativeFunction(this.export("objc_msgSend"), "pointer", ["pointer", "pointer", "uint64"]),
+        pointer: new NativeFunction(this.#export("objc_msgSend"), "pointer", ["pointer", "pointer"]),
+        uint64: new NativeFunction(this.#export("objc_msgSend"), "uint64", ["pointer", "pointer"]),
+        pointerAtIndex: new NativeFunction(this.#export("objc_msgSend"), "pointer", ["pointer", "pointer", "uint64"]),
     };
 }

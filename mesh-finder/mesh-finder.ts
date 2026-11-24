@@ -31,77 +31,83 @@ const SLICE_BUDGET_MS = 8;
 const PAUSE_BETWEEN_SLICES_MS = 4;
 
 export class MeshFinder implements GeometryObserver {
-    private readonly work: Record<Evidence, Work[]> = { drawn: [], found: [] };
-    private scheduled: ReturnType<typeof setTimeout> | null = null;
-    private unreadableDraws = 0;
+    readonly #catalog: MeshCatalog;
+    readonly #settings: Settings;
+    readonly #progress: FinderProgress;
+    readonly #work: Record<Evidence, Work[]> = { drawn: [], found: [] };
+    #scheduled: ReturnType<typeof setTimeout> | null = null;
+    #unreadableDraws = 0;
 
     constructor(
-        private readonly catalog: MeshCatalog,
-        private readonly settings: Settings,
-        private readonly progress: FinderProgress,
+        catalog: MeshCatalog,
+        settings: Settings,
+        progress: FinderProgress,
     ) {
+        this.#catalog = catalog;
+        this.#settings = settings;
+        this.#progress = progress;
     }
 
     observeDraw(draw: DrawCall): void {
         try {
-            this.captureDraw(draw);
+            this.#captureDraw(draw);
         } catch (error) {
-            this.unreadableDraws++;
-            if (this.unreadableDraws === 1) {
-                this.progress.note(`A draw's buffers could not be read: ${(error as Error).message}`);
+            this.#unreadableDraws++;
+            if (this.#unreadableDraws === 1) {
+                this.#progress.note(`A draw's buffers could not be read: ${(error as Error).message}`);
             }
         }
     }
 
     observeBuffers(buffers: GpuBuffer[]): void {
-        if (!this.settings.guessUndrawn) {
+        if (!this.#settings.guessUndrawn) {
             return;
         }
-        const undrawn = buffers.filter(buffer => !this.catalog.isDrawn(buffer.id));
+        const undrawn = buffers.filter(buffer => !this.#catalog.isDrawn(buffer.id));
         const snapshots = snapshotCandidates(undrawn);
         const megabytes = snapshots.buffers.reduce((sum, snapshot) => sum + snapshot.byteLength, 0) / 1048576;
         const unreadable = (snapshots.unreadable !== 0) ? `, ${snapshots.unreadable} could not be read` : "";
-        this.progress.note(`Read ${snapshots.buffers.length} of ${buffers.length} buffers (${megabytes.toFixed(1)} MiB) that may hold `
+        this.#progress.note(`Read ${snapshots.buffers.length} of ${buffers.length} buffers (${megabytes.toFixed(1)} MiB) that may hold `
             + `meshes${unreadable}.`);
-        this.enqueue("found", analyzeUndrawnBuffers(snapshots.buffers, this.catalog, this.progress));
+        this.#enqueue("found", analyzeUndrawnBuffers(snapshots.buffers, this.#catalog, this.#progress));
     }
 
     observeScratchBuffer(id: string): void {
-        this.catalog.noteScratch(id);
+        this.#catalog.noteScratch(id);
     }
 
     dispose(): void {
-        if (this.scheduled !== null) {
-            clearTimeout(this.scheduled);
-            this.scheduled = null;
+        if (this.#scheduled !== null) {
+            clearTimeout(this.#scheduled);
+            this.#scheduled = null;
         }
-        this.work.drawn.length = 0;
-        this.work.found.length = 0;
+        this.#work.drawn.length = 0;
+        this.#work.found.length = 0;
     }
 
-    private captureDraw(draw: DrawCall): void {
-        this.catalog.noteDrawn(bufferIdsOf(draw));
+    #captureDraw(draw: DrawCall): void {
+        this.#catalog.noteDrawn(bufferIdsOf(draw));
         const indexBytes = (draw.indices !== null && draw.indices.buffer.access === "cpu-readable") ? readIndices(draw.indices) : null;
         const span = vertexSpanOf(draw, indexBytes);
         if (span === null) {
             return;
         }
-        const positions = (draw.position !== null) ? declaredPositions(draw, draw.position) : this.guessedPositions(draw, span);
-        if (positions === null || !this.catalog.wants(identityOf(draw, positions.stream, span), rankOf(drawnWith(positions.layout)))) {
+        const positions = (draw.position !== null) ? declaredPositions(draw, draw.position) : this.#guessedPositions(draw, span);
+        if (positions === null || !this.#catalog.wants(identityOf(draw, positions.stream, span), rankOf(drawnWith(positions.layout)))) {
             return;
         }
         if (positions.stream.buffer.access !== "cpu-readable" || (draw.indices !== null && indexBytes === null)) {
-            this.captureUnreadable(draw, positions.stream, span);
+            this.#captureUnreadable(draw, positions.stream, span);
             return;
         }
-        this.enqueue("drawn", this.admitDrawn(drawnMeshSpec(draw, positions, span, indexBytes)));
+        this.#enqueue("drawn", this.#admitDrawn(drawnMeshSpec(draw, positions, span, indexBytes)));
     }
 
-    private guessedPositions(draw: DrawCall, span: VertexSpan): PlacedPositions | null {
+    #guessedPositions(draw: DrawCall, span: VertexSpan): PlacedPositions | null {
         const guess = guessDrawLayout(draw.streams, span);
         if (guess === null) {
             if (draw.streams.every(stream => stream.buffer.access !== "cpu-readable")) {
-                this.captureUnreadable(draw, draw.streams[0], span);
+                this.#captureUnreadable(draw, draw.streams[0], span);
             }
             return null;
         }
@@ -113,13 +119,13 @@ export class MeshFinder implements GeometryObserver {
         };
     }
 
-    private captureUnreadable(draw: DrawCall, stream: VertexStream | undefined, span: VertexSpan): void {
+    #captureUnreadable(draw: DrawCall, stream: VertexStream | undefined, span: VertexSpan): void {
         if (stream === undefined) {
             return;
         }
         const indexed = draw.indices !== null;
         const elementCount = indexed ? draw.indices!.count : draw.vertexCount;
-        this.catalog.admit(unreadableMesh({
+        this.#catalog.admit(unreadableMesh({
             identity: unreadableIdentityOf(draw, span),
             api: draw.api,
             contents: unreadableContentsOf([stream.buffer, draw.indices?.buffer]),
@@ -132,39 +138,39 @@ export class MeshFinder implements GeometryObserver {
         }));
     }
 
-    private *admitDrawn(spec: MeshSpec): Work {
+    *#admitDrawn(spec: MeshSpec): Work {
         const mesh = buildMesh(spec);
         if (mesh !== null) {
-            this.catalog.admit(mesh);
+            this.#catalog.admit(mesh);
         }
     }
 
-    private enqueue(evidence: Evidence, work: Work): void {
-        this.work[evidence].push(work);
-        if (this.scheduled === null) {
-            this.scheduled = setTimeout(() => this.drain(), 0);
+    #enqueue(evidence: Evidence, work: Work): void {
+        this.#work[evidence].push(work);
+        if (this.#scheduled === null) {
+            this.#scheduled = setTimeout(() => this.#drain(), 0);
         }
     }
 
-    private drain(): void {
-        this.scheduled = null;
+    #drain(): void {
+        this.#scheduled = null;
         const deadline = Date.now() + SLICE_BUDGET_MS;
-        let queue = this.nextQueue();
+        let queue = this.#nextQueue();
         while (queue !== null && Date.now() < deadline) {
             if (queue[0].next().done) {
                 queue.shift();
-            } else if (queue === this.work.found) {
+            } else if (queue === this.#work.found) {
                 queue.push(queue.shift()!);
             }
-            queue = this.nextQueue();
+            queue = this.#nextQueue();
         }
         if (queue !== null) {
-            this.scheduled = setTimeout(() => this.drain(), PAUSE_BETWEEN_SLICES_MS);
+            this.#scheduled = setTimeout(() => this.#drain(), PAUSE_BETWEEN_SLICES_MS);
         }
     }
 
-    private nextQueue(): Work[] | null {
-        const { drawn, found } = this.work;
+    #nextQueue(): Work[] | null {
+        const { drawn, found } = this.#work;
         return (drawn.length !== 0) ? drawn : (found.length !== 0) ? found : null;
     }
 }

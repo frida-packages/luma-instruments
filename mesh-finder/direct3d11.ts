@@ -39,6 +39,7 @@ interface PendingSearch {
 interface PendingScan {
     candidates: NativePointer[];
     search: PendingSearch;
+    giveUp: ReturnType<typeof setTimeout>;
 }
 
 interface BufferBatch {
@@ -58,6 +59,7 @@ type AfterTurn = () => void;
 
 const TURN_BUDGET = 64 * 1048576;
 const SCAN_SLICE = 512;
+const TURN_WAIT_MS = 3000;
 const BATCH_SLICE = 512;
 const SETTLE_MS = 250;
 const INDEXED_ARGUMENTS_SIZE = 20;
@@ -68,59 +70,68 @@ const topologies = new Map<number, Topology>([[1, "point-list"], [4, "triangle-l
 
 class Direct3D11Backend implements GraphicsBackend {
     readonly api = API;
-    private readonly describer = new BufferDescriber();
-    private readonly layouts = new InputLayouts();
-    private readonly work = new Map<string, DeviceWork>();
-    private readonly scans: PendingScan[] = [];
-    private readonly runtime: D3D11Runtime;
-    private readonly tap: ContextTap;
-    private unsettled: RetainedBuffer[] = [];
-    private settleTimer: ReturnType<typeof setTimeout> | null = null;
-    private lifecycle: Lifecycle = "running";
+    readonly #observer: GeometryObserver;
+    readonly #describer = new BufferDescriber();
+    readonly #layouts = new InputLayouts();
+    readonly #work = new Map<string, DeviceWork>();
+    readonly #scans: PendingScan[] = [];
+    readonly #runtime: D3D11Runtime;
+    readonly #tap: ContextTap;
+    #unsettled: RetainedBuffer[] = [];
+    #settleTimer: ReturnType<typeof setTimeout> | null = null;
+    #lifecycle: Lifecycle = "running";
 
-    constructor(private readonly observer: GeometryObserver) {
-        this.runtime = discoverRuntime(Process.enumerateModules().find(module => direct3D11Libraries.runtime.test(module.name))!);
-        this.tap = new ContextTap(this.runtime.hooks, {
-            newDraw: draw => this.onNewDraw(draw),
-            turn: (context, device) => this.onTurn(context, device),
-            bufferCreated: buffer => this.onBufferCreated(buffer),
-            inputLayoutCreated: (layout, elements, count) => this.onInputLayout(layout, elements, count),
+    constructor(observer: GeometryObserver) {
+        this.#observer = observer;
+        this.#runtime = discoverRuntime(Process.enumerateModules().find(module => direct3D11Libraries.runtime.test(module.name))!);
+        this.#tap = new ContextTap(this.#runtime.hooks, {
+            newDraw: draw => this.#onNewDraw(draw),
+            turn: (context, device) => this.#onTurn(context, device),
+            bufferCreated: buffer => this.#onBufferCreated(buffer),
+            inputLayoutCreated: (layout, elements, count) => this.#onInputLayout(layout, elements, count),
         });
     }
 
     watchDraws(): void {
-        this.tap.observeDraws("observed");
+        this.#tap.observeDraws("observed");
     }
 
     unwatchDraws(): void {
-        this.tap.observeDraws("ignored");
+        this.#tap.observeDraws("ignored");
     }
 
     async findBuffers(): Promise<BufferSearch> {
-        const { runtime, tap } = this;
+        const runtime = this.#runtime;
+        const tap = this.#tap;
         if (runtime.buffers === null) {
             return { buffers: 0, detail: `buffers made earlier cannot be told from freed ones here; ${contextsOf(runtime)}` };
         }
         const candidates = candidateBuffers(runtime.buffers);
         const detail = `live instances of d3d11.dll's buffer class, read back while the process draws; ${contextsOf(runtime)}`;
         return new Promise(resolve => {
-            this.scans.push({ candidates, search: { outstanding: 1, found: [], detail, resolve } });
+            const scan: PendingScan = {
+                candidates,
+                search: { outstanding: 1, found: [], detail, resolve },
+                giveUp: setTimeout(() => this.#giveUp(scan), TURN_WAIT_MS),
+            };
+            this.#scans.push(scan);
             tap.requestAnyTurn();
         });
     }
 
     dispose(): void {
-        this.lifecycle = "disposed";
-        this.tap.dispose();
-        if (this.settleTimer !== null) {
-            clearTimeout(this.settleTimer);
+        this.#lifecycle = "disposed";
+        this.#tap.dispose();
+        if (this.#settleTimer !== null) {
+            clearTimeout(this.#settleTimer);
         }
-        releaseAll(this.unsettled);
-        this.unsettled = [];
-        for (const { search } of this.scans.splice(0)) {
+        releaseAll(this.#unsettled);
+        this.#unsettled = [];
+        for (const { search, giveUp } of this.#scans.splice(0)) {
+            clearTimeout(giveUp);
             search.resolve({ buffers: search.found.length, detail: search.detail });
         }
-        for (const work of this.work.values()) {
+        for (const work of this.#work.values()) {
             for (const draw of work.draws) {
                 releaseAll([...draw.buffers.values()]);
             }
@@ -129,91 +140,95 @@ class Direct3D11Backend implements GraphicsBackend {
                 batch.search?.resolve({ buffers: batch.search.found.length, detail: batch.search.detail });
             }
         }
-        this.work.clear();
+        this.#work.clear();
     }
 
-    private onNewDraw(draw: TappedDraw): void {
-        if (this.lifecycle === "disposed") {
+    #onNewDraw(draw: TappedDraw): void {
+        if (this.#lifecycle === "disposed") {
             return;
         }
         const handles = [...draw.slots.map(slot => slot.buffer), draw.indexBuffer, draw.indirectBuffer].filter(handle => !handle.isNull());
         const buffers = new Map<string, RetainedBuffer>();
         for (const handle of handles) {
             if (!buffers.has(handle.toString())) {
-                buffers.set(handle.toString(), this.describer.retain(handle));
+                buffers.set(handle.toString(), this.#describer.retain(handle));
             }
         }
-        this.workOf(draw.device).draws.push({ draw, buffers });
-        this.tap.requestTurn(draw.device);
+        this.#workOf(draw.device).draws.push({ draw, buffers });
+        this.#tap.requestTurn(draw.device);
     }
 
-    private onTurn(context: NativePointer, device: NativePointer): void {
-        if (this.lifecycle === "disposed") {
+    #onTurn(context: NativePointer, device: NativePointer): void {
+        if (this.#lifecycle === "disposed") {
             return;
         }
         const afterTurn: AfterTurn[] = [];
-        this.retainScanned(afterTurn);
-        const work = this.work.get(device.toString());
+        this.#retainScanned(afterTurn);
+        const work = this.#work.get(device.toString());
         if (work !== undefined) {
-            this.work.delete(device.toString());
+            this.#work.delete(device.toString());
             const readback = new TurnReadback(context, device);
             try {
-                this.readDraws(work.draws, readback, afterTurn);
-                this.readBatches(work.batches, readback, afterTurn);
+                this.#readDraws(work.draws, readback, afterTurn);
+                this.#readBatches(work.batches, readback, afterTurn);
             } finally {
                 readback.end();
             }
         }
         if (afterTurn.length !== 0) {
-            setTimeout(() => this.runAfterTurn(afterTurn), 0);
+            setTimeout(() => this.#runAfterTurn(afterTurn), 0);
         }
     }
 
-    private onBufferCreated(handle: NativePointer): void {
-        if (this.lifecycle === "disposed") {
+    #onBufferCreated(handle: NativePointer): void {
+        if (this.#lifecycle === "disposed") {
             return;
         }
-        this.unsettled.push(this.describer.retain(handle));
-        if (this.settleTimer !== null) {
-            clearTimeout(this.settleTimer);
+        this.#unsettled.push(this.#describer.retain(handle));
+        if (this.#settleTimer !== null) {
+            clearTimeout(this.#settleTimer);
         }
-        this.settleTimer = setTimeout(() => {
-            this.settleTimer = null;
-            const settled = this.unsettled;
-            this.unsettled = [];
-            this.queueBuffers(settled, null);
+        this.#settleTimer = setTimeout(() => {
+            this.#settleTimer = null;
+            const settled = this.#unsettled;
+            this.#unsettled = [];
+            this.#queueBuffers(settled, null);
         }, SETTLE_MS);
     }
 
-    private onInputLayout(layout: NativePointer, elements: NativePointer, count: number): void {
-        const position = this.layouts.learn(layout, elements, count);
+    #onInputLayout(layout: NativePointer, elements: NativePointer, count: number): void {
+        const position = this.#layouts.learn(layout, elements, count);
         if (position !== null) {
-            this.tap.narrowLayout(layout, 1 << position.slot);
+            this.#tap.narrowLayout(layout, 1 << position.slot);
         }
     }
 
-    private retainScanned(afterTurn: AfterTurn[]): void {
-        const scan = this.scans[0];
+    #retainScanned(afterTurn: AfterTurn[]): void {
+        const scan = this.#scans[0];
         if (scan === undefined) {
             return;
         }
-        const { runtime, tap } = this;
-        const found = this.describer.retainLive(scan.candidates.splice(0, SCAN_SLICE), runtime.buffers!);
+        for (const { giveUp } of this.#scans) {
+            clearTimeout(giveUp);
+        }
+        const runtime = this.#runtime;
+        const tap = this.#tap;
+        const found = this.#describer.retainLive(scan.candidates.splice(0, SCAN_SLICE), runtime.buffers!);
         if (found.length !== 0) {
-            this.queueBuffers(found, scan.search);
+            this.#queueBuffers(found, scan.search);
         }
         if (scan.candidates.length !== 0) {
             tap.requestAnyTurn();
             return;
         }
-        this.scans.shift();
-        afterTurn.push(() => this.settle(scan.search));
-        if (this.scans.length !== 0) {
+        this.#scans.shift();
+        afterTurn.push(() => this.#settle(scan.search));
+        if (this.#scans.length !== 0) {
             tap.requestAnyTurn();
         }
     }
 
-    private readDraws(draws: PendingDraw[], readback: TurnReadback, afterTurn: AfterTurn[]): void {
+    #readDraws(draws: PendingDraw[], readback: TurnReadback, afterTurn: AfterTurn[]): void {
         const distinct = new Map<string, RetainedBuffer>();
         for (const { buffers } of draws) {
             for (const [key, buffer] of buffers) {
@@ -224,19 +239,19 @@ class Direct3D11Backend implements GraphicsBackend {
         for (const pending of draws) {
             const unread = [...pending.buffers.values()].filter(buffer => !readback.holds(buffer));
             if (unread.length === 0) {
-                afterTurn.push(() => this.observeDraw(pending, readback));
+                afterTurn.push(() => this.#observeDraw(pending, readback));
             } else if (unread.every(buffer => buffer.description.byteLength > LARGEST_PREFETCH)) {
-                this.observeDraw(pending, readback);
+                this.#observeDraw(pending, readback);
             } else {
-                this.workOf(pending.draw.device).draws.push(pending);
-                this.tap.requestTurn(pending.draw.device);
+                this.#workOf(pending.draw.device).draws.push(pending);
+                this.#tap.requestTurn(pending.draw.device);
                 continue;
             }
             releaseAll([...pending.buffers.values()]);
         }
     }
 
-    private readBatches(batches: BufferBatch[], readback: TurnReadback, afterTurn: AfterTurn[]): void {
+    #readBatches(batches: BufferBatch[], readback: TurnReadback, afterTurn: AfterTurn[]): void {
         let budget = TURN_BUDGET;
         for (const batch of batches) {
             const { taken, oversized, left, cost } = partitionByBudget(batch.buffers, budget);
@@ -248,29 +263,34 @@ class Direct3D11Backend implements GraphicsBackend {
             const search = batch.search;
             if (left.length !== 0) {
                 const device = left[0].description.device;
-                this.workOf(device).batches.push({ buffers: left, search });
-                this.tap.requestTurn(device);
+                this.#workOf(device).batches.push({ buffers: left, search });
+                this.#tap.requestTurn(device);
             }
             if (search === null) {
-                afterTurn.push(() => this.observer.observeBuffers(buffers));
+                afterTurn.push(() => this.#observer.observeBuffers(buffers));
                 continue;
             }
             search.found.push(...buffers);
             if (left.length === 0) {
-                afterTurn.push(() => this.settle(search));
+                afterTurn.push(() => this.#settle(search));
             }
         }
     }
 
-    private runAfterTurn(work: AfterTurn[]): void {
-        if (this.lifecycle === "running") {
+    #runAfterTurn(work: AfterTurn[]): void {
+        if (this.#lifecycle === "running") {
             for (const step of work) {
                 step();
             }
         }
     }
 
-    private queueBuffers(buffers: RetainedBuffer[], search: PendingSearch | null): void {
+    #giveUp(scan: PendingScan): void {
+        this.#scans.splice(this.#scans.indexOf(scan), 1);
+        scan.search.resolve({ buffers: 0, detail: `no frame was drawn within ${TURN_WAIT_MS / 1000} s; scan again once it draws` });
+    }
+
+    #queueBuffers(buffers: RetainedBuffer[], search: PendingSearch | null): void {
         const byDevice = new Map<string, RetainedBuffer[]>();
         for (const buffer of buffers) {
             const key = buffer.description.device.toString();
@@ -278,39 +298,39 @@ class Direct3D11Backend implements GraphicsBackend {
         }
         for (const deviceBuffers of byDevice.values()) {
             const device = deviceBuffers[0].description.device;
-            this.workOf(device).batches.push({ buffers: deviceBuffers, search });
+            this.#workOf(device).batches.push({ buffers: deviceBuffers, search });
             if (search !== null) {
                 search.outstanding++;
             }
-            this.tap.requestTurn(device);
+            this.#tap.requestTurn(device);
         }
     }
 
-    private settle(search: PendingSearch): void {
+    #settle(search: PendingSearch): void {
         if (--search.outstanding === 0) {
-            this.observer.observeBuffers(search.found);
+            this.#observer.observeBuffers(search.found);
             search.resolve({ buffers: search.found.length, detail: search.detail });
         }
     }
 
-    private observeDraw(pending: PendingDraw, readback: TurnReadback): void {
-        const call = this.drawCallOf(pending, readback);
+    #observeDraw(pending: PendingDraw, readback: TurnReadback): void {
+        const call = this.#drawCallOf(pending, readback);
         if (call !== null) {
-            this.observer.observeDraw(call);
+            this.#observer.observeDraw(call);
         }
     }
 
-    private workOf(device: NativePointer): DeviceWork {
+    #workOf(device: NativePointer): DeviceWork {
         const key = device.toString();
-        let work = this.work.get(key);
+        let work = this.#work.get(key);
         if (work === undefined) {
             work = { device, draws: [], batches: [] };
-            this.work.set(key, work);
+            this.#work.set(key, work);
         }
         return work;
     }
 
-    private drawCallOf({ draw, buffers }: PendingDraw, readback: TurnReadback): DrawCall | null {
+    #drawCallOf({ draw, buffers }: PendingDraw, readback: TurnReadback): DrawCall | null {
         const topology = topologies.get(draw.topology)!;
         const bufferOf = (handle: NativePointer) => new D3D11Buffer(buffers.get(handle.toString())!, readback);
         const streams: VertexStream[] = draw.slots.map(slot => ({
@@ -319,12 +339,12 @@ class Direct3D11Backend implements GraphicsBackend {
             offset: slot.offset,
             stride: (slot.stride !== 0) ? slot.stride : null,
         }));
-        const declared = draw.layout.isNull() ? undefined : this.layouts.positionOf(draw.layout);
+        const declared = draw.layout.isNull() ? undefined : this.#layouts.positionOf(draw.layout);
         const positionStream = (declared != null) ? streams.find(stream => stream.slot === declared.slot) : undefined;
         const position: PositionLayout | null = (declared != null && positionStream !== undefined)
             ? { ...declared, stride: positionStream.stride ?? 0 }
             : null;
-        const tap = this.tap;
+        const tap = this.#tap;
         const call: DrawCall = {
             api: API,
             topology,

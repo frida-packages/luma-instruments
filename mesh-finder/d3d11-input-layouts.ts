@@ -34,16 +34,16 @@ const positionFormats = new Map<number, [ComponentType, number]>([
 ]);
 
 export class InputLayouts {
-    private readonly positions = new Map<string, DeclaredPosition | null>();
+    readonly #positions = new Map<string, DeclaredPosition | null>();
 
     learn(layout: NativePointer, elements: NativePointer, count: number): DeclaredPosition | null {
         const position = declaredPosition(readElements(elements, count));
-        this.positions.set(layout.toString(), position);
+        this.#positions.set(layout.toString(), position);
         return position;
     }
 
     positionOf(layout: NativePointer): DeclaredPosition | null | undefined {
-        return this.positions.get(layout.toString());
+        return this.#positions.get(layout.toString());
     }
 }
 

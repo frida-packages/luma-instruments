@@ -50,32 +50,34 @@ const MEMORY_REQUIREMENTS = "vkGetBufferMemoryRequirements";
 
 class VulkanBackend implements GraphicsBackend {
     readonly api = "Vulkan";
-    private readonly vertexInputs = new Map<string, VertexInputInfo>();
-    private hooks: Hooks | null = null;
+    readonly #observer: GeometryObserver;
+    readonly #vertexInputs = new Map<string, VertexInputInfo>();
+    #hooks: Hooks | null = null;
 
-    constructor(private readonly observer: GeometryObserver) {
+    constructor(observer: GeometryObserver) {
+        this.#observer = observer;
         if (Process.pointerSize !== 8) {
             throw new Error("Vulkan is only followed in 64-bit processes");
         }
-        this.hooks = this.start();
+        this.#hooks = this.#start();
     }
 
     watchDraws(): void {
-        this.hooks?.tap.observeDraws("observed");
+        this.#hooks?.tap.observeDraws("observed");
     }
 
     unwatchDraws(): void {
-        this.hooks?.tap.observeDraws("ignored");
+        this.#hooks?.tap.observeDraws("ignored");
     }
 
     async findBuffers(): Promise<BufferSearch> {
-        const hooks = this.hooks;
+        const hooks = this.#hooks;
         if (hooks === null) {
             return { buffers: 0, detail: "no Vulkan driver could be reached" };
         }
         const tracked = hooks.contents.readableBuffers();
         const mapped = hooks.contents.mappedDeviceMemory();
-        this.observer.observeBuffers([...tracked, ...mapped]);
+        this.#observer.observeBuffers([...tracked, ...mapped]);
         const drivers = hooks.drivers.map(driver => driver.name).join(", ");
         return {
             buffers: tracked.length + mapped.length,
@@ -85,26 +87,26 @@ class VulkanBackend implements GraphicsBackend {
     }
 
     dispose(): void {
-        if (this.hooks !== null) {
-            this.hooks.pipelines.dispose();
-            this.hooks.tap.dispose();
-            this.hooks.contents.dispose();
-            this.hooks = null;
+        if (this.#hooks !== null) {
+            this.#hooks.pipelines.dispose();
+            this.#hooks.tap.dispose();
+            this.#hooks.contents.dispose();
+            this.#hooks = null;
         }
     }
 
-    private start(): Hooks | null {
+    #start(): Hooks | null {
         const drivers = findVulkanDrivers([...tapEntryPointNames, ...pipelineEntryPointNames, MEMORY_REQUIREMENTS]);
         if (drivers.length === 0) {
             return null;
         }
         let tap: VulkanTap | null = null;
-        const contents = new VulkanContents(() => tap!, drivers, buffers => this.observer.observeBuffers(buffers));
-        const pipelines = new PipelineLayouts(drivers, (pipeline, description) => this.learned(pipeline, description));
+        const contents = new VulkanContents(() => tap!, drivers, buffers => this.#observer.observeBuffers(buffers));
+        const pipelines = new PipelineLayouts(drivers, (pipeline, description) => this.#learned(pipeline, description));
         tap = new VulkanTap(drivers, {
-            newDraw: draw => this.onDraw(draw),
+            newDraw: draw => this.#onDraw(draw),
             vertexInput: (id, bindings, bindingCount, attributes, attributeCount) =>
-                this.vertexInputs.set(id.toString(), dynamicVertexInputOf(bindings, bindingCount, attributes, attributeCount)),
+                this.#vertexInputs.set(id.toString(), dynamicVertexInputOf(bindings, bindingCount, attributes, attributeCount)),
             copied: (source, destination, sourceOffset, destinationOffset, size) =>
                 contents.copied(source, destination, sourceOffset, destinationOffset, size),
             updated: (destination, offset, size, data) => contents.updated(destination, offset, size, data),
@@ -115,24 +117,24 @@ class VulkanBackend implements GraphicsBackend {
         return { drivers, tap, pipelines, contents };
     }
 
-    private learned(pipeline: UInt64, description: PipelineDescription): void {
+    #learned(pipeline: UInt64, description: PipelineDescription): void {
         const input = description.vertexInput;
         const position = (input !== null && input !== "dynamic")
             ? positionLayoutOf(input, description.names, "pipeline vertex input")
             : null;
-        this.hooks?.tap.renewPipeline(pipeline, position?.slot ?? null);
+        this.#hooks?.tap.renewPipeline(pipeline, position?.slot ?? null);
     }
 
-    private onDraw(draw: RecordedDraw): void {
-        if (this.hooks === null) {
+    #onDraw(draw: RecordedDraw): void {
+        if (this.#hooks === null) {
             return;
         }
-        for (const call of this.drawCallsOf(draw, this.hooks)) {
-            this.observer.observeDraw(call);
+        for (const call of this.#drawCallsOf(draw, this.#hooks)) {
+            this.#observer.observeDraw(call);
         }
     }
 
-    private drawCallsOf(draw: RecordedDraw, hooks: Hooks): DrawCall[] {
+    #drawCallsOf(draw: RecordedDraw, hooks: Hooks): DrawCall[] {
         const description = hooks.pipelines.describe(draw.pipeline);
         const topology = topologyOf(draw, description);
         const indexed = draw.elements === "indexed";
@@ -140,7 +142,7 @@ class VulkanBackend implements GraphicsBackend {
         if (topology === null || (indexed && indexFormat === undefined)) {
             return [];
         }
-        const input = this.declaredInputOf(draw, description);
+        const input = this.#declaredInputOf(draw, description);
         const position = (input !== null) ? positionLayoutOf(input.info, description?.names ?? null, input.origin) : null;
         const streams: VertexStream[] = draw.bindings.map(binding => ({
             slot: binding.index,
@@ -202,10 +204,10 @@ class VulkanBackend implements GraphicsBackend {
         return calls;
     }
 
-    private declaredInputOf(draw: RecordedDraw, description: PipelineDescription | undefined): DeclaredInput | null {
+    #declaredInputOf(draw: RecordedDraw, description: PipelineDescription | undefined): DeclaredInput | null {
         const dynamic = (description === undefined) ? draw.latestVertexInput === "command" : description.vertexInput === "dynamic";
         if (dynamic) {
-            const info = (draw.vertexInput !== null) ? this.vertexInputs.get(draw.vertexInput.toString()) : undefined;
+            const info = (draw.vertexInput !== null) ? this.#vertexInputs.get(draw.vertexInput.toString()) : undefined;
             return (info !== undefined) ? { info, origin: "vkCmdSetVertexInputEXT" } : null;
         }
         const declared = description?.vertexInput;

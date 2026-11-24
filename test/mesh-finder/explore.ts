@@ -35,7 +35,7 @@ const ctx = {
     },
 } as unknown as CustomInstrumentContext;
 
-const config: CustomInstrumentConfig = { features: { watchDraws: true, guessUndrawn: true, minimumConfidence: 60, minimumVertices: 3 } };
+const config: CustomInstrumentConfig = { settings: { watchDraws: true, guessUndrawn: true, minimumConfidence: 60, minimumVertices: 3 } };
 
 rpc.exports = {
     async explore(out: string, seconds: number): Promise<void> {

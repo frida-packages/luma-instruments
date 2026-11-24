@@ -62,6 +62,8 @@ const pristineCode = new Map<string, ArrayBuffer>();
 const pristineRanges = new Map<string, string>();
 let lastOutput = "";
 let lastViewState: ViewState | null = null;
+let viewerCleared = false;
+const scanStates: boolean[] = [];
 
 const ctx = {
     emit(value: unknown) {
@@ -71,7 +73,9 @@ const ctx = {
         return new Proxy({}, {
             get(_target, method: string) {
                 return (...args: any[]) => {
-                    if (id === "meshes" && method === "upsertRow") {
+                    if (id === "meshes" && method === "setActionEnabled" && args[0] === "scan") {
+                        scanStates.push(args[1]);
+                    } else if (id === "meshes" && method === "upsertRow") {
                         rows.set(args[0].id, args[0]);
                     } else if (id === "meshes" && method === "removeRow") {
                         rows.delete(args[0]);
@@ -79,6 +83,8 @@ const ctx = {
                         rows.clear();
                     } else if (id === "mesh" && method === "setState") {
                         lastViewState = { value: args[0], data: args[1] };
+                    } else if (id === "viewer" && method === "clear") {
+                        viewerCleared = true;
                     } else if (id === "viewer") {
                         lastOutput = String(args[0]);
                         if (!lastOutput.startsWith("# ")) {
@@ -98,7 +104,7 @@ const quietReply = {
     image: () => {},
 };
 
-const config: CustomInstrumentConfig = { features: { watchDraws: true, guessUndrawn: true, minimumConfidence: 60, minimumVertices: 3 } };
+const config: CustomInstrumentConfig = { settings: { watchDraws: true, guessUndrawn: true, minimumConfidence: 60, minimumVertices: 3 } };
 
 rpc.exports = {
     run(out: string): Promise<number> {
@@ -125,8 +131,8 @@ async function run(out: string | null, target: Target, observeMs = 0): Promise<n
     await new Promise(resolve => setTimeout(resolve, SETTLE_MS / 2 + observeMs));
     target.uploadLateMesh();
     await new Promise(resolve => setTimeout(resolve, LATE_UPLOAD_MS));
-    handle.onConsoleInput!({ widget: "viewer", entryId: "scan", text: "scan" }, quietReply);
-    await new Promise(resolve => setTimeout(resolve, SETTLE_MS / 2));
+    const scanFailures = await checkScan(handle);
+    const clearFailures = checkClear(handle);
     const failures = check(handle, expectations, out);
     target.enter("disposed");
     const changed = changedHookedCode();
@@ -134,7 +140,7 @@ async function run(out: string | null, target: Target, observeMs = 0): Promise<n
     console.log((changed.length === 0)
         ? `all ${snapshots} snapshots of hooked code and tables are back to their original bytes`
         : `CHANGED after dispose: ${changed.join(", ")}`);
-    return failures + changed.length;
+    return failures + changed.length + scanFailures + clearFailures;
 }
 
 function targetOf(platform: Platform): Target {
@@ -169,6 +175,62 @@ function recordHookedCode(): void {
     for (const [name, digest] of readOnlyDirect3D11()) {
         pristineRanges.set(name, digest);
     }
+}
+
+async function checkScan(handle: CustomInstrumentHandle): Promise<number> {
+    const problems: string[] = [];
+    if (scanStates.length === 0 || scanStates[0] || !await scanEnabledWithin(SETTLE_MS)) {
+        problems.push(`the searches create started did not disable Scan and enable it again: ${JSON.stringify(scanStates)}`);
+    }
+    handle.onAction!({ widget: "meshes", action: "scan" });
+    if (isScanEnabled()) {
+        problems.push("Scan is not disabled while its search runs");
+    }
+    const replies: string[] = [];
+    handle.onConsoleInput!({ widget: "viewer", entryId: "scan", text: "scan" }, { ...quietReply, output: text => replies.push(text) });
+    if (!replies.some(text => text.startsWith("Still looking for buffers"))) {
+        problems.push(`a typed scan during the search was not refused: ${JSON.stringify(replies)}`);
+    }
+    if (!await scanEnabledWithin(SETTLE_MS)) {
+        problems.push("Scan is not enabled again once the search has finished");
+    }
+    await handle.updateConfig!({ settings: { ...config.settings, guessUndrawn: false } });
+    const refusals: string[] = [];
+    handle.onConsoleInput!({ widget: "viewer", entryId: "scan", text: "scan" }, { ...quietReply, output: text => refusals.push(text) });
+    if (isScanEnabled() || !refusals.some(text => text.includes("Guess meshes in buffers never drawn"))) {
+        problems.push(`with guessing off, Scan is not disabled or a typed scan does not say why: ${JSON.stringify(refusals)}`);
+    }
+    await handle.updateConfig!(config);
+    if (!isScanEnabled()) {
+        problems.push("Scan is not enabled again when guessing is turned back on");
+    }
+    for (const problem of problems) {
+        console.log(`FAIL ${problem}`);
+    }
+    if (problems.length === 0) {
+        console.log("PASS Scan is disabled while its search runs and while guessing is off, a typed scan then says why, and Scan is enabled after");
+    }
+    return problems.length;
+}
+
+function isScanEnabled(): boolean {
+    return scanStates.at(-1) ?? true;
+}
+
+async function scanEnabledWithin(milliseconds: number): Promise<boolean> {
+    const deadline = Date.now() + milliseconds;
+    while (!isScanEnabled() && Date.now() < deadline) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    return isScanEnabled();
+}
+
+function checkClear(handle: CustomInstrumentHandle): number {
+    const rowsBefore = rows.size;
+    handle.onAction!({ widget: "viewer", action: "clear" });
+    const cleared = viewerCleared && rows.size === rowsBefore;
+    console.log(cleared ? "PASS Clear empties the console and leaves the meshes" : "FAIL Clear did not empty only the console");
+    return cleared ? 0 : 1;
 }
 
 function check(handle: CustomInstrumentHandle, expectations: Expectation[], out: string | null): number {

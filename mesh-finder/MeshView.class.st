@@ -364,7 +364,7 @@ MeshView >> buttonSpans [
 	x := 12.
 	^ self availableModes collect: [ :each |
 		| wide span |
-		wide := (self widthOf: (self labelOf: each) in: (buttons detect: [ :button | button key = each ]) value) / self scale.
+		wide := (buttons detect: [ :button | button key = each ]) value widthOf: (self labelOf: each).
 		span := each -> { x. x + wide }.
 		x := x + wide + 14.
 		span ]
@@ -382,18 +382,8 @@ MeshView >> modes [
 ]
 
 { #category : 'drawing' }
-MeshView >> widthOf: aString in: aLabel [
-	^ aString inject: 0 into: [ :sum :each | sum + (aLabel advanceOf: each) ]
-]
-
-{ #category : 'drawing' }
 MeshView >> labelOf: aMode [
 	^ aMode asString capitalized
-]
-
-{ #category : 'drawing' }
-MeshView >> scale [
-	^ surface scale > 0 ifTrue: [ surface scale ] ifFalse: [ 2 ]
 ]
 
 { #category : 'drawing' }

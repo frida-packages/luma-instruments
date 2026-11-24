@@ -8,60 +8,68 @@ const FLUSH_DELAY_MS = 100;
 const missing = "—";
 
 export class MeshTable implements CatalogListener {
-    private readonly shown = new Set<number>();
-    private readonly changed = new Map<number, Mesh | null>();
-    private pendingFlush: ReturnType<typeof setTimeout> | null = null;
+    readonly #table: MeshTableWidget;
+    readonly #settings: Settings;
+    readonly #shown = new Set<number>();
+    readonly #changed = new Map<number, Mesh | null>();
+    #pendingFlush: ReturnType<typeof setTimeout> | null = null;
 
-    constructor(private readonly table: MeshTableWidget, private readonly settings: Settings) {
+    constructor(table: MeshTableWidget, settings: Settings) {
+        this.#table = table;
+        this.#settings = settings;
         table.clear();
     }
 
+    allowScan(allowed: boolean): void {
+        this.#table.setActionEnabled("scan", allowed);
+    }
+
     meshAdmitted(mesh: Mesh): void {
-        this.changed.set(mesh.id, mesh);
-        this.scheduleFlush();
+        this.#changed.set(mesh.id, mesh);
+        this.#scheduleFlush();
     }
 
     meshRemoved(mesh: Mesh): void {
-        this.changed.set(mesh.id, null);
-        this.scheduleFlush();
+        this.#changed.set(mesh.id, null);
+        this.#scheduleFlush();
     }
 
     refilter(meshes: Mesh[]): void {
         for (const mesh of meshes) {
-            this.changed.set(mesh.id, mesh);
+            this.#changed.set(mesh.id, mesh);
         }
-        this.scheduleFlush();
+        this.#scheduleFlush();
     }
 
     dispose(): void {
-        if (this.pendingFlush !== null) {
-            clearTimeout(this.pendingFlush);
-            this.flush();
+        if (this.#pendingFlush !== null) {
+            clearTimeout(this.#pendingFlush);
+            this.#flush();
         }
     }
 
-    private scheduleFlush(): void {
-        if (this.pendingFlush === null) {
-            this.pendingFlush = setTimeout(() => this.flush(), FLUSH_DELAY_MS);
+    #scheduleFlush(): void {
+        if (this.#pendingFlush === null) {
+            this.#pendingFlush = setTimeout(() => this.#flush(), FLUSH_DELAY_MS);
         }
     }
 
-    private flush(): void {
-        this.pendingFlush = null;
-        for (const [id, mesh] of this.changed) {
-            if (mesh !== null && this.isVisible(mesh)) {
-                this.table.upsertRow({ id: String(id), cells: cellsOf(mesh) });
-                this.shown.add(id);
-            } else if (this.shown.delete(id)) {
-                this.table.removeRow(String(id));
+    #flush(): void {
+        this.#pendingFlush = null;
+        for (const [id, mesh] of this.#changed) {
+            if (mesh !== null && this.#isVisible(mesh)) {
+                this.#table.upsertRow({ id: String(id), cells: cellsOf(mesh) });
+                this.#shown.add(id);
+            } else if (this.#shown.delete(id)) {
+                this.#table.removeRow(String(id));
             }
         }
-        this.changed.clear();
+        this.#changed.clear();
     }
 
-    private isVisible(mesh: Mesh): boolean {
-        const enoughVertices = mesh.contents !== "cpu-visible" || mesh.vertexCount >= this.settings.minimumVertices;
-        const confidentEnough = mesh.evidence === "drawn" || mesh.layout!.confidence >= this.settings.minimumConfidence;
+    #isVisible(mesh: Mesh): boolean {
+        const enoughVertices = mesh.contents !== "cpu-visible" || mesh.vertexCount >= this.#settings.minimumVertices;
+        const confidentEnough = mesh.evidence === "drawn" || mesh.layout!.confidence >= this.#settings.minimumConfidence;
         return enoughVertices && confidentEnough;
     }
 }

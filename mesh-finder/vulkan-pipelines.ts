@@ -71,9 +71,9 @@ const vulkanFormats = new Map<number, [ComponentType, number]>([
 ]);
 
 export class PipelineLayouts {
-    private readonly pipelines = new Map<string, PipelineDescription>();
-    private readonly modules = new Map<string, VertexInputNames>();
-    private readonly listeners: InvocationListener[] = [];
+    readonly #pipelines = new Map<string, PipelineDescription>();
+    readonly #modules = new Map<string, VertexInputNames>();
+    readonly #listeners: InvocationListener[] = [];
 
     constructor(drivers: VulkanDriver[], learned: (pipeline: UInt64, description: PipelineDescription) => void) {
         const layouts = this;
@@ -81,7 +81,7 @@ export class PipelineLayouts {
         const hook = (target: NativePointer | undefined, callbacks: InvocationListenerCallbacks) => {
             if (target !== undefined && !hooked.has(target.toString())) {
                 hooked.add(target.toString());
-                this.listeners.push(Interceptor.attach(target, callbacks));
+                this.#listeners.push(Interceptor.attach(target, callbacks));
             }
         };
         for (const driver of drivers) {
@@ -90,14 +90,14 @@ export class PipelineLayouts {
                     const count = args[2].toUInt32();
                     const infos = args[3];
                     this.descriptions = Array.from({ length: count },
-                        (_, i) => layouts.describeCreateInfo(GraphicsPipelineCreateInfo.at(infos.add(i * GraphicsPipelineCreateInfo.size))));
+                        (_, i) => layouts.#describeCreateInfo(GraphicsPipelineCreateInfo.at(infos.add(i * GraphicsPipelineCreateInfo.size))));
                     this.pipelines = args[5];
                 },
                 onLeave() {
                     (this.descriptions as PipelineDescription[]).forEach((description, i) => {
                         const pipeline = (this.pipelines as NativePointer).add(i * 8).readU64();
                         if (!pipeline.equals(0)) {
-                            layouts.pipelines.set(pipeline.toString(), description);
+                            layouts.#pipelines.set(pipeline.toString(), description);
                             learned(pipeline, description);
                         }
                     });
@@ -110,29 +110,29 @@ export class PipelineLayouts {
                 },
                 onLeave(result) {
                     if (result.toInt32() === 0 && this.names.size !== 0) {
-                        layouts.modules.set((this.module as NativePointer).readPointer().toString(), this.names);
+                        layouts.#modules.set((this.module as NativePointer).readPointer().toString(), this.names);
                     }
                 },
             });
             hook(driver.entryPoints.get("vkDestroyShaderModule"), {
                 onEnter(args) {
-                    layouts.modules.delete(args[1].toString());
+                    layouts.#modules.delete(args[1].toString());
                 },
             });
         }
     }
 
     describe(pipeline: UInt64): PipelineDescription | undefined {
-        return this.pipelines.get(pipeline.toString());
+        return this.#pipelines.get(pipeline.toString());
     }
 
     dispose(): void {
-        for (const listener of this.listeners) {
+        for (const listener of this.#listeners) {
             listener.detach();
         }
     }
 
-    private describeCreateInfo(info: GraphicsPipelineCreateInfo): PipelineDescription {
+    #describeCreateInfo(info: GraphicsPipelineCreateInfo): PipelineDescription {
         const dynamicStates = dynamicStatesOf(info.dynamicState);
         const vertexInputState = info.vertexInputState;
         const assembly = info.inputAssemblyState;
@@ -141,10 +141,10 @@ export class PipelineLayouts {
             vertexInput: dynamicStates.has(DYNAMIC_VERTEX_INPUT) ? "dynamic" : (vertexInputState === null ? null
                 : vertexInputOf(vertexInputState)),
             strides: dynamicStates.has(DYNAMIC_VERTEX_INPUT_BINDING_STRIDE) ? "dynamic" : "declared",
-            names: this.vertexNamesOf(info.stages, info.stageCount),
+            names: this.#vertexNamesOf(info.stages, info.stageCount),
         };
         return librariesOf(info).reduce((merged, library) => {
-            const linked = this.pipelines.get(library.toString());
+            const linked = this.#pipelines.get(library.toString());
             return (linked === undefined) ? merged : {
                 topology: merged.topology ?? linked.topology,
                 vertexInput: merged.vertexInput ?? linked.vertexInput,
@@ -154,7 +154,7 @@ export class PipelineLayouts {
         }, own);
     }
 
-    private vertexNamesOf(stages: NativePointer, count: number): InputNames | null {
+    #vertexNamesOf(stages: NativePointer, count: number): InputNames | null {
         for (let i = 0; i !== count; i++) {
             const stage = PipelineShaderStageCreateInfo.at(stages.add(i * PipelineShaderStageCreateInfo.size));
             if (stage.stage !== VERTEX_STAGE) {
@@ -162,7 +162,7 @@ export class PipelineLayouts {
             }
             const entry = stage.name.readUtf8String()!;
             const module = stage.module;
-            const names = module.isNull() ? inlineModuleNames(stage) : this.modules.get(module.toString());
+            const names = module.isNull() ? inlineModuleNames(stage) : this.#modules.get(module.toString());
             return names?.get(entry) ?? null;
         }
         return null;

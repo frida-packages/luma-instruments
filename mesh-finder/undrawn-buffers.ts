@@ -144,27 +144,31 @@ export function* analyzeUndrawnBuffers(snapshots: SnapshotBuffer[], catalog: Mes
 }
 
 class EvidentLayouts {
-    private readonly layouts = new Map<SnapshotBuffer, GuessedLayout | null>();
+    readonly #layouts = new Map<SnapshotBuffer, GuessedLayout | null>();
 
     of(buffer: SnapshotBuffer): GuessedLayout | null {
-        if (!this.layouts.has(buffer)) {
-            this.layouts.set(buffer, guessBufferLayout(buffer, null));
+        if (!this.#layouts.has(buffer)) {
+            this.#layouts.set(buffer, guessBufferLayout(buffer, null));
         }
-        return this.layouts.get(buffer)!;
+        return this.#layouts.get(buffer)!;
     }
 }
 
 class AnalysisStatus {
-    private lastNote = Date.now();
+    readonly #total: number;
+    readonly #progress: FinderProgress;
+    #lastNote = Date.now();
 
-    constructor(private readonly total: number, private readonly progress: FinderProgress) {
+    constructor(total: number, progress: FinderProgress) {
+        this.#total = total;
+        this.#progress = progress;
     }
 
     left(buffers: number): void {
         const now = Date.now();
-        if (now - this.lastNote >= STATUS_INTERVAL_MS) {
-            this.lastNote = now;
-            this.progress.note(`Still analyzing ${buffers} of the ${this.total} buffers no draw was seen using…`);
+        if (now - this.#lastNote >= STATUS_INTERVAL_MS) {
+            this.#lastNote = now;
+            this.#progress.note(`Still analyzing ${buffers} of the ${this.#total} buffers no draw was seen using…`);
         }
     }
 }

@@ -16,7 +16,7 @@ export const instrument: CustomInstrument = {
         const catalog = new MeshCatalog(table);
         const display = new MeshDisplay(ctx.widget("mesh"), viewer);
         const finder = new MeshFinder(catalog, settings, progress);
-        const apis = new GraphicsApis(backends, finder, settings, progress);
+        const apis = new GraphicsApis(backends, finder, settings, progress, table);
         const commands = new ViewerCommands(catalog, display, apis);
         const viewerReply = { output: (text: string) => viewer.appendOutput(text), error: (text: string) => viewer.appendError(text) };
 
@@ -27,6 +27,14 @@ export const instrument: CustomInstrument = {
                 table.refilter(catalog.all());
             },
             onAction({ action, item }) {
+                if (action === "clear") {
+                    viewer.clear();
+                    return;
+                }
+                if (action === "scan") {
+                    apis.scan();
+                    return;
+                }
                 const mesh = catalog.find(Number(item));
                 if (mesh === undefined) {
                     return;
