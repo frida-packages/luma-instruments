@@ -14,13 +14,13 @@ export function findSecurityFramework(): ObjectSource | null {
 class SecCertificateSource implements ObjectSource {
     readonly strategy = "SecCertificate" as const;
     readonly holder: string;
-    private readonly classOfCfTypes: NativePointer;
-    private readonly isaMask: NativePointer;
-    private readonly certificateTypeId: number;
-    private readonly mallocSize: NativeFunction<UInt64, [NativePointerValue]>;
-    private readonly typeIdOf: NativeFunction<UInt64, [NativePointerValue]>;
-    private readonly bytesOf: NativeFunction<NativePointer, [NativePointerValue]>;
-    private readonly lengthOf: NativeFunction<Int64, [NativePointerValue]>;
+    readonly #classOfCfTypes: NativePointer;
+    readonly #isaMask: NativePointer;
+    readonly #certificateTypeId: number;
+    readonly #mallocSize: NativeFunction<UInt64, [NativePointerValue]>;
+    readonly #typeIdOf: NativeFunction<UInt64, [NativePointerValue]>;
+    readonly #bytesOf: NativeFunction<NativePointer, [NativePointerValue]>;
+    readonly #lengthOf: NativeFunction<Int64, [NativePointerValue]>;
 
     constructor(security: Module) {
         const objc = Process.getModuleByName("libobjc.A.dylib");
@@ -29,29 +29,29 @@ class SecCertificateSource implements ObjectSource {
         const certificateTypeIdOf = new NativeFunction(security.getExportByName("SecCertificateGetTypeID"), "size_t", []);
 
         this.holder = security.name;
-        this.classOfCfTypes = getClass(Memory.allocUtf8String("__NSCFType"));
-        this.isaMask = objc.getExportByName("objc_debug_isa_class_mask").readPointer();
-        this.certificateTypeId = certificateTypeIdOf().toNumber();
-        this.mallocSize = new NativeFunction(Module.getGlobalExportByName("malloc_size"), "size_t", ["pointer"]);
-        this.typeIdOf = new NativeFunction(coreFoundation.getExportByName("CFGetTypeID"), "size_t", ["pointer"]);
-        this.bytesOf = new NativeFunction(security.getExportByName("SecCertificateGetBytePtr"), "pointer", ["pointer"]);
-        this.lengthOf = new NativeFunction(security.getExportByName("SecCertificateGetLength"), "ssize_t", ["pointer"]);
+        this.#classOfCfTypes = getClass(Memory.allocUtf8String("__NSCFType"));
+        this.#isaMask = objc.getExportByName("objc_debug_isa_class_mask").readPointer();
+        this.#certificateTypeId = certificateTypeIdOf().toNumber();
+        this.#mallocSize = new NativeFunction(Module.getGlobalExportByName("malloc_size"), "size_t", ["pointer"]);
+        this.#typeIdOf = new NativeFunction(coreFoundation.getExportByName("CFGetTypeID"), "size_t", ["pointer"]);
+        this.#bytesOf = new NativeFunction(security.getExportByName("SecCertificateGetBytePtr"), "pointer", ["pointer"]);
+        this.#lengthOf = new NativeFunction(security.getExportByName("SecCertificateGetLength"), "ssize_t", ["pointer"]);
     }
 
     findCandidates(ranges: MemoryRange[]): Candidate[] {
-        const instances = Memory.findPointers(ranges, [this.classOfCfTypes], { mask: this.isaMask });
-        return instances.map(({ address }) => () => this.examine(address));
+        const instances = Memory.findPointers(ranges, [this.#classOfCfTypes], { mask: this.#isaMask });
+        return instances.map(({ address }) => () => this.#examine(address));
     }
 
-    private examine(candidate: NativePointer): Discovery | null {
-        if (!this.isLiveCertificate(candidate)) {
+    #examine(candidate: NativePointer): Discovery | null {
+        if (!this.#isLiveCertificate(candidate)) {
             return null;
         }
-        const length = this.lengthOf(candidate).toNumber();
+        const length = this.#lengthOf(candidate).toNumber();
         if (length <= 0 || length > largestPlausibleCertificate) {
             return null;
         }
-        const bytes = this.bytesOf(candidate);
+        const bytes = this.#bytesOf(candidate);
         const der = bytes.readByteArray(length)!;
         return {
             der,
@@ -60,9 +60,9 @@ class SecCertificateSource implements ObjectSource {
         };
     }
 
-    private isLiveCertificate(candidate: NativePointer): boolean {
+    #isLiveCertificate(candidate: NativePointer): boolean {
         return candidate.and(mallocAlignment - 1).isNull()
-            && this.mallocSize(candidate).toNumber() >= smallestPlausibleInstance
-            && this.typeIdOf(candidate).toNumber() === this.certificateTypeId;
+            && this.#mallocSize(candidate).toNumber() >= smallestPlausibleInstance
+            && this.#typeIdOf(candidate).toNumber() === this.#certificateTypeId;
     }
 }

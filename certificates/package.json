@@ -3,10 +3,11 @@
   "displayName": "Certificates",
   "version": "1.0.0",
   "main": "main.ts",
+  "engines": { "luma": ">=4.0.0" },
   "luma": {
     "icon": { "kind": "symbolic", "value": "shield" },
     "compatibility": { "platforms": ["windows", "darwin", "linux"] },
-    "features": [
+    "settings": [
       {
         "id": "scope",
         "name": "Memory to scan for encoded certificates",
@@ -25,48 +26,47 @@
     "widgets": [
       {
         "id": "scan",
-        "name": "Scan",
-        "kind": { "kind": "list", "config": { "actions": [{ "id": "rescan", "name": "Rescan" }], "maxItems": 1 } },
+        "kind": "list",
+        "config": { "rowActions": [], "maxItems": 1 },
         "persistence": "none"
       },
       {
         "id": "certificates",
         "name": "Certificates",
-        "kind": {
-          "kind": "table",
-          "config": {
-            "columns": [
-              { "id": "subject", "name": "Subject", "alignment": "leading" },
-              { "id": "issuer", "name": "Issuer", "alignment": "leading" },
-              { "id": "expires", "name": "Expires", "alignment": "leading" },
-              { "id": "key", "name": "Key", "alignment": "leading" },
-              { "id": "sha256", "name": "SHA-256", "alignment": "leading" },
-              { "id": "found", "name": "Found by", "alignment": "leading" }
-            ],
-            "actions": [{ "id": "inspect", "name": "Inspect" }],
-            "maxRows": 5000
-          }
+        "kind": "table",
+        "config": {
+          "columns": [
+            { "id": "subject", "name": "Subject", "alignment": "leading" },
+            { "id": "issuer", "name": "Issuer", "alignment": "leading" },
+            { "id": "expires", "name": "Expires", "alignment": "leading" },
+            { "id": "key", "name": "Key", "alignment": "leading" },
+            { "id": "sha256", "name": "SHA-256", "alignment": "leading" },
+            { "id": "found", "name": "Found by", "alignment": "leading" }
+          ],
+          "rowActions": [{ "id": "inspect", "name": "Inspect" }],
+          "maxRows": 5000
         },
+        "actions": [{ "id": "rescan", "name": "Rescan" }],
         "persistence": "none"
       },
       {
         "id": "details",
         "name": "Details",
-        "kind": {
-          "kind": "console",
-          "config": {
-            "prompt": "?",
-            "placeholder": "Name, host name or fingerprint to show",
-            "runButtonLabel": "Show",
-            "maxEntries": 500
-          }
+        "kind": "console",
+        "config": {
+          "maxEntries": 500,
+          "prompt": "?",
+          "placeholder": "Name, host name or fingerprint to show",
+          "runButtonLabel": "Show"
         },
+        "actions": [{ "id": "clear", "name": "Clear" }],
         "persistence": "none"
       },
       {
         "id": "der",
         "name": "DER",
-        "kind": { "kind": "hex", "config": { "maxBytes": 65536 } },
+        "kind": "hex",
+        "config": { "maxBytes": 65536 },
         "persistence": "none"
       }
     ],

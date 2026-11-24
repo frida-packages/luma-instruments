@@ -23,71 +23,78 @@ const scopeNames: Record<MemoryScope, string> = {
 };
 
 export class CertificateView {
-    private readonly status: CustomInstrumentWidgetMap["scan"];
-    private readonly table: CustomInstrumentWidgetMap["certificates"];
-    private readonly details: CustomInstrumentWidgetMap["details"];
-    private readonly derView: CustomInstrumentWidgetMap["der"];
-    private readonly changed = new Set<FoundCertificate>();
-    private pendingFlush: ReturnType<typeof setTimeout> | null = null;
-    private shownPercentage = -1;
+    readonly #status: CustomInstrumentWidgetMap["scan"];
+    readonly #table: CustomInstrumentWidgetMap["certificates"];
+    readonly #details: CustomInstrumentWidgetMap["details"];
+    readonly #derView: CustomInstrumentWidgetMap["der"];
+    readonly #changed = new Set<FoundCertificate>();
+    #pendingFlush: ReturnType<typeof setTimeout> | null = null;
+    #shownPercentage = -1;
 
     constructor(ctx: CustomInstrumentContext) {
-        this.status = ctx.widget("scan");
-        this.table = ctx.widget("certificates");
-        this.details = ctx.widget("details");
-        this.derView = ctx.widget("der");
+        this.#status = ctx.widget("scan");
+        this.#table = ctx.widget("certificates");
+        this.#details = ctx.widget("details");
+        this.#derView = ctx.widget("der");
     }
 
     showScanStarted(scope: MemoryScope, known: number): void {
-        this.shownPercentage = -1;
-        this.showStatus("Scanning…", `Looking for live certificate objects, then scanning ${scopeNames[scope]}`, countText(known));
+        this.#shownPercentage = -1;
+        this.#table.setActionEnabled("rescan", false);
+        this.#showStatus("Scanning…", `Looking for live certificate objects, then scanning ${scopeNames[scope]}`, countText(known));
     }
 
     showCertificate(entry: FoundCertificate): void {
-        this.changed.add(entry);
-        if (this.pendingFlush === null) {
-            this.pendingFlush = setTimeout(() => this.flush(), flushDelay);
+        this.#changed.add(entry);
+        if (this.#pendingFlush === null) {
+            this.#pendingFlush = setTimeout(() => this.#flush(), flushDelay);
         }
     }
 
     showMemoryProgress(memory: ScannedMemory, found: number): void {
         const percentage = Math.floor(memory.scanned * 100 / memory.total);
-        if (percentage === this.shownPercentage) {
+        if (percentage === this.#shownPercentage) {
             return;
         }
-        this.shownPercentage = percentage;
-        this.showStatus("Scanning…", `${percentage}% of ${formattedByteCount(memory.total)} scanned`, countText(found));
+        this.#shownPercentage = percentage;
+        this.#showStatus("Scanning…", `${percentage}% of ${formattedByteCount(memory.total)} scanned`, countText(found));
     }
 
     removeCertificates(entries: FoundCertificate[]): void {
         for (const entry of entries) {
-            this.changed.delete(entry);
-            this.table.removeRow(entry.sha256);
+            this.#changed.delete(entry);
+            this.#table.removeRow(entry.sha256);
         }
     }
 
     showScanFinished(scan: CompletedScan, tallies: StrategyTally[], found: number): void {
-        this.flush();
+        this.#flush();
         const scanned = formattedByteCount(scan.memory.total);
         const memoryDuration = formattedDuration(scan.memoryMilliseconds);
         const finished = clockTime(Date.now());
         const objectDuration = formattedDuration(scan.objectMilliseconds);
-        this.showStatus(countText(found), `Objects in ${objectDuration} · ${scanned} of memory in ${memoryDuration}`, finished);
-        this.details.appendOutput([
+        this.#showStatus(countText(found), `Objects in ${objectDuration} · ${scanned} of memory in ${memoryDuration}`, finished);
+        this.#details.appendOutput([
             `Scanned ${scopeNames[scan.scope]} at ${finished}: ${countText(found)}`,
             ...tallies.map(tallyLine),
             `  ${scanned} searched for DER and PEM in ${memoryDuration}`,
         ].join("\n"));
+        this.#table.setActionEnabled("rescan", true);
     }
 
     showScanFailed(error: Error): void {
-        this.showStatus("Scan failed", error.message, "");
-        this.details.appendError(error.stack!);
+        this.#showStatus("Scan failed", error.message, "");
+        this.#details.appendError(error.stack!);
+        this.#table.setActionEnabled("rescan", true);
     }
 
     inspect(entry: FoundCertificate): void {
-        this.details.appendValue(detailsOf(entry));
-        this.showDer(entry);
+        this.#details.appendValue(detailsOf(entry));
+        this.#showDer(entry);
+    }
+
+    clearDetails(): void {
+        this.#details.clear();
     }
 
     answer(query: string, matches: FoundCertificate[], respond: CustomInstrumentConsoleResponder): void {
@@ -101,35 +108,35 @@ export class CertificateView {
         if (matches.length > answerLimit) {
             respond.output(`Showing ${answerLimit} of ${matches.length} matches.`);
         }
-        this.showDer(matches[0]);
+        this.#showDer(matches[0]);
     }
 
     dispose(): void {
-        this.cancelPendingFlush();
+        this.#cancelPendingFlush();
     }
 
-    private showStatus(title: string, subtitle: string, accessory: string): void {
-        this.status.upsertItem({ id: scanItem, title, subtitle, accessory });
+    #showStatus(title: string, subtitle: string, accessory: string): void {
+        this.#status.upsertItem({ id: scanItem, title, subtitle, accessory });
     }
 
-    private flush(): void {
-        this.cancelPendingFlush();
-        for (const entry of this.changed) {
-            this.table.upsertRow({ id: entry.sha256, cells: rowCells(entry) });
+    #flush(): void {
+        this.#cancelPendingFlush();
+        for (const entry of this.#changed) {
+            this.#table.upsertRow({ id: entry.sha256, cells: rowCells(entry) });
         }
-        this.changed.clear();
+        this.#changed.clear();
     }
 
-    private cancelPendingFlush(): void {
-        if (this.pendingFlush !== null) {
-            clearTimeout(this.pendingFlush);
-            this.pendingFlush = null;
+    #cancelPendingFlush(): void {
+        if (this.#pendingFlush !== null) {
+            clearTimeout(this.#pendingFlush);
+            this.#pendingFlush = null;
         }
     }
 
-    private showDer(entry: FoundCertificate): void {
+    #showDer(entry: FoundCertificate): void {
         const derAddress = entry.sightings.map(sighting => sighting.derAddress).find(address => address !== null) ?? null;
-        this.derView.setHex({ bytes: entry.der, baseAddress: (derAddress !== null) ? Number(derAddress.toString()) : 0 });
+        this.#derView.setHex({ bytes: entry.der, baseAddress: (derAddress !== null) ? Number(derAddress.toString()) : 0 });
     }
 }
 

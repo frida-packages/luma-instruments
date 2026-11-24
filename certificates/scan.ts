@@ -39,27 +39,27 @@ export interface CompletedScan {
 }
 
 export class Scanner {
-    private readonly observer: ScanObserver;
-    private current: ScanRun | null = null;
+    readonly #observer: ScanObserver;
+    #current: ScanRun | null = null;
 
     constructor(observer: ScanObserver) {
-        this.observer = observer;
+        this.#observer = observer;
     }
 
     start(scope: MemoryScope): void {
         this.stop();
-        const run = new ScanRun(this.observer);
-        this.current = run;
-        performScan(run, scope, this.observer).catch(error => {
+        const run = new ScanRun(this.#observer);
+        this.#current = run;
+        performScan(run, scope, this.#observer).catch(error => {
             if (!(error instanceof ScanCanceled)) {
-                this.observer.onFailed(error);
+                this.#observer.onFailed(error);
             }
         });
     }
 
     stop(): void {
-        this.current?.cancel();
-        this.current = null;
+        this.#current?.cancel();
+        this.#current = null;
     }
 }
 
@@ -104,24 +104,24 @@ async function searchObjects(source: ObjectSource, ranges: MemoryRange[], run: S
 const sliceMilliseconds = 20;
 
 export class ScanRun {
-    private readonly observer: ScanObserver;
-    private state: "running" | "canceled" = "running";
-    private sliceStarted = Date.now();
+    readonly #observer: ScanObserver;
+    #state: "running" | "canceled" = "running";
+    #sliceStarted = Date.now();
 
     constructor(observer: ScanObserver) {
-        this.observer = observer;
+        this.#observer = observer;
     }
 
     cancel(): void {
-        this.state = "canceled";
+        this.#state = "canceled";
     }
 
     async checkpoint(): Promise<void> {
-        if (Date.now() - this.sliceStarted >= sliceMilliseconds) {
+        if (Date.now() - this.#sliceStarted >= sliceMilliseconds) {
             await new Promise(resolve => setImmediate(resolve));
-            this.sliceStarted = Date.now();
+            this.#sliceStarted = Date.now();
         }
-        if (this.state === "canceled") {
+        if (this.#state === "canceled") {
             throw new ScanCanceled();
         }
     }
@@ -137,7 +137,7 @@ export class ScanRun {
             throw error;
         }
         if (discovery !== null) {
-            this.observer.onDiscovery(discovery);
+            this.#observer.onDiscovery(discovery);
         }
     }
 }

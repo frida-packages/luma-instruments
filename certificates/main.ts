@@ -7,13 +7,13 @@ export const instrument: CustomInstrument = {
         const view = new CertificateView(ctx);
         const inventory = new Inventory(ctx, view);
         const scanner = new Scanner(inventory);
-        let scope = config.features.scope;
+        let scope = config.settings.scope;
         scanner.start(scope);
 
         return {
             updateConfig(next) {
-                if (next.features.scope !== scope) {
-                    scope = next.features.scope;
+                if (next.settings.scope !== scope) {
+                    scope = next.settings.scope;
                     scanner.start(scope);
                 }
             },
@@ -29,6 +29,9 @@ export const instrument: CustomInstrument = {
                         }
                         break;
                     }
+                    case "clear":
+                        view.clearDetails();
+                        break;
                 }
             },
             onConsoleInput({ text }, respond) {

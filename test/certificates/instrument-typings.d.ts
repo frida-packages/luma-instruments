@@ -19,13 +19,13 @@ declare interface CustomInstrumentGraphWidget<Series extends string> {
     clear(): void;
 }
 
-declare interface CustomInstrumentListWidget<Action extends string> {
+declare interface CustomInstrumentListWidget {
     upsertItem(item: { id: string, title: string, subtitle?: string, accessory?: string }): void;
     removeItem(id: string): void;
     clear(): void;
 }
 
-declare interface CustomInstrumentTableWidget<Column extends string, Action extends string> {
+declare interface CustomInstrumentTableWidget<Column extends string> {
     upsertRow(row: { id: string, cells: { [K in Column]: string } }): void;
     removeRow(id: string): void;
     clear(): void;
@@ -53,17 +53,17 @@ declare interface CustomInstrumentConsoleWidget {
     clear(): void;
 }
 
+declare interface CustomInstrumentWidgetActions<Action extends string> {
+    setActionEnabled(action: Action, enabled: boolean): void;
+}
+
 declare interface CustomInstrumentWidgetMap {
 }
 
-declare type CustomInstrumentAction = {
-    [K in keyof CustomInstrumentWidgetMap]:
-        CustomInstrumentWidgetMap[K] extends CustomInstrumentListWidget<infer A>
-            ? { widget: K; action: A; item: string }
-        : CustomInstrumentWidgetMap[K] extends CustomInstrumentTableWidget<any, infer A>
-            ? { widget: K; action: A; item: string }
-            : never
-}[keyof CustomInstrumentWidgetMap];
+declare interface CustomInstrumentActionMap {
+}
+
+declare type CustomInstrumentAction = CustomInstrumentActionMap[keyof CustomInstrumentActionMap];
 
 declare type CustomInstrumentConsoleInput = {
     [K in keyof CustomInstrumentWidgetMap]:
@@ -79,13 +79,13 @@ declare interface CustomInstrumentConsoleResponder {
     image(image: CustomInstrumentConsoleImage): void;
 }
 
-declare type CustomFeatureValue = boolean | number | string | CustomFeatureValue[] | { [name: string]: CustomFeatureValue };
+declare type CustomSettingValue = boolean | number | string | CustomSettingValue[] | { [name: string]: CustomSettingValue };
 
-declare interface CustomInstrumentFeatureMap {
+declare interface CustomInstrumentSettingMap {
 }
 
 declare interface CustomInstrumentConfig {
-    features: CustomInstrumentFeatureMap;
+    settings: CustomInstrumentSettingMap;
 }
 
 declare interface CustomInstrumentHandle {
@@ -137,18 +137,23 @@ declare interface CustomInstrument {
     ): CustomInstrumentHandle | Promise<CustomInstrumentHandle>;
 }
 
-declare interface CustomInstrumentFeatureMap {
+declare interface CustomInstrumentSettingMap {
     /** Memory to scan for encoded certificates */
     scope: "writable" | "readable";
 }
 
 declare interface CustomInstrumentWidgetMap {
-    /** Scan */
-    scan: CustomInstrumentListWidget<"rescan">;
+    /** scan */
+    scan: CustomInstrumentListWidget;
     /** Certificates */
-    certificates: CustomInstrumentTableWidget<"subject" | "issuer" | "expires" | "key" | "sha256" | "found", "inspect">;
+    certificates: CustomInstrumentTableWidget<"subject" | "issuer" | "expires" | "key" | "sha256" | "found"> & CustomInstrumentWidgetActions<"rescan">;
     /** Details */
-    details: CustomInstrumentConsoleWidget;
+    details: CustomInstrumentConsoleWidget & CustomInstrumentWidgetActions<"clear">;
     /** DER */
     der: CustomInstrumentHexWidget;
+}
+
+declare interface CustomInstrumentActionMap {
+    certificates: { widget: "certificates"; action: "rescan"; item?: undefined } | { widget: "certificates"; action: "inspect"; item: string };
+    details: { widget: "details"; action: "clear"; item?: undefined };
 }

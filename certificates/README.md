@@ -38,14 +38,15 @@ ways, or in several copies, is one row.
 
 ## What it shows
 
-- **Scan**: progress while scanning; afterwards, how many certificates there
-  are and how long the object search and the memory scan took. **Rescan**
-  scans again: certificates no longer found are dropped, and the others keep
-  their rows.
+- A status line at the top: progress while scanning; afterwards, how many
+  certificates there are and how long the object search and the memory scan
+  took.
 - **Certificates**: a row per certificate, with the common name of its
   subject and issuer (or the organization, or the whole name), when it
   expires, its key, the start of its SHA-256 fingerprint, and how it was
-  found, such as `SecCertificate ×2, DER ×5`.
+  found, such as `SecCertificate ×2, DER ×5`. **Rescan**, in its header,
+  scans again: certificates no longer found are dropped, and the others keep
+  their rows. It is disabled while a scan is under way.
 - **Inspect** on a row shows the certificate in **Details** as a value you
   can expand: subject, issuer, serial number, validity, signature algorithm,
   key, subject alternative names, basic constraints, key usage, extended key
@@ -56,7 +57,7 @@ ways, or in several copies, is one row.
   certificates that match. After each scan it gets a summary: how many
   certificates each strategy found, how many candidates the pointer search
   turned up and how long finding and checking them took, and how long the
-  memory scan took.
+  memory scan took. **Clear** empties it.
 
 Each certificate is also an event the first time it is found, carrying
 `subject`, `issuer`, `notAfter`, `sha256`, `foundBy`, `address` and `der`.

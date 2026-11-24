@@ -38,14 +38,14 @@ const longFormLength = 0x80;
 const maximumLengthOctets = 3;
 
 export class DerReader {
-    private readonly bytes: Uint8Array;
-    private offset: number;
-    private readonly limit: number;
+    readonly #bytes: Uint8Array;
+    #offset: number;
+    readonly #limit: number;
 
     constructor(bytes: Uint8Array, start = 0, limit = bytes.length) {
-        this.bytes = bytes;
-        this.offset = start;
-        this.limit = limit;
+        this.#bytes = bytes;
+        this.#offset = start;
+        this.#limit = limit;
     }
 
     enterTagged(tag: number): DerReader {
@@ -54,7 +54,7 @@ export class DerReader {
 
     expectEnd(): void {
         if (!this.atEnd) {
-            throw new MalformedDer(`unexpected data at ${this.offset}`);
+            throw new MalformedDer(`unexpected data at ${this.#offset}`);
         }
     }
 
@@ -71,42 +71,42 @@ export class DerReader {
     }
 
     enter(element: DerElement): DerReader {
-        return new DerReader(this.bytes, element.contentStart, element.end);
+        return new DerReader(this.#bytes, element.contentStart, element.end);
     }
 
     content(element: DerElement): Uint8Array {
-        return this.bytes.subarray(element.contentStart, element.end);
+        return this.#bytes.subarray(element.contentStart, element.end);
     }
 
     whole(element: DerElement): Uint8Array {
-        return this.bytes.subarray(element.start, element.end);
+        return this.#bytes.subarray(element.start, element.end);
     }
 
     peekTag(): number | null {
-        return this.atEnd ? null : this.bytes[this.offset];
+        return this.atEnd ? null : this.#bytes[this.#offset];
     }
 
     get atEnd(): boolean {
-        return this.offset === this.limit;
+        return this.#offset === this.#limit;
     }
 
     read(): DerElement {
         const element = this.readHeader();
-        if (element.end > this.limit) {
+        if (element.end > this.#limit) {
             throw new MalformedDer(`element at ${element.start} runs past its container`);
         }
-        this.offset = element.end;
+        this.#offset = element.end;
         return element;
     }
 
     readHeader(): DerElement {
-        const start = this.offset;
-        const tag = this.byteAt(start);
+        const start = this.#offset;
+        const tag = this.#byteAt(start);
         if ((tag & highTagNumberForm) === highTagNumberForm) {
             throw new MalformedDer(`unsupported tag 0x${tag.toString(16)} at ${start}`);
         }
         let cursor = start + 1;
-        const first = this.byteAt(cursor++);
+        const first = this.#byteAt(cursor++);
         let length = first;
         if (first === indefiniteLength) {
             throw new MalformedDer(`indefinite length at ${start}`);
@@ -118,17 +118,17 @@ export class DerReader {
             }
             length = 0;
             for (let i = 0; i !== octets; i++) {
-                length = length * 256 + this.byteAt(cursor++);
+                length = length * 256 + this.#byteAt(cursor++);
             }
         }
         return { tag, start, contentStart: cursor, end: cursor + length };
     }
 
-    private byteAt(offset: number): number {
-        if (offset >= this.limit) {
+    #byteAt(offset: number): number {
+        if (offset >= this.#limit) {
             throw new MalformedDer(`truncated at ${offset}`);
         }
-        return this.bytes[offset];
+        return this.#bytes[offset];
     }
 }
 

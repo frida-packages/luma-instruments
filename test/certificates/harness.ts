@@ -5,18 +5,21 @@ import { instrument } from "../../certificates/main.js";
 const scanFinishedPrefix = "Scanned ";
 
 const rows = new Set<string>();
+const disabledActions = new Set<string>();
 let onScanFinished!: () => void;
 let shownSightings: string[][] = [];
 
 rpc.exports = {
-    init(_stage: string, parameters: { scope?: CustomInstrumentFeatureMap["scope"] }) {
+    init(_stage: string, parameters: { scope?: CustomInstrumentSettingMap["scope"] }) {
         exercise(parameters.scope ?? "writable").catch(error => console.log(`failed: ${error.stack}`));
     },
 };
 
-async function exercise(scope: CustomInstrumentFeatureMap["scope"]): Promise<void> {
-    const handle = await instrument.create(ctx, { features: { scope } }, {});
+async function exercise(scope: CustomInstrumentSettingMap["scope"]): Promise<void> {
+    const handle = await instrument.create(ctx, { settings: { scope } }, {});
+    expectRescan(false, "during the first scan");
     await scanFinished();
+    expectRescan(true, "after the first scan");
 
     for (const id of rows) {
         await handle.onAction!({ widget: "certificates", action: "inspect", item: id });
@@ -24,9 +27,14 @@ async function exercise(scope: CustomInstrumentFeatureMap["scope"]): Promise<voi
     await handle.onConsoleInput!({ widget: "details", entryId: "1", text: "ed25519" }, respond);
     await handle.onConsoleInput!({ widget: "details", entryId: "2", text: "no such certificate" }, respond);
 
+    console.log("clearing details");
+    await handle.onAction!({ widget: "details", action: "clear" });
+
     console.log("rescanning");
-    await handle.onAction!({ widget: "scan", action: "rescan", item: "scan" });
+    await handle.onAction!({ widget: "certificates", action: "rescan" });
+    expectRescan(false, "during the rescan");
     await scanFinished();
+    expectRescan(true, "after the rescan");
 
     await handle.dispose!();
     console.log("disposed");
@@ -48,6 +56,11 @@ const ctx = {
     },
 } as unknown as CustomInstrumentContext;
 
+function expectRescan(enabled: boolean, when: string): void {
+    const actual = !disabledActions.has("certificates.rescan");
+    console.log(`rescan ${enabled ? "enabled" : "disabled"} ${when}: ${(actual === enabled) ? "ok" : "WRONG"}`);
+}
+
 function scanFinished(): Promise<void> {
     return new Promise(resolve => {
         onScanFinished = resolve;
@@ -65,6 +78,9 @@ const respond: CustomInstrumentConsoleResponder = {
 };
 
 function noteWidgetCall(id: string, method: string, args: unknown[]): void {
+    if (method === "setActionEnabled") {
+        noteActionEnabled(`${id}.${args[0]}`, args[1] as boolean);
+    }
     if (id === "certificates" && method === "upsertRow") {
         rows.add((args[0] as { id: string }).id);
     }
@@ -79,6 +95,14 @@ function noteWidgetCall(id: string, method: string, args: unknown[]): void {
     }
     if (id === "der" && method === "setHex") {
         checkBaseAddress((args[0] as { baseAddress?: unknown }).baseAddress);
+    }
+}
+
+function noteActionEnabled(key: string, enabled: boolean): void {
+    if (enabled) {
+        disabledActions.delete(key);
+    } else {
+        disabledActions.add(key);
     }
 }
 

@@ -6,69 +6,69 @@ import type { CertificateView, StrategyTally } from "./view.js";
 const byteStrategies: Strategy[] = ["DER", "PEM"];
 
 export class Inventory implements ScanObserver {
-    private readonly ctx: CustomInstrumentContext;
-    private readonly view: CertificateView;
-    private readonly catalog = new Catalog();
-    private searches: ObjectSearch[] = [];
+    readonly #ctx: CustomInstrumentContext;
+    readonly #view: CertificateView;
+    readonly #catalog = new Catalog();
+    #searches: ObjectSearch[] = [];
 
     constructor(ctx: CustomInstrumentContext, view: CertificateView) {
-        this.ctx = ctx;
-        this.view = view;
+        this.#ctx = ctx;
+        this.#view = view;
     }
 
     onStarted(scope: MemoryScope): void {
-        this.searches = [];
-        this.catalog.forgetSightings();
-        this.view.showScanStarted(scope, this.catalog.size);
+        this.#searches = [];
+        this.#catalog.forgetSightings();
+        this.#view.showScanStarted(scope, this.#catalog.size);
     }
 
     onDiscovery(discovery: Discovery): void {
-        const { recording, entry } = this.catalog.record(discovery);
+        const { recording, entry } = this.#catalog.record(discovery);
         if (recording === "known-sighting") {
             return;
         }
         if (recording === "new") {
-            this.ctx.emit(eventOf(entry, discovery));
+            this.#ctx.emit(eventOf(entry, discovery));
         }
-        this.view.showCertificate(entry);
+        this.#view.showCertificate(entry);
     }
 
     onObjectsSearched(search: ObjectSearch): void {
-        this.searches.push(search);
+        this.#searches.push(search);
     }
 
     onMemoryScanned(memory: ScannedMemory): void {
-        this.view.showMemoryProgress(memory, this.seenCount());
+        this.#view.showMemoryProgress(memory, this.#seenCount());
     }
 
     onFinished(scan: CompletedScan): void {
-        this.view.removeCertificates(this.catalog.removeUnseen());
-        this.view.showScanFinished(scan, this.tallies(), this.catalog.size);
+        this.#view.removeCertificates(this.#catalog.removeUnseen());
+        this.#view.showScanFinished(scan, this.#tallies(), this.#catalog.size);
     }
 
     onFailed(error: Error): void {
-        this.view.showScanFailed(error);
+        this.#view.showScanFailed(error);
     }
 
     find(sha256: string): FoundCertificate | undefined {
-        return this.catalog.get(sha256);
+        return this.#catalog.get(sha256);
     }
 
     search(query: string): FoundCertificate[] {
-        return this.catalog.search(query);
+        return this.#catalog.search(query);
     }
 
-    private seenCount(): number {
-        return this.catalog.all().filter(entry => entry.seen).length;
+    #seenCount(): number {
+        return this.#catalog.all().filter(entry => entry.seen).length;
     }
 
-    private tallies(): StrategyTally[] {
-        const entries = this.catalog.all();
+    #tallies(): StrategyTally[] {
+        const entries = this.#catalog.all();
         const certificatesFoundBy = (strategy: Strategy, holder: string | null) => entries
             .filter(entry => entry.sightings.some(sighting => sighting.strategy === strategy && sighting.holder === holder))
             .length;
         return [
-            ...this.searches.map(search => ({
+            ...this.#searches.map(search => ({
                 search,
                 strategy: search.strategy,
                 holder: search.holder,

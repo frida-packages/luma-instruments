@@ -112,22 +112,22 @@ function sharedObjects(nidToObject: NativeFunction<NativePointer, [number]>, alg
 class OpenSslLibrary implements ObjectSource {
     readonly strategy = "OpenSSL X509" as const;
     readonly holder: string;
-    private readonly objects: Map<string, string>;
+    readonly #objects: Map<string, string>;
 
     constructor(holder: string, objects: Map<string, string>) {
         this.holder = holder;
-        this.objects = objects;
+        this.#objects = objects;
     }
 
     findCandidates(ranges: MemoryRange[]): Candidate[] {
-        const references = Memory.findPointers(ranges, Array.from(this.objects.keys(), key => ptr(key)));
+        const references = Memory.findPointers(ranges, Array.from(this.#objects.keys(), key => ptr(key)));
         const referenceAt = new Map(references.map(({ address, value }) => [address.toString(), value.toString()]));
         return references
             .filter(({ address, value }) => referenceAt.get(address.add(algorithmPointerDistance).toString()) === value.toString())
-            .map(({ address, value }) => () => this.examine(address.sub(x509.tbsSignatureAlgorithm), this.objects.get(value.toString())!));
+            .map(({ address, value }) => () => this.#examine(address.sub(x509.tbsSignatureAlgorithm), this.#objects.get(value.toString())!));
     }
 
-    private examine(candidate: NativePointer, signatureAlgorithm: string): Discovery | null {
+    #examine(candidate: NativePointer, signatureAlgorithm: string): Discovery | null {
         if (!hasPlausibleSerialNumber(candidate.add(x509.serialNumber))) {
             return null;
         }

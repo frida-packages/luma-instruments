@@ -13,11 +13,16 @@ the SHA-256 of each and what holds it, then waits:
 
 `harness.ts` loads the instrument with a fake context that prints every event
 and widget call, waits for the first scan, inspects every row, searches the
-details console, rescans, and disposes the instrument. It takes the memory
-scope as a parameter. `interrupt.ts` rescans, changes the scope and disposes
-while a scan of all readable memory is under way, and reports any widget call
-made after disposal. `instrument-typings.d.ts` is what Luma generates for the
-instrument's features and widgets; regenerate it when they change.
+details console, clears it, rescans with the table's **Rescan**, and disposes
+the instrument. It checks that **Rescan** is disabled during each scan and
+enabled after it, and takes the memory scope as a parameter. `interrupt.ts`
+starts a scan of all readable memory, checks that **Rescan** stays disabled
+while it and the scan restarted by changing the scope twice are under way,
+disposes mid-scan and reports any widget call made after that, then creates
+the instrument again and checks that the new instance's **Rescan** is enabled
+once its first scan has finished. `instrument-typings.d.ts` is what Luma
+generates for the instrument's settings and widgets; regenerate it when they
+change.
 
 Build the target outside the repository, against each OpenSSL to be tried:
 

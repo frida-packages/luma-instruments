@@ -18,25 +18,25 @@ export interface Discovery {
 export type Recording = "new" | "rediscovered" | "another-sighting" | "known-sighting";
 
 export class Catalog {
-    private readonly entries = new Map<string, FoundCertificate>();
+    readonly #entries = new Map<string, FoundCertificate>();
 
     forgetSightings(): void {
-        for (const entry of this.entries.values()) {
+        for (const entry of this.#entries.values()) {
             entry.forgetSightings();
         }
     }
 
     get size(): number {
-        return this.entries.size;
+        return this.#entries.size;
     }
 
     record({ der, certificate, sighting }: Discovery): { recording: Recording; entry: FoundCertificate } {
         const sha256 = Checksum.compute("sha256", der);
-        const known = this.entries.get(sha256);
+        const known = this.#entries.get(sha256);
         if (known === undefined) {
             const entry = new FoundCertificate(sha256, der, certificate);
             entry.add(sighting);
-            this.entries.set(sha256, entry);
+            this.#entries.set(sha256, entry);
             return { recording: "new", entry };
         }
         if (known.has(sighting)) {
@@ -50,13 +50,13 @@ export class Catalog {
     removeUnseen(): FoundCertificate[] {
         const unseen = this.all().filter(entry => !entry.seen);
         for (const entry of unseen) {
-            this.entries.delete(entry.sha256);
+            this.#entries.delete(entry.sha256);
         }
         return unseen;
     }
 
     get(sha256: string): FoundCertificate | undefined {
-        return this.entries.get(sha256);
+        return this.#entries.get(sha256);
     }
 
     search(query: string): FoundCertificate[] {
@@ -70,7 +70,7 @@ export class Catalog {
     }
 
     all(): FoundCertificate[] {
-        return Array.from(this.entries.values());
+        return Array.from(this.#entries.values());
     }
 }
 
@@ -80,7 +80,7 @@ export class FoundCertificate {
     readonly der: ArrayBuffer;
     readonly certificate: Certificate;
     readonly sightings: Sighting[] = [];
-    private readonly sightingKeys = new Set<string>();
+    readonly #sightingKeys = new Set<string>();
 
     constructor(sha256: string, der: ArrayBuffer, certificate: Certificate) {
         this.sha256 = sha256;
@@ -91,16 +91,16 @@ export class FoundCertificate {
 
     forgetSightings(): void {
         this.sightings.length = 0;
-        this.sightingKeys.clear();
+        this.#sightingKeys.clear();
     }
 
     add(sighting: Sighting): void {
-        this.sightingKeys.add(keyOf(sighting));
+        this.#sightingKeys.add(keyOf(sighting));
         this.sightings.push(sighting);
     }
 
     has(sighting: Sighting): boolean {
-        return this.sightingKeys.has(keyOf(sighting));
+        return this.#sightingKeys.has(keyOf(sighting));
     }
 
     get seen(): boolean {
