@@ -3,10 +3,11 @@
   "displayName": "TLS Plaintext",
   "version": "1.0.0",
   "main": "main.ts",
+  "engines": { "luma": ">=4.0.0" },
   "luma": {
     "icon": { "kind": "symbolic", "value": "lock" },
     "compatibility": { "platforms": ["darwin", "linux"] },
-    "features": [
+    "settings": [
       {
         "id": "capturePayloads",
         "name": "Capture payloads",
@@ -33,41 +34,45 @@
       {
         "id": "sent",
         "name": "Sent",
-        "kind": { "kind": "counter", "config": {} },
+        "kind": "counter",
+        "config": {},
+        "actions": [{ "id": "clear", "name": "Clear" }],
         "persistence": "none"
       },
       {
         "id": "received",
         "name": "Received",
-        "kind": { "kind": "counter", "config": {} },
+        "kind": "counter",
+        "config": {},
+        "actions": [{ "id": "clear", "name": "Clear" }],
         "persistence": "none"
       },
       {
         "id": "connections",
         "name": "Connections",
-        "kind": {
-          "kind": "table",
-          "config": {
-            "columns": [
-              { "id": "host", "name": "Host", "alignment": "leading" },
-              { "id": "peer", "name": "Peer", "alignment": "leading" },
-              { "id": "protocol", "name": "Protocol", "alignment": "leading" },
-              { "id": "cipher", "name": "Cipher", "alignment": "leading" },
-              { "id": "sent", "name": "Sent", "alignment": "trailing" },
-              { "id": "received", "name": "Received", "alignment": "trailing" },
-              { "id": "request", "name": "Last request", "alignment": "leading" },
-              { "id": "active", "name": "Last active", "alignment": "trailing" }
-            ],
-            "actions": [],
-            "maxRows": 1000
-          }
+        "kind": "table",
+        "config": {
+          "columns": [
+            { "id": "host", "name": "Host", "alignment": "leading" },
+            { "id": "peer", "name": "Peer", "alignment": "leading" },
+            { "id": "protocol", "name": "Protocol", "alignment": "leading" },
+            { "id": "cipher", "name": "Cipher", "alignment": "leading" },
+            { "id": "sent", "name": "Sent", "alignment": "trailing" },
+            { "id": "received", "name": "Received", "alignment": "trailing" },
+            { "id": "request", "name": "Last request", "alignment": "leading" },
+            { "id": "active", "name": "Last active", "alignment": "trailing" }
+          ],
+          "rowActions": [],
+          "maxRows": 1000
         },
+        "actions": [{ "id": "clear", "name": "Clear" }],
         "persistence": "none"
       },
       {
         "id": "payload",
         "name": "Latest payload",
-        "kind": { "kind": "hex", "config": { "maxBytes": 65536 } },
+        "kind": "hex",
+        "config": { "maxBytes": 65536 },
         "persistence": "none"
       }
     ],

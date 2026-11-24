@@ -2,7 +2,7 @@
 
 import { instrument } from "../../tls-plaintext/main.js";
 
-const defaultFeatures: CustomInstrumentFeatureMap = {
+const defaultSettings: CustomInstrumentSettingMap = {
     capturePayloads: true,
     chunkLimit: 4096,
 };
@@ -22,11 +22,14 @@ const ctx = {
 
 const hookableExports = ["SSL_read", "SSL_read_ex", "SSL_write", "SSL_write_ex", "SSL_do_handshake", "SSL_free"];
 const pristinePrologues = snapshotPrologues();
-const handle = await instrument.create(ctx, { features: defaultFeatures }, {});
+const handle = await instrument.create(ctx, { settings: defaultSettings }, {});
 
 rpc.exports = {
-    async configure(features: CustomInstrumentFeatureMap) {
-        await handle.updateConfig?.({ features });
+    async configure(settings: CustomInstrumentSettingMap) {
+        await handle.updateConfig?.({ settings });
+    },
+    async clear(widget: "sent" | "received" | "connections") {
+        await handle.onAction!({ widget, action: "clear" });
     },
     async dispose() {
         await handle.dispose?.();

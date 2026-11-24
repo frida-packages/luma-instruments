@@ -13,79 +13,94 @@ interface PayloadRun {
 }
 
 export class TrafficView {
-    private readonly connectionsTable: CustomInstrumentWidgetMap["connections"];
-    private readonly sentCounter: CustomInstrumentWidgetMap["sent"];
-    private readonly receivedCounter: CustomInstrumentWidgetMap["received"];
-    private readonly payloadHex: CustomInstrumentWidgetMap["payload"];
-    private readonly changedConnections = new Set<Connection>();
-    private totalSent = 0;
-    private totalReceived = 0;
-    private latestPayload: PayloadRun | null = null;
-    private payloadChanged = false;
-    private pendingFlush: ReturnType<typeof setTimeout> | null = null;
+    readonly #connectionsTable: CustomInstrumentWidgetMap["connections"];
+    readonly #sentCounter: CustomInstrumentWidgetMap["sent"];
+    readonly #receivedCounter: CustomInstrumentWidgetMap["received"];
+    readonly #payloadHex: CustomInstrumentWidgetMap["payload"];
+    readonly #changedConnections = new Set<Connection>();
+    #totalSent = 0;
+    #totalReceived = 0;
+    #latestPayload: PayloadRun | null = null;
+    #payloadChanged = false;
+    #pendingFlush: ReturnType<typeof setTimeout> | null = null;
 
     constructor(ctx: CustomInstrumentContext) {
-        this.connectionsTable = ctx.widget("connections");
-        this.sentCounter = ctx.widget("sent");
-        this.receivedCounter = ctx.widget("received");
-        this.payloadHex = ctx.widget("payload");
-        this.showTotals();
+        this.#connectionsTable = ctx.widget("connections");
+        this.#sentCounter = ctx.widget("sent");
+        this.#receivedCounter = ctx.widget("received");
+        this.#payloadHex = ctx.widget("payload");
+        this.#showTotals();
     }
 
     showConnection(connection: Connection): void {
-        this.changedConnections.add(connection);
-        this.scheduleFlush();
+        this.#changedConnections.add(connection);
+        this.#scheduleFlush();
     }
 
     count(connection: Connection, direction: Direction, length: number): void {
         if (direction === "sent") {
-            this.totalSent += length;
+            this.#totalSent += length;
         } else {
-            this.totalReceived += length;
+            this.#totalReceived += length;
         }
         this.showConnection(connection);
     }
 
     showPayload(connection: Connection, direction: Direction, bytes: ArrayBuffer): void {
-        const run = this.latestPayload;
+        const run = this.#latestPayload;
         if (run !== null && continuesRun(run, connection, direction, bytes)) {
             run.chunks.push(bytes);
             run.byteLength += bytes.byteLength;
         } else {
-            this.latestPayload = { connection, direction, chunks: [bytes], byteLength: bytes.byteLength };
+            this.#latestPayload = { connection, direction, chunks: [bytes], byteLength: bytes.byteLength };
         }
-        this.payloadChanged = true;
-        this.scheduleFlush();
+        this.#payloadChanged = true;
+        this.#scheduleFlush();
+    }
+
+    clearSent(): void {
+        this.#totalSent = 0;
+        this.#showTotals();
+    }
+
+    clearReceived(): void {
+        this.#totalReceived = 0;
+        this.#showTotals();
+    }
+
+    clearConnections(): void {
+        this.#changedConnections.clear();
+        this.#connectionsTable.clear();
     }
 
     dispose(): void {
-        if (this.pendingFlush !== null) {
-            clearTimeout(this.pendingFlush);
-            this.flush();
+        if (this.#pendingFlush !== null) {
+            clearTimeout(this.#pendingFlush);
+            this.#flush();
         }
     }
 
-    private showTotals(): void {
-        this.sentCounter.setCounter(scaledByteCount(this.totalSent));
-        this.receivedCounter.setCounter(scaledByteCount(this.totalReceived));
+    #showTotals(): void {
+        this.#sentCounter.setCounter(scaledByteCount(this.#totalSent));
+        this.#receivedCounter.setCounter(scaledByteCount(this.#totalReceived));
     }
 
-    private scheduleFlush(): void {
-        if (this.pendingFlush === null) {
-            this.pendingFlush = setTimeout(() => this.flush(), flushDelay);
+    #scheduleFlush(): void {
+        if (this.#pendingFlush === null) {
+            this.#pendingFlush = setTimeout(() => this.#flush(), flushDelay);
         }
     }
 
-    private flush(): void {
-        this.pendingFlush = null;
-        for (const connection of this.changedConnections) {
-            this.connectionsTable.upsertRow({ id: connection.id, cells: connectionCells(connection) });
+    #flush(): void {
+        this.#pendingFlush = null;
+        for (const connection of this.#changedConnections) {
+            this.#connectionsTable.upsertRow({ id: connection.id, cells: connectionCells(connection) });
         }
-        this.changedConnections.clear();
-        this.showTotals();
-        if (this.payloadChanged) {
-            this.payloadHex.setHex({ bytes: joinedBytes(this.latestPayload!) });
-            this.payloadChanged = false;
+        this.#changedConnections.clear();
+        this.#showTotals();
+        if (this.#payloadChanged) {
+            this.#payloadHex.setHex({ bytes: joinedBytes(this.#latestPayload!) });
+            this.#payloadChanged = false;
         }
     }
 }

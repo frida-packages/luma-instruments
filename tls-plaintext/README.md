@@ -16,13 +16,16 @@ Python's `libssl` when a script first imports `ssl`.
 
 ## What it shows
 
-- **Sent** and **Received**: plaintext bytes across all connections.
+- **Sent** and **Received**: plaintext bytes across all connections. **Clear**
+  on either starts its count again from zero.
 - **Connections**: one row per TLS session, with the server name the client
   asked for (SNI), the peer address, the protocol version and the
   application protocol (ALPN), the cipher, bytes in each direction, the last
   HTTP/1 request and its status, and when the session was last active. A
   session gets its row when its handshake completes, or with its first data
-  when the library runs the handshake inside a read or write.
+  when the library runs the handshake inside a read or write. **Clear**
+  empties the table; a session that is still open gets its row back, with its
+  totals so far, the next time it sends or receives.
 - **Latest payload**: a hex view of the most recent run of bytes one
   connection sent or received in a row, so an HTTP/1 response shows up whole
   rather than as its last chunk. It holds up to 64 KiB.
@@ -33,7 +36,7 @@ as a hex dump and can decode with a pattern. When a write begins with an
 HTTP/1 request line the event carries its `method` and `path`, and when a
 read begins with a status line it carries the `status`.
 
-## Features
+## Settings
 
 - **Capture payloads**: turn off to stop the events and the hex view while
   the connection table and the totals keep updating.
@@ -44,7 +47,7 @@ read begins with a status line it carries the `status`.
   keep, from 16 bytes to 64 KiB, 4 KiB by default. An event's `length` is
   always the full size of the chunk.
 
-Changing a feature takes effect at once, without hooking anything again.
+Changing a setting takes effect at once, without hooking anything again.
 
 ## What it does not cover
 

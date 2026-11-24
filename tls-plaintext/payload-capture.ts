@@ -4,35 +4,35 @@ import type { Direction } from "./tls-libraries.js";
 import type { TrafficView } from "./traffic-view.js";
 
 export class PayloadCapture {
-    private readonly ctx: CustomInstrumentContext;
-    private readonly view: TrafficView;
-    private enabled = true;
-    private hostPattern: RegExp | null = null;
-    private chunkLimit = 0;
+    readonly #ctx: CustomInstrumentContext;
+    readonly #view: TrafficView;
+    #enabled = true;
+    #hostPattern: RegExp | null = null;
+    #chunkLimit = 0;
 
-    constructor(ctx: CustomInstrumentContext, view: TrafficView, features: CustomInstrumentFeatureMap) {
-        this.ctx = ctx;
-        this.view = view;
-        this.configure(features);
+    constructor(ctx: CustomInstrumentContext, view: TrafficView, settings: CustomInstrumentSettingMap) {
+        this.#ctx = ctx;
+        this.#view = view;
+        this.configure(settings);
     }
 
-    configure(features: CustomInstrumentFeatureMap): void {
-        this.enabled = features.capturePayloads;
-        this.hostPattern = features.hostPattern !== undefined ? new RegExp(features.hostPattern, "i") : null;
-        this.chunkLimit = features.chunkLimit;
+    configure(settings: CustomInstrumentSettingMap): void {
+        this.#enabled = settings.capturePayloads;
+        this.#hostPattern = settings.hostPattern !== undefined ? new RegExp(settings.hostPattern, "i") : null;
+        this.#chunkLimit = settings.chunkLimit;
     }
 
     take(connection: Connection, direction: Direction, data: NativePointer, length: number, startLine: Http1StartLine | null): void {
-        if (!this.enabled || !this.covers(connection)) {
+        if (!this.#enabled || !this.#covers(connection)) {
             return;
         }
-        const bytes = data.readByteArray(Math.min(length, this.chunkLimit))!;
-        this.ctx.emit(chunkEvent(connection, direction, startLine, length, bytes));
-        this.view.showPayload(connection, direction, bytes);
+        const bytes = data.readByteArray(Math.min(length, this.#chunkLimit))!;
+        this.#ctx.emit(chunkEvent(connection, direction, startLine, length, bytes));
+        this.#view.showPayload(connection, direction, bytes);
     }
 
-    private covers(connection: Connection): boolean {
-        return this.hostPattern === null || this.hostPattern.test(connection.label);
+    #covers(connection: Connection): boolean {
+        return this.#hostPattern === null || this.#hostPattern.test(connection.label);
     }
 }
 

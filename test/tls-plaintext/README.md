@@ -2,7 +2,7 @@
 
 `harness.ts` loads the instrument with a fake context that prints every
 `emit` and widget call. `instrument-typings.d.ts` is what Luma generates for
-the instrument's features and widgets; regenerate it when they change.
+the instrument's settings and widgets; regenerate it when they change.
 
 Targets, built outside the repository:
 
@@ -32,5 +32,6 @@ python3 test/tls-plaintext/run.py <pid> wait=5 \
     dispose wait=5
 ```
 
-`dispose` reports whether every hooked prologue is back to its original
-bytes.
+`clear=sent`, `clear=received` and `clear=connections` choose that widget's
+**Clear**. `dispose` reports whether every hooked prologue is back to its
+original bytes.

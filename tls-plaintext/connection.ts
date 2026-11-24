@@ -10,14 +10,14 @@ export class Connection {
     status: number | null = null;
     lastActive = Date.now();
 
-    private readonly session: NativePointer;
-    private readonly library: TlsLibrary;
+    readonly #session: NativePointer;
+    readonly #library: TlsLibrary;
 
     constructor(id: string, session: NativePointer, library: TlsLibrary) {
         this.id = id;
         this.details = library.describe(session);
-        this.session = session;
-        this.library = library;
+        this.#session = session;
+        this.#library = library;
     }
 
     get label(): string {
@@ -26,7 +26,7 @@ export class Connection {
 
     refresh(): void {
         if (!this.details.complete) {
-            this.details = this.library.describe(this.session);
+            this.details = this.#library.describe(this.#session);
         }
     }
 

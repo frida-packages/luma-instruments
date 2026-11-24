@@ -50,13 +50,13 @@ interface HookedModule {
 type TransferredLength = (retval: InvocationReturnValue, lengthStore: NativePointer) => number;
 
 class TlsInterceptor {
-    private readonly observer: TlsTrafficObserver;
-    private readonly hookedModules = new Map<string, HookedModule>();
-    private readonly claimedFunctions = new Set<string>();
-    private readonly threadsInTransfer = new Set<ThreadId>();
+    readonly #observer: TlsTrafficObserver;
+    readonly #hookedModules = new Map<string, HookedModule>();
+    readonly #claimedFunctions = new Set<string>();
+    readonly #threadsInTransfer = new Set<ThreadId>();
 
     constructor(observer: TlsTrafficObserver) {
-        this.observer = observer;
+        this.#observer = observer;
     }
 
     hook(module: Module): void {
@@ -68,40 +68,41 @@ class TlsInterceptor {
 
         const library = openTlsLibrary(module);
         const hooked: HookedModule = { listeners: [], functions: [] };
-        this.attachTransfer(hooked, read, library, "received", returnedLength);
-        this.attachTransfer(hooked, module.findExportByName("SSL_read_ex"), library, "received", storedLength);
-        this.attachTransfer(hooked, write, library, "sent", returnedLength);
-        this.attachTransfer(hooked, module.findExportByName("SSL_write_ex"), library, "sent", storedLength);
-        this.attachHandshake(hooked, module.findExportByName("SSL_do_handshake"), library);
-        this.attachFree(hooked, module.findExportByName("SSL_free"));
-        this.hookedModules.set(module.path, hooked);
+        this.#attachTransfer(hooked, read, library, "received", returnedLength);
+        this.#attachTransfer(hooked, module.findExportByName("SSL_read_ex"), library, "received", storedLength);
+        this.#attachTransfer(hooked, write, library, "sent", returnedLength);
+        this.#attachTransfer(hooked, module.findExportByName("SSL_write_ex"), library, "sent", storedLength);
+        this.#attachHandshake(hooked, module.findExportByName("SSL_do_handshake"), library);
+        this.#attachFree(hooked, module.findExportByName("SSL_free"));
+        this.#hookedModules.set(module.path, hooked);
     }
 
     unhook(module: Module): void {
-        const hooked = this.hookedModules.get(module.path);
+        const hooked = this.#hookedModules.get(module.path);
         if (hooked === undefined) {
             return;
         }
-        this.release(hooked);
-        this.hookedModules.delete(module.path);
+        this.#release(hooked);
+        this.#hookedModules.delete(module.path);
     }
 
     unhookAll(): void {
-        for (const hooked of this.hookedModules.values()) {
-            this.release(hooked);
+        for (const hooked of this.#hookedModules.values()) {
+            this.#release(hooked);
         }
-        this.hookedModules.clear();
+        this.#hookedModules.clear();
     }
 
-    private attachTransfer(
+    #attachTransfer(
         hooked: HookedModule,
         target: NativePointer | null,
         library: TlsLibrary,
         direction: Direction,
         transferred: TransferredLength,
     ): void {
-        const { observer, threadsInTransfer } = this;
-        this.attach(hooked, target, {
+        const observer = this.#observer;
+        const threadsInTransfer = this.#threadsInTransfer;
+        this.#attach(hooked, target, {
             onEnter(args) {
                 this.outermost = !threadsInTransfer.has(this.threadId);
                 if (!this.outermost) {
@@ -125,9 +126,9 @@ class TlsInterceptor {
         });
     }
 
-    private attachHandshake(hooked: HookedModule, target: NativePointer | null, library: TlsLibrary): void {
-        const { observer } = this;
-        this.attach(hooked, target, {
+    #attachHandshake(hooked: HookedModule, target: NativePointer | null, library: TlsLibrary): void {
+        const observer = this.#observer;
+        this.#attach(hooked, target, {
             onEnter(args) {
                 this.session = args[0];
             },
@@ -139,30 +140,30 @@ class TlsInterceptor {
         });
     }
 
-    private attachFree(hooked: HookedModule, target: NativePointer | null): void {
-        const { observer } = this;
-        this.attach(hooked, target, {
+    #attachFree(hooked: HookedModule, target: NativePointer | null): void {
+        const observer = this.#observer;
+        this.#attach(hooked, target, {
             onEnter(args) {
                 observer.onFree(args[0]);
             },
         });
     }
 
-    private attach(hooked: HookedModule, target: NativePointer | null, callbacks: ScriptInvocationListenerCallbacks): void {
-        if (target === null || this.claimedFunctions.has(target.toString())) {
+    #attach(hooked: HookedModule, target: NativePointer | null, callbacks: ScriptInvocationListenerCallbacks): void {
+        if (target === null || this.#claimedFunctions.has(target.toString())) {
             return;
         }
-        this.claimedFunctions.add(target.toString());
+        this.#claimedFunctions.add(target.toString());
         hooked.functions.push(target.toString());
         hooked.listeners.push(Interceptor.attach(target, callbacks));
     }
 
-    private release(hooked: HookedModule): void {
+    #release(hooked: HookedModule): void {
         for (const listener of hooked.listeners) {
             listener.detach();
         }
         for (const target of hooked.functions) {
-            this.claimedFunctions.delete(target);
+            this.#claimedFunctions.delete(target);
         }
     }
 }

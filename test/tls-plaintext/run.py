@@ -42,6 +42,8 @@ def run(step, script):
         time.sleep(float(argument))
     elif action == "configure":
         script.exports_sync.configure(json.loads(argument))
+    elif action == "clear":
+        script.exports_sync.clear(argument)
     elif action == "dispose":
         script.exports_sync.dispose()
 
