@@ -57,7 +57,7 @@ export class TrainerView {
             this.complain(`${address} can no longer be read.`);
             return;
         }
-        this.#memory.setHex({ bytes, baseAddress: addressNumber(start) });
+        this.#memory.setHex({ bytes, baseAddress: start });
     }
 
     clearCandidates(): void {
