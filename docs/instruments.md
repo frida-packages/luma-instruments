@@ -14,7 +14,9 @@ inside Luma are described in [views.md](views.md).
 - [The agent module](#the-agent-module)
 - [Settings](#settings)
 - [Widgets](#widgets)
+- [Layout](#layout)
 - [Actions and console input](#actions-and-console-input)
+- [Children](#children)
 - [Persistence](#persistence)
 - [Publishing](#publishing)
 
@@ -91,6 +93,8 @@ are offered as a reload, since a reload drops what running instances hold.
 | `luma.compatibility` | no | See below. Without it, the instrument runs anywhere. |
 | `luma.settings` | no | The settings; see [Settings](#settings). |
 | `luma.widgets` | no | What it shows; see [Widgets](#widgets). |
+| `luma.layout` | no | Where its widgets go on its page; see [Layout](#layout). Without it, they are stacked. |
+| `luma.children` | no | The kinds of children the agent may add; see [Children](#children). |
 | `luma.store` | no | The store listing; see [Publishing](#publishing). |
 
 A `package.json` Luma cannot read is refused with its path and what is wrong,
@@ -105,7 +109,9 @@ them, the values of a compatibility key in the order its table below lists
 them, and the package's own keys after Luma's in the order they were in. A
 widget's keys are written as `id`, `name`, `kind`, `config`, `actions` and
 `persistence`; a widget with no name has no `name` key, and one with no
-actions no `actions` key.
+actions no `actions` key. A template's keys are written as `id`, `name`,
+`icon`, `widgets` and `layout`, and a layout node's as `widget`, `row` or
+`column`, then `share`, `maxRows` and `foldBelow`.
 
 ### Icon
 
@@ -170,7 +176,7 @@ returns a handle, or a promise of one. Every method of the handle is optional:
 | Method | Called |
 | --- | --- |
 | `updateConfig(config)` | The user changed a setting. |
-| `onAction({ widget, action, item }, respond)` | The user chose one of a widget's actions, or an action on a list or table row. `item` is the row's id, and absent for a widget's own action. `respond.file` offers the user a file to save; see [Actions and console input](#actions-and-console-input). |
+| `onAction({ widget, action, item }, respond)` | The user chose one of a widget's actions, or an action on a list or table row. `item` is the row's id, and absent for a widget's own action. `respond.file` offers the user a file to save, and `respond.show` shows them a child; see [Actions and console input](#actions-and-console-input) and [Children](#children). |
 | `onConsoleInput({ widget, entryId, text }, respond)` | The user submitted text in a console widget. |
 | `onViewMessage({ widget, value, data, from })` | A view sent a message; see [views.md](views.md). |
 | `dispose()` | The instance is removed, disabled or about to be loaded again. Undo everything `create` did. |
@@ -178,9 +184,11 @@ returns a handle, or a promise of one. Every method of the handle is optional:
 When the instrument's source changes, its instances are disposed and created
 again with the new source.
 
-`ctx` has two methods:
+`ctx` has three methods:
 
 - `ctx.widget(id)` answers the handle of a widget declared in `package.json`.
+- `ctx.children(template)` answers the children of one kind; see
+  [Children](#children).
 - `ctx.emit(value)` adds an event to Luma's event stream. `value` can be any
   JavaScript value, `NativePointer`s and `ArrayBuffer`s included; Luma shows it
   as a value the user can expand.
@@ -356,6 +364,63 @@ table, console or histogram keeps its last entries, a graph its last points in
 each series, and a hex widget its last bytes, with the base address moved up
 to match.
 
+## Layout
+
+Without `luma.layout`, a page stacks its widgets in the order they are
+declared. With it, the widgets go where it says, and every widget has to be
+placed exactly once. A layout is a node, and a node is one of:
+
+- `"<widget id>"`, or `{ "widget": "<id>", "share"?, "maxRows"? }`;
+- `{ "row": [nodes], "share"?, "foldBelow"? }`, its entries side by side;
+- `{ "column": [nodes], "share"? }`, its entries one under another.
+
+The page itself is a column; a layout that is a widget or a row is put in one.
+Rows and columns nest at most 3 deep, a row holds at most 6 entries and a
+column 32.
+
+Three keys size the entries:
+
+- **`share`**, 1 to 100. In a column, it is a share of the height left once the
+  entries without one have taken their natural height; in a row, a share of
+  the width, 1 when left out, and every entry takes the row's height.
+- **`maxRows`**, 1 to 1000, for tables and lists: their natural height stops
+  at that many rows, and they scroll on their own. Without it, they stop at 12.
+- **`foldBelow`**, 240 to 4000 points, for rows: below that page width, the row
+  becomes a column of its entries, in their order. Without it, a row folds
+  below 280 points per entry.
+
+A widget's natural height is one line for a counter, its rows up to its cap
+for a list or table, 250 points for a console, 16 lines for a hex view, 180
+points for a graph or histogram, and `config.height` for a view. The page
+fills the window and does not scroll as long as the entries with no share at
+their natural height, and those with one at their least, fit: four rows for a
+list or table, 120 points for a console, six lines for a hex view, the view's
+`config.height`, and the natural height of anything else. When they do not
+fit, or when a row has folded, the page scrolls and every entry takes its
+natural height.
+
+Mesh Finder puts its table above the 3D view and the console, which share a
+row at 60 : 40:
+
+```json
+"layout": { "column": [
+  { "widget": "meshes", "share": 45, "maxRows": 6 },
+  { "row": [{ "widget": "mesh", "share": 60 }, { "widget": "viewer", "share": 40 }], "share": 55 }
+] }
+```
+
+On a page of 800 × 700 points the table takes the top 310 and the row the
+378 below it. The view's `config.height` is 320, its least, so that the row's
+55 % holds; with 420 the table would get only 228. On a phone the row folds:
+the table shows 6 rows, the view and the console follow at their natural
+heights, and the page scrolls.
+
+Luma refuses a layout it cannot place, naming where, as in
+`luma.layout.column[1].row[0]: "sents" is not the id of a widget in
+luma.widgets`, `luma.layout: "payload" is not placed; with a layout, every
+widget needs a place` and `luma.layout.column[0].maxRows: maxRows is for
+tables and lists; "viewer" is a console`.
+
 ## Actions and console input
 
 A widget of any kind can declare `actions`, `[{ id, name }]`, beside its
@@ -464,6 +529,86 @@ when the user should hear why in the instrument's own words. The agent never
 learns where the file was saved, or whether it was; to say what was offered,
 write to the console. When a mission chose the action, the file is dropped.
 
+## Children
+
+A child is a page of its own under the instance in Luma's sidebar, which the
+agent adds and removes as the things it stands for come and go: GStreamer
+adds one per pipeline. `luma.children` declares the kinds of children, each a
+template with its own widgets and layout:
+
+```json
+"children": [
+  {
+    "id": "bin",
+    "name": "Bins",
+    "icon": { "kind": "symbolic", "value": "network" },
+    "widgets": [
+      { "id": "graph", "kind": "view", "config": { "class": "PipelineGraphView", "height": 320 }, "persistence": "session" }
+    ],
+    "layout": { "column": [{ "widget": "graph", "share": 1 }] }
+  }
+]
+```
+
+`name` is the kind's name in the plural, `icon` one of the icons above,
+`widgets` 1 to 8 widgets in the form of `luma.widgets`, and `layout` places
+them as on the page, seeing only the template's own widgets. An instrument has
+at most 8 templates, and at most 32 widgets on its page and in its templates
+together. With templates, no page widget may have the id `children`.
+
+`ctx.children(template)` answers the template's children:
+
+```ts
+const bins = ctx.children("bin");
+const page = bins.add(bin.id, { title: name, subtitle: type, badge: { text: "playing", tone: "active" } });
+page.widget("graph").setState(value, dot);
+page.update({ badge: { text: "paused", tone: "waiting" } });
+bins.remove(bin.id);
+```
+
+- `add(id, row)` adds a child, after those already there, or updates the row
+  of the one with that id and answers the same handle. The id is the agent's
+  own, 1 to 128 characters, and stays the same for the same thing, such as an
+  address.
+- The row is what the sidebar shows: `title`, 1 to 120 characters, `subtitle`,
+  up to 200, and a `badge` of up to 32 characters whose `tone` is `neutral`,
+  `active`, `waiting`, `ended` or `failed`. The icon is the template's.
+- `get(id)` answers a child's handle, `ids()` the ids in order, and
+  `remove(id)` removes one; the handle has `update(row)`, `widget(id)` and
+  `remove()`.
+- An unknown template throws a `TypeError`, a bad row a `TypeError`, and a
+  257th child of an instance a `RangeError`.
+
+Children are shown under the instance in the order they were added, with a
+heading per template when there is more than one, and the 20 added last of
+each, with a row to browse the rest. A child's page starts with its title,
+subtitle and badge, then lays out its widgets. A child has no children.
+
+A choice of an action of a child's widget, its console input and its views'
+messages carry `child: { template, id }`, so a handle tells which child it
+came from; the page's own carry none, and the typings narrow on `child`.
+Which child the user is looking at is the user's business, except in a
+handler: there `respond.show(child)` shows that child, or the instance's page
+with `null`, to the person who acted and to no one else. GStreamer's **Show**
+on a pipeline's row is:
+
+```ts
+onAction({ action, item }, respond) {
+    if (action === "show") {
+        respond.show(watch.show(item));
+    }
+},
+```
+
+A template with a widget of `persistence: session` keeps its children with the
+session: their rows, their order and those widgets' state. When the instance
+is created again, they are already among `ctx.children(template)`, and
+`restored.children[template][id]` holds `{ title, subtitle, badge, widgets }`,
+with the saved state of each session widget under `widgets`. The agent removes
+those whose thing it no longer finds; GStreamer does so once its first scan of
+memory has ended. The children of a template with no session widget go when
+the agent does.
+
 ## Persistence
 
 A widget's `persistence` is `session` or `none`. With `session`, what the
@@ -483,7 +628,8 @@ widget's id:
 | `view` | `{ state }`, the state's value or `null` |
 
 Widgets left at `none` are absent from `restored`, and what they show is gone
-when the project closes.
+when the project closes. Children of templates with session widgets come back
+in `restored.children`; see [Children](#children).
 
 ## Publishing
 
