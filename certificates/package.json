@@ -70,6 +70,11 @@
         "persistence": "none"
       }
     ],
+    "layout": { "column": [
+      "scan",
+      { "widget": "certificates", "share": 55, "maxRows": 8 },
+      { "row": [{ "widget": "details", "share": 60 }, { "widget": "der", "share": 40 }], "share": 45 }
+    ] },
     "store": {
       "summary": "Find the X.509 certificates a process holds: live SecCertificate and OpenSSL X509 objects in moments, then DER and PEM anywhere in memory, each with its subject, issuer, expiry, key and location.",
       "category": "cryptography",

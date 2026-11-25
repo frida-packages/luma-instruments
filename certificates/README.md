@@ -59,6 +59,11 @@ ways, or in several copies, is one row.
   turned up and how long finding and checking them took, and how long the
   memory scan took. **Clear** empties it.
 
+The table takes the upper half of the page, and **Details** and **DER** share
+the lower half side by side, so an inspected certificate is read in place. In
+a narrow window Details goes above DER, the table shows 8 rows, and the page
+scrolls.
+
 Each certificate is also an event the first time it is found, carrying
 `subject`, `issuer`, `notAfter`, `sha256`, `foundBy`, `address` and `der`.
 
