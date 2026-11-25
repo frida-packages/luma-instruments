@@ -70,10 +70,12 @@ const floatRow = rowOf(known.float, "float");
 const doubleRow = rowOf(known.double, "double");
 
 await widgets.act(trainer, "list", "memory", widgets.listRowId(intRow));
-const healthAddress = Number(known.int32.toString());
-const healthPage = healthAddress - (healthAddress % Process.pageSize);
-const expectedBase = Math.max(healthPage, (healthAddress - 128) - ((healthAddress - 128) % 16));
-expect(widgets.hexBase() === expectedBase, `memory around a candidate is shown from ${ptr(expectedBase)}, as a number`);
+const healthPage = known.int32.and(ptr(Process.pageSize - 1).not());
+const aroundHealth = known.int32.sub(128).and(ptr(0xf).not());
+const expectedBase = (aroundHealth.compare(healthPage) < 0) ? healthPage : aroundHealth;
+const shownBase = widgets.hexBase();
+expect(shownBase instanceof NativePointer && shownBase.equals(expectedBase),
+    `memory around a candidate is shown from ${expectedBase}, as a pointer`);
 
 await console1.type(`set ${intRow} 500`);
 await console1.type(`set ${floatRow},${doubleRow} 300.5`);
@@ -101,7 +103,7 @@ expect(screen.shown("int") === "500", "a locked value survives a hit");
 await new Promise(resolve => setTimeout(resolve, 300));
 const writers = widgets.tableRows("writers");
 const poisonWriters = writers.filter(row => isInPoison(ptr(row.code)));
-const hitWriters = writers.filter(row => !isInPoison(ptr(row.code)) && row.function.startsWith("game"));
+const hitWriters = writers.filter(row => row.function === `${game.name}!take_hit`);
 expect(poisonWriters.length === 2 && poisonWriters.every(row => Number(row.writes.replace(/,/g, "")) === POISON_TICKS),
     "the poison thread is reported as writing each locked value 5000 times");
 expect(hitWriters.length === 2, "take_hit is reported as a writer");
