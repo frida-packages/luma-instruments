@@ -5,6 +5,11 @@ export interface Console {
     type(text: string): Promise<string[]>;
 }
 
+const actionRespond: CustomInstrumentActionResponder = {
+    file: unexpectedFile,
+    show: () => {},
+};
+
 export class FakeWidgets {
     readonly #tables = new Map<string, Map<string, Cells>>();
     readonly #counters = new Map<string, number>();
@@ -40,6 +45,8 @@ export class FakeWidgets {
                     },
                     value: () => {},
                     image: () => {},
+                    file: unexpectedFile,
+                    show: () => {},
                 });
                 console.log(`  (${Date.now() - started} ms)`);
                 return replies;
@@ -61,12 +68,12 @@ export class FakeWidgets {
 
     async act(handle: CustomInstrumentHandle, widget: string, action: string, item: string): Promise<void> {
         console.log(`action ${widget}.${action} ${item}`);
-        await handle.onAction!({ widget, action, item } as CustomInstrumentAction);
+        await handle.onAction!({ widget, action, item } as CustomInstrumentAction, actionRespond);
     }
 
     async actOnWidget(handle: CustomInstrumentHandle, widget: string, action: string): Promise<void> {
         console.log(`action ${widget}.${action}`);
-        await handle.onAction!({ widget, action } as CustomInstrumentAction);
+        await handle.onAction!({ widget, action } as CustomInstrumentAction, actionRespond);
     }
 
     hexBase(): unknown {
@@ -114,4 +121,8 @@ export class FakeWidgets {
             },
         };
     }
+}
+
+function unexpectedFile(): never {
+    throw new Error("Trainer offered a file");
 }
