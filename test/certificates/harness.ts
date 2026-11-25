@@ -22,16 +22,16 @@ async function exercise(scope: CustomInstrumentSettingMap["scope"]): Promise<voi
     expectRescan(true, "after the first scan");
 
     for (const id of rows) {
-        await handle.onAction!({ widget: "certificates", action: "inspect", item: id });
+        await handle.onAction!({ widget: "certificates", action: "inspect", item: id }, actionRespond);
     }
     await handle.onConsoleInput!({ widget: "details", entryId: "1", text: "ed25519" }, respond);
     await handle.onConsoleInput!({ widget: "details", entryId: "2", text: "no such certificate" }, respond);
 
     console.log("clearing details");
-    await handle.onAction!({ widget: "details", action: "clear" });
+    await handle.onAction!({ widget: "details", action: "clear" }, actionRespond);
 
     console.log("rescanning");
-    await handle.onAction!({ widget: "certificates", action: "rescan" });
+    await handle.onAction!({ widget: "certificates", action: "rescan" }, actionRespond);
     expectRescan(false, "during the rescan");
     await scanFinished();
     expectRescan(true, "after the rescan");
@@ -75,7 +75,18 @@ const respond: CustomInstrumentConsoleResponder = {
         noteShown(value);
     },
     image: () => {},
+    file: unexpectedFile,
+    show: child => console.log(`respond.show ${child?.id ?? "page"}`),
 };
+
+const actionRespond: CustomInstrumentActionResponder = {
+    file: unexpectedFile,
+    show: respond.show,
+};
+
+function unexpectedFile(): never {
+    throw new Error("Certificates offered a file");
+}
 
 function noteWidgetCall(id: string, method: string, args: unknown[]): void {
     if (method === "setActionEnabled") {
