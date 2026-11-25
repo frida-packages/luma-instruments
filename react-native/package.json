@@ -1,0 +1,191 @@
+{
+  "name": "react-native",
+  "displayName": "React Native",
+  "version": "1.0.0",
+  "main": "main.ts",
+  "engines": { "luma": ">=4.0.0" },
+  "luma": {
+    "icon": { "kind": "symbolic", "value": "puzzle" },
+    "compatibility": { "platforms": ["darwin"], "archs": ["arm64"] },
+    "settings": [
+      {
+        "id": "captureTraffic",
+        "name": "Capture calls between JavaScript and native",
+        "schema": { "kind": "boolean", "default": true },
+        "optional": false,
+        "enabledByDefault": true
+      },
+      {
+        "id": "watchEveryModule",
+        "name": "Also watch native modules the app has not loaded yet, by loading them (this can crash the app)",
+        "schema": { "kind": "boolean", "default": false },
+        "optional": false,
+        "enabledByDefault": true
+      },
+      {
+        "id": "trafficPattern",
+        "name": "Only show calls whose module or method matches",
+        "schema": { "kind": "regex", "default": "" },
+        "optional": true,
+        "enabledByDefault": false
+      },
+      {
+        "id": "bytesPerCall",
+        "name": "Bytes kept of each call's arguments and of its result",
+        "schema": { "kind": "uint", "default": 2048, "min": 128, "max": 65536 },
+        "optional": false,
+        "enabledByDefault": true
+      },
+      {
+        "id": "callsKept",
+        "name": "Calls each runtime holds between updates",
+        "schema": { "kind": "uint", "default": 2000, "min": 100, "max": 20000 },
+        "optional": false,
+        "enabledByDefault": true
+      }
+    ],
+    "widgets": [
+      {
+        "id": "status",
+        "kind": "list",
+        "config": { "rowActions": [], "maxItems": 1 },
+        "persistence": "none"
+      },
+      {
+        "id": "runtimes",
+        "name": "Runtimes",
+        "kind": "table",
+        "config": {
+          "columns": [
+            { "id": "number", "name": "#", "alignment": "trailing" },
+            { "id": "engine", "name": "Engine", "alignment": "leading" },
+            { "id": "reactNative", "name": "React Native", "alignment": "leading" },
+            { "id": "architecture", "name": "Architecture", "alignment": "leading" },
+            { "id": "build", "name": "Build", "alignment": "leading" },
+            { "id": "bundle", "name": "Bundle", "alignment": "leading" },
+            { "id": "thread", "name": "Thread", "alignment": "leading" },
+            { "id": "status", "name": "Status", "alignment": "leading" }
+          ],
+          "rowActions": [
+            { "id": "show", "name": "Show" },
+            { "id": "bundle", "name": "Export Bundle" }
+          ],
+          "maxRows": 256
+        },
+        "actions": [{ "id": "scan", "name": "Scan" }],
+        "persistence": "none"
+      },
+      {
+        "id": "bundles",
+        "name": "Bundles",
+        "kind": "table",
+        "config": {
+          "columns": [
+            { "id": "number", "name": "#", "alignment": "trailing" },
+            { "id": "where", "name": "Where", "alignment": "leading" },
+            { "id": "format", "name": "Format", "alignment": "leading" },
+            { "id": "size", "name": "Size", "alignment": "trailing" },
+            { "id": "loadedBy", "name": "Loaded by", "alignment": "leading" }
+          ],
+          "rowActions": [{ "id": "export", "name": "Export" }],
+          "maxRows": 256
+        },
+        "persistence": "none"
+      },
+      {
+        "id": "traffic",
+        "name": "Traffic",
+        "kind": "table",
+        "config": {
+          "columns": [
+            { "id": "time", "name": "Time", "alignment": "trailing" },
+            { "id": "runtime", "name": "Runtime", "alignment": "trailing" },
+            { "id": "direction", "name": "Direction", "alignment": "leading" },
+            { "id": "module", "name": "Module", "alignment": "leading" },
+            { "id": "method", "name": "Method", "alignment": "leading" },
+            { "id": "arguments", "name": "Arguments", "alignment": "leading" },
+            { "id": "outcome", "name": "Outcome", "alignment": "leading" },
+            { "id": "ms", "name": "ms", "alignment": "trailing" }
+          ],
+          "rowActions": [{ "id": "show", "name": "Show" }],
+          "maxRows": 2000
+        },
+        "actions": [{ "id": "clear", "name": "Clear" }],
+        "persistence": "none"
+      },
+      {
+        "id": "detail",
+        "name": "Call",
+        "kind": "console",
+        "config": {
+          "maxEntries": 500,
+          "prompt": ">",
+          "placeholder": "show 12:345, stats, help",
+          "runButtonLabel": "Run"
+        },
+        "actions": [{ "id": "clear", "name": "Clear" }],
+        "persistence": "none"
+      },
+      {
+        "id": "modules",
+        "name": "Modules",
+        "kind": "table",
+        "config": {
+          "columns": [
+            { "id": "module", "name": "Module", "alignment": "leading" },
+            { "id": "kind", "name": "Kind", "alignment": "leading" },
+            { "id": "className", "name": "Class", "alignment": "leading" },
+            { "id": "methods", "name": "Methods", "alignment": "trailing" },
+            { "id": "calls", "name": "Calls", "alignment": "trailing" }
+          ],
+          "rowActions": [],
+          "maxRows": 2000
+        },
+        "persistence": "none"
+      }
+    ],
+    "layout": { "column": [
+      "status",
+      { "row": [
+        { "widget": "runtimes", "share": 60, "maxRows": 4 },
+        { "widget": "bundles", "share": 40, "maxRows": 4 }
+      ], "foldBelow": 640 },
+      { "row": [
+        { "widget": "traffic", "share": 65, "maxRows": 10 },
+        { "widget": "detail", "share": 35 }
+      ], "share": 65, "foldBelow": 640 },
+      { "widget": "modules", "share": 35, "maxRows": 6 }
+    ] },
+    "children": [
+      {
+        "id": "runtime",
+        "name": "Runtimes",
+        "icon": { "kind": "symbolic", "value": "cpu" },
+        "widgets": [
+          {
+            "id": "console",
+            "name": "JavaScript",
+            "kind": "console",
+            "config": {
+              "maxEntries": 1000,
+              "prompt": ">",
+              "placeholder": "JavaScript to evaluate in this runtime, or :help",
+              "runButtonLabel": "Run"
+            },
+            "actions": [
+              { "id": "bundle", "name": "Export Bundle" },
+              { "id": "clear", "name": "Clear" }
+            ],
+            "persistence": "none"
+          }
+        ],
+        "layout": { "column": [{ "widget": "console", "share": 1 }] }
+      }
+    ],
+    "store": {
+      "summary": "Find the JavaScript runtimes a React Native app runs (Hermes or JavaScriptCore, old architecture or new), evaluate JavaScript in any of them on its own thread, watch the calls between JavaScript and native, and export the bundle.",
+      "category": "runtime",
+      "access": { "kind": "free" }
+    }
+  }
+}
