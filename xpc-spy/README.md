@@ -88,18 +88,21 @@ message are shown as a line of text. A container shows at most 256 entries,
 a string at most 4096 bytes, and one message at most about 2000 values.
 
 Each message costs the sending or receiving thread time in the hook. In a test
-on an Apple Silicon Mac, a burst of 2000 sends took 15 to 100 ms with the
-instrument loaded, against 1 to 2 ms without it.
+on an Apple Silicon Mac, a burst of 2000 sends took 15 to 80 ms with the
+instrument loaded, against 1 to 4 ms without it.
 
-Starting the instrument took 80 to 190 ms the first time and 35 to 70 ms after
+Starting the instrument took 80 to 200 ms the first time and 35 to 70 ms after
 that, in a test process with 11 connections and in a copy of TextEdit with 28.
 The process was stopped for 0.04 to 0.22 ms of that. In a process creating and
-tearing down connections on four threads it was stopped for 0.5 to 0.8 ms on
-average and 4.5 ms at most, and with 3900 connections and requests for 9 to
-13 ms. The instrument waits at most 10 ms for the threads to leave the
-allocator, and reads at most 4096 connections and requests, about 3 µs each,
-while they are stopped; in a process with more, it watches only the
-connections set up from then on.
+tearing down connections on four threads it was stopped for 0.3 to 2.8 ms on
+average, and with 3900 connections and requests for 6 to 9 ms on average. The
+longest stop in a run was under 20 ms in most runs, and up to 110 ms while the
+machine's load average was between 10 and 25. The instrument gives up once the
+threads have not all left the allocator after 10 ms, as it did in 2 of 100
+searches in a process churning connections on 16 threads at that load. It
+reads at most 4096 connections and requests, 2 to 3 µs each, while they are
+stopped; in a process with more, it watches only the connections set up from
+then on.
 
 ## What it does not show
 
