@@ -16,6 +16,26 @@ Received messages, errors such as `Connection invalid`, and new peer
 connections on a listener are taken from the event handlers set with
 `xpc_connection_set_event_handler`.
 
+Connections that already exist when the instrument starts are found in the
+process's memory, and their event handlers are watched from then on like the
+ones set later. A peer connection that a listener accepted before then is
+shown under the listener's service. Requests that are still waiting for their
+reply at that moment have the reply shown when it arrives, without the request
+it answers. To learn where libxpc keeps these handlers, the instrument sets up
+a listener, a client and a peer connection of its own, with a request pending
+between them, and removes them again before it starts to capture. It does this
+once, when it is first loaded into the process.
+
+To read what it found without another thread freeing it meanwhile, the
+instrument stops the process's threads for a moment, each where it is not
+inside the memory allocator, and lets them run again as soon as it has taken a
+reference to each connection. The **Recent messages** console then says how
+many connections and requests it found and how long the process was stopped.
+When the instrument cannot learn libxpc's layout, when what it learns does not
+add up, or when it cannot stop the process at such a point in time, it says
+why there instead, and watches only the connections set up from then on.
+Existing connections are looked for only in arm64 processes.
+
 Each message becomes an event in Luma's event stream:
 
 | Field | Meaning |
@@ -44,10 +64,11 @@ messages were sent and received, and when the last one was seen and what it
 was. The counts survive a reload of the instrument. **Clear**, in the
 table's header, empties it and starts the counts again.
 
-The **Recent messages** console has a line per message, each starting with its
-number. Type a number to show that message in full; the last 500 can be shown
-this way. **Clear** empties the console and forgets those messages, so a
-number from before it can no longer be shown.
+The **Recent messages** console starts with the line about the connections
+found when the instrument started, and then has a line per message, each
+starting with its number. Type a number to show that message in full; the last
+500 can be shown this way. **Clear** empties the console and forgets those
+messages, so a number from before it can no longer be shown.
 
 ## Settings
 
@@ -67,25 +88,41 @@ message are shown as a line of text. A container shows at most 256 entries,
 a string at most 4096 bytes, and one message at most about 2000 values.
 
 Each message costs the sending or receiving thread time in the hook. In a test
-on an Apple Silicon Mac, a burst of 2000 sends took 30 to 65 ms with the
-instrument loaded, against 2 to 4 ms without it.
+on an Apple Silicon Mac, a burst of 2000 sends took 15 to 100 ms with the
+instrument loaded, against 1 to 2 ms without it.
+
+Starting the instrument took 80 to 190 ms the first time and 35 to 70 ms after
+that, in a test process with 11 connections and in a copy of TextEdit with 28.
+The process was stopped for 0.04 to 0.22 ms of that. In a process creating and
+tearing down connections on four threads it was stopped for 0.5 to 0.8 ms on
+average and 4.5 ms at most, and with 3900 connections and requests for 9 to
+13 ms. The instrument waits at most 10 ms for the threads to leave the
+allocator, and reads at most 4096 connections and requests, about 3 µs each,
+while they are stopped; in a process with more, it watches only the
+connections set up from then on.
 
 ## What it does not show
 
-- Messages delivered to an event handler that was set before the instrument
-  started. Such a handler is seen only if a connection set up afterwards uses
-  the same block code: NSXPC uses one for all its connections, so once the
-  process makes any new NSXPC connection, the older ones are seen too. Replies
-  to requests sent after the instrument started are always seen.
-- Replies to requests sent before the instrument started.
+- The reply to an `xpc_connection_send_message_with_reply_sync` call made
+  before the instrument started, which arrives as the call's return value.
+- A reply that is an error, such as `Connection invalid`, to an asynchronous
+  request made before the instrument started, as it does not say which
+  connection it came from.
 - Messages sent through `xpc_session` (Swift's `XPCSession`): those calls do not
   go through the functions above. A session receives through a connection event
   handler, so what it receives may be shown; this was not tested.
-- Handlers set with function pointers rather than blocks.
+- Event handlers set with `_xpc_connection_set_event_handler_f`, which takes a
+  function pointer rather than a block. None of the libraries loaded in TextEdit
+  use it.
 - Mach messages, MIG and other IPC that does not use XPC connections.
 
 Removing the instrument removes every hook. Handler blocks are never replaced:
 libxpc is given a copy of the caller's own block, made a moment earlier than it
-would have made it, so nothing of the instrument is left in the process.
+would have made it, and the connections the instrument sets up when it starts
+are gone before it captures anything, so nothing of the instrument is left in
+the process.
 
-It was tested on macOS 27 on Apple Silicon; it has not been tested on iOS.
+It was tested on macOS 27 on Apple Silicon, in arm64 and arm64e processes. A
+peer connection was shown under its listener's service only with anonymous
+listeners, as no named listener was available to test with. It has not been
+tested on iOS.

@@ -21,13 +21,32 @@ export const xpcTypes = {
     connection: exported("_xpc_type_connection"),
 };
 
+export const xpcClasses = {
+    connection: objcClass("OS_xpc_connection"),
+    serializer: objcClass("OS_xpc_serializer"),
+};
+
+export const xpcErrors = {
+    connectionInvalid: exported("_xpc_error_connection_invalid"),
+};
+
 export const xpc = {
     getType: new NativeFunction(exported("xpc_get_type"), "pointer", ["pointer"]),
     typeGetName: new NativeFunction(exported("xpc_type_get_name"), "pointer", ["pointer"]),
     retain: new NativeFunction(exported("xpc_retain"), "pointer", ["pointer"]),
     release: new NativeFunction(exported("xpc_release"), "void", ["pointer"]),
+    connectionCreate: new NativeFunction(exported("xpc_connection_create"), "pointer", ["pointer", "pointer"]),
+    connectionCreateFromEndpoint: new NativeFunction(exported("xpc_connection_create_from_endpoint"), "pointer", ["pointer"]),
+    endpointCreate: new NativeFunction(exported("xpc_endpoint_create"), "pointer", ["pointer"]),
+    connectionSetEventHandler: new NativeFunction(exported("xpc_connection_set_event_handler"), "void", ["pointer", "pointer"]),
+    connectionSetTargetQueue: new NativeFunction(exported("xpc_connection_set_target_queue"), "void", ["pointer", "pointer"]),
+    connectionActivate: new NativeFunction(exported("xpc_connection_activate"), "void", ["pointer"]),
+    connectionCancel: new NativeFunction(exported("xpc_connection_cancel"), "void", ["pointer"]),
+    connectionSendMessageWithReply: new NativeFunction(exported("xpc_connection_send_message_with_reply"), "void",
+        ["pointer", "pointer", "pointer", "pointer"]),
     connectionGetName: new NativeFunction(exported("xpc_connection_get_name"), "pointer", ["pointer"]),
     connectionGetPid: new NativeFunction(exported("xpc_connection_get_pid"), "int", ["pointer"]),
+    dictionaryCreate: new NativeFunction(exported("xpc_dictionary_create"), "pointer", ["pointer", "pointer", "size_t"]),
     dictionaryApply: new NativeFunction(exported("xpc_dictionary_apply"), "bool", ["pointer", "pointer"]),
     dictionaryGetCount: new NativeFunction(exported("xpc_dictionary_get_count"), "size_t", ["pointer"]),
     dictionaryGetValue: new NativeFunction(exported("xpc_dictionary_get_value"), "pointer", ["pointer", "pointer"]),
@@ -57,6 +76,11 @@ export function isOfType(object: NativePointer, type: NativePointer): boolean {
 
 export function typeName(object: NativePointer): string {
     return xpc.typeGetName(xpc.getType(object)).readCString()!;
+}
+
+function objcClass(name: string): NativePointer {
+    const getClass = new NativeFunction(exported("objc_getClass"), "pointer", ["pointer"]);
+    return getClass(Memory.allocUtf8String(name));
 }
 
 function exported(name: string): NativePointer {

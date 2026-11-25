@@ -1,5 +1,7 @@
 import { blocks } from "./block.js";
+import { type ExistingTraffic, findExistingTraffic } from "./existing-traffic.js";
 import { connectionName, isOfType, xpc, xpcEntryPoints, xpcTypes } from "./xpc.js";
+import { xpcLayout } from "./xpc-layout.js";
 
 export type Direction = "sent" | "received";
 export type Kind = "message" | "request" | "reply" | "error" | "peer";
@@ -57,7 +59,23 @@ export class XpcTap {
         this.#sink = sink;
     }
 
-    start(): void {
+    start(): ExistingTraffic | Error {
+        const layout = attempt(xpcLayout);
+        this.#watchEntryPoints();
+        if (layout instanceof Error) {
+            return layout;
+        }
+        return attempt(() => this.#adoptExistingTraffic(findExistingTraffic(layout)));
+    }
+
+    stop(): void {
+        for (const listener of this.#listeners) {
+            listener.detach();
+        }
+        this.#listeners.length = 0;
+    }
+
+    #watchEntryPoints(): void {
         const tap = this;
         this.#listeners.push(
             Interceptor.attach(xpcEntryPoints.sendMessage, {
@@ -97,13 +115,6 @@ export class XpcTap {
         );
     }
 
-    stop(): void {
-        for (const listener of this.#listeners) {
-            listener.detach();
-        }
-        this.#listeners.length = 0;
-    }
-
     #recordSent(connection: NativePointer, message: NativePointer, kind: Kind, context: CpuContext): OutstandingRequest | null {
         const service = this.#serviceOf(connection);
         if (!this.#policy.wants(service)) {
@@ -125,7 +136,7 @@ export class XpcTap {
         const handler = blocks.copy(args[3]);
         args[3] = handler;
         this.#pendingReplies.set(handler.toString(), request);
-        this.#hookHandler(handler, "reply");
+        this.#hookHandler(blocks.invokeOf(handler), "reply");
         return handler;
     }
 
@@ -141,12 +152,29 @@ export class XpcTap {
         const handler = blocks.copy(args[1]);
         args[1] = handler;
         remember(this.#handlerServices, handler.toString(), this.#serviceOf(args[0]));
-        this.#hookHandler(handler, "event");
+        this.#hookHandler(blocks.invokeOf(handler), "event");
         return handler;
     }
 
-    #hookHandler(handler: NativePointer, role: HandlerRole): void {
-        const invoke = blocks.invokeOf(handler);
+    #adoptExistingTraffic(existing: ExistingTraffic): ExistingTraffic {
+        const { connections, pendingReplies } = existing;
+        for (const { connection, name, isPeer, eventHandler } of connections) {
+            const service = name ?? ANONYMOUS_SERVICE;
+            if (isPeer) {
+                remember(this.#peerServices, connection.toString(), service);
+            }
+            if (eventHandler !== null) {
+                remember(this.#handlerServices, eventHandler.block.toString(), service);
+                this.#hookHandler(eventHandler.invoke, "event");
+            }
+        }
+        for (const { invoke } of pendingReplies) {
+            this.#hookHandler(invoke, "reply");
+        }
+        return existing;
+    }
+
+    #hookHandler(invoke: NativePointer, role: HandlerRole): void {
         const key = invoke.toString();
         if (this.#hookedInvokes.has(key)) {
             return;
@@ -222,6 +250,14 @@ export class XpcTap {
 
     #serviceOf(connection: NativePointer): string {
         return connectionName(connection) ?? this.#peerServices.get(connection.toString()) ?? ANONYMOUS_SERVICE;
+    }
+}
+
+function attempt<T>(operation: () => T): T | Error {
+    try {
+        return operation();
+    } catch (error) {
+        return error as Error;
     }
 }
 
