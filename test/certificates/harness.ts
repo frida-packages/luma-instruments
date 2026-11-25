@@ -122,15 +122,15 @@ function noteShown(details: unknown): void {
 }
 
 function checkBaseAddress(baseAddress: unknown): void {
-    const expected = shownSightings[0].map(derAddressIn).find(address => address !== null) ?? 0;
+    const expected = shownSightings[0].map(derAddressIn).find(address => address !== null) ?? NULL;
     shownSightings = [];
-    const verdict = (typeof baseAddress === "number" && baseAddress === expected) ? "ok" : `WRONG, expected ${expected}`;
+    const verdict = (baseAddress instanceof NativePointer && baseAddress.equals(expected)) ? "ok" : `WRONG, expected the pointer ${expected}`;
     console.log(`base address ${verdict}`);
 }
 
-function derAddressIn(sighting: string): number | null {
+function derAddressIn(sighting: string): NativePointer | null {
     const match = /(?:^|, )DER at (0x[0-9a-f]+)/.exec(sighting);
-    return (match !== null) ? Number(match[1]) : null;
+    return (match !== null) ? ptr(match[1]) : null;
 }
 
 function render(value: unknown): string {

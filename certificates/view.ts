@@ -135,8 +135,8 @@ export class CertificateView {
     }
 
     #showDer(entry: FoundCertificate): void {
-        const derAddress = entry.sightings.map(sighting => sighting.derAddress).find(address => address !== null) ?? null;
-        this.#derView.setHex({ bytes: entry.der, baseAddress: (derAddress !== null) ? Number(derAddress.toString()) : 0 });
+        const derAddress = entry.sightings.map(sighting => sighting.derAddress).find(address => address !== null) ?? NULL;
+        this.#derView.setHex({ bytes: entry.der, baseAddress: derAddress });
     }
 }
 
