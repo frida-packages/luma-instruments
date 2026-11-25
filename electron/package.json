@@ -1,0 +1,200 @@
+{
+  "name": "electron",
+  "displayName": "Electron",
+  "version": "1.0.0",
+  "main": "main.ts",
+  "engines": { "luma": ">=4.0.0" },
+  "dependencies": { "frida-electron-bridge": "^1.0.1" },
+  "luma": {
+    "icon": { "kind": "symbolic", "value": "bolt" },
+    "compatibility": { "platforms": ["darwin", "linux"] },
+    "settings": [
+      {
+        "id": "channels",
+        "name": "Only IPC channels matching",
+        "schema": { "kind": "regex", "default": "" },
+        "optional": true,
+        "enabledByDefault": false
+      },
+      {
+        "id": "ratePerSecond",
+        "name": "Most IPC messages recorded per second",
+        "schema": { "kind": "uint", "default": 200, "min": 1, "max": 10000 },
+        "optional": false,
+        "enabledByDefault": true
+      },
+      {
+        "id": "maxChars",
+        "name": "Characters kept per message's arguments and per result",
+        "schema": { "kind": "uint", "default": 4096, "min": 256, "max": 1048576 },
+        "optional": false,
+        "enabledByDefault": true
+      },
+      {
+        "id": "archivePaths",
+        "name": "Only list app.asar files matching",
+        "schema": { "kind": "regex", "default": "^(?!(.*/)?node_modules/)" },
+        "optional": true,
+        "enabledByDefault": true
+      }
+    ],
+    "widgets": [
+      {
+        "id": "status",
+        "kind": "list",
+        "config": { "rowActions": [], "maxItems": 4 },
+        "persistence": "none"
+      },
+      {
+        "id": "facts",
+        "name": "App",
+        "kind": "table",
+        "config": {
+          "columns": [
+            { "id": "fact", "name": "Fact", "alignment": "leading" },
+            { "id": "value", "name": "Value", "alignment": "leading" }
+          ],
+          "rowActions": [],
+          "maxRows": 64
+        },
+        "persistence": "none"
+      },
+      {
+        "id": "contents",
+        "name": "Web contents",
+        "kind": "table",
+        "config": {
+          "columns": [
+            { "id": "id", "name": "#", "alignment": "trailing" },
+            { "id": "type", "name": "Type", "alignment": "leading" },
+            { "id": "title", "name": "Title", "alignment": "leading" },
+            { "id": "url", "name": "URL", "alignment": "leading" },
+            { "id": "pid", "name": "PID", "alignment": "trailing" },
+            { "id": "state", "name": "State", "alignment": "leading" },
+            { "id": "node", "name": "Node integration", "alignment": "leading" },
+            { "id": "isolation", "name": "Context isolation", "alignment": "leading" },
+            { "id": "sandbox", "name": "Sandbox", "alignment": "leading" },
+            { "id": "webSecurity", "name": "Web security", "alignment": "leading" },
+            { "id": "preload", "name": "Preload", "alignment": "leading" },
+            { "id": "guards", "name": "Guards", "alignment": "leading" }
+          ],
+          "rowActions": [{ "id": "show", "name": "Show" }, { "id": "devtools", "name": "DevTools" }],
+          "maxRows": 256
+        },
+        "persistence": "none"
+      },
+      {
+        "id": "ipc",
+        "name": "IPC",
+        "kind": "table",
+        "config": {
+          "columns": [
+            { "id": "seq", "name": "#", "alignment": "trailing" },
+            { "id": "time", "name": "Time", "alignment": "leading" },
+            { "id": "direction", "name": "Way", "alignment": "leading" },
+            { "id": "kind", "name": "Kind", "alignment": "leading" },
+            { "id": "channel", "name": "Channel", "alignment": "leading" },
+            { "id": "contents", "name": "Contents", "alignment": "trailing" },
+            { "id": "args", "name": "Arguments", "alignment": "leading" },
+            { "id": "result", "name": "Result", "alignment": "leading" },
+            { "id": "duration", "name": "ms", "alignment": "trailing" }
+          ],
+          "rowActions": [{ "id": "inspect", "name": "Inspect" }],
+          "maxRows": 1000
+        },
+        "actions": [{ "id": "pause", "name": "Pause" }, { "id": "resume", "name": "Resume" }, { "id": "clear", "name": "Clear" }],
+        "persistence": "none"
+      },
+      {
+        "id": "message",
+        "name": "Message",
+        "kind": "console",
+        "config": {
+          "maxEntries": 500,
+          "prompt": "#",
+          "placeholder": "Message number to inspect",
+          "runButtonLabel": "Inspect"
+        },
+        "actions": [{ "id": "clear", "name": "Clear" }],
+        "persistence": "none"
+      },
+      {
+        "id": "console",
+        "name": "JavaScript",
+        "kind": "console",
+        "config": {
+          "maxEntries": 1000,
+          "prompt": ">",
+          "placeholder": "JavaScript to run in this process, or :help",
+          "runButtonLabel": "Run"
+        },
+        "actions": [{ "id": "clear", "name": "Clear" }],
+        "persistence": "none"
+      },
+      {
+        "id": "files",
+        "name": "app.asar",
+        "kind": "table",
+        "config": {
+          "columns": [
+            { "id": "path", "name": "Path", "alignment": "leading" },
+            { "id": "size", "name": "Size", "alignment": "trailing" },
+            { "id": "where", "name": "Stored", "alignment": "leading" }
+          ],
+          "rowActions": [{ "id": "export", "name": "Export" }],
+          "maxRows": 1000
+        },
+        "actions": [{ "id": "archive", "name": "Export app.asar" }],
+        "persistence": "none"
+      }
+    ],
+    "layout": { "column": [
+      "status",
+      { "row": [{ "widget": "facts", "share": 40, "maxRows": 6 }, { "widget": "contents", "share": 60, "maxRows": 6 }], "foldBelow": 900 },
+      { "row": [{ "widget": "ipc", "share": 62, "maxRows": 10 }, { "widget": "message", "share": 38 }], "share": 60, "foldBelow": 900 },
+      { "row": [{ "widget": "console", "share": 62 }, { "widget": "files", "share": 38, "maxRows": 8 }], "share": 40, "foldBelow": 900 }
+    ] },
+    "children": [
+      {
+        "id": "contents",
+        "name": "Web contents",
+        "icon": { "kind": "symbolic", "value": "doc-search" },
+        "widgets": [
+          {
+            "id": "preferences",
+            "name": "Web preferences",
+            "kind": "table",
+            "config": {
+              "columns": [
+                { "id": "preference", "name": "Preference", "alignment": "leading" },
+                { "id": "value", "name": "Value", "alignment": "leading" }
+              ],
+              "rowActions": [],
+              "maxRows": 64
+            },
+            "persistence": "none"
+          },
+          {
+            "id": "console",
+            "name": "JavaScript",
+            "kind": "console",
+            "config": {
+              "maxEntries": 1000,
+              "prompt": ">",
+              "placeholder": "JavaScript to run in this page, or :help",
+              "runButtonLabel": "Run"
+            },
+            "actions": [{ "id": "clear", "name": "Clear" }],
+            "persistence": "none"
+          }
+        ],
+        "layout": { "column": [{ "widget": "preferences", "maxRows": 6 }, { "widget": "console", "share": 1 }] }
+      }
+    ],
+    "store": {
+      "summary": "Take apart an Electron app from its main process: versions, fuses and app.asar integrity, every window and web contents with its security preferences, live IPC with arguments and results, and a JavaScript console in the main process and in each page.",
+      "category": "runtime",
+      "access": { "kind": "free" }
+    }
+  }
+}
