@@ -354,8 +354,9 @@ described there too.
   add it at the end. `incrementBucket` adds a bucket with that label when there
   is none.
 - `setHex` takes the bytes as an `ArrayBuffer` or an array of numbers, and the
-  address of the first one as a number, a `"0x…"` string or a decimal string,
-  so `ptr.toString()` will do.
+  address of the first one as a `NativePointer`, a `"0x…"` or decimal string,
+  or a number. A pointer or a string is the exact form: a number above 2^53
+  has already lost precision before Luma sees it.
 - `appendValue` shows any JavaScript value as the REPL does. `appendConsole`
   with `kind: "input"` shows a line as if the user had typed it.
 
@@ -623,7 +624,7 @@ widget's id:
 | `graph` | `{ points: [{ series, x, y }] }` |
 | `list` | `{ items: [{ id, title, subtitle?, accessory? }] }` |
 | `table` | `{ rows: [{ id, cells }] }` |
-| `hex` | `{ hex: { bytes, base_address } \| null }`, `bytes` in base64 |
+| `hex` | `{ hex: { bytes, base_address } \| null }`, `bytes` in base64 and `base_address` a `NativePointer` |
 | `console` | `{ entries: [{ id, kind, text }] }` |
 | `view` | `{ state }`, the state's value or `null` |
 
