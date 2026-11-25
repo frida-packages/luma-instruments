@@ -22,12 +22,11 @@ def main():
         script = load_harness(host.pid)
         print(f"after loading, watching for a while and then not at all: {host.rate()} ticks/s", flush=True)
         idle = idle_interpreter(script)
-        script.exports_sync.use(idle)
         replies = []
-        waiting = threading.Thread(target=lambda: replies.append(script.exports_sync.input("host_name")), daemon=True)
+        waiting = threading.Thread(target=lambda: replies.append(script.exports_sync.input(idle, "host_name")), daemon=True)
         waiting.start()
         print(f"while a chunk waits for the idle interpreter #{idle}: {host.rate()} ticks/s", flush=True)
-        script.exports_sync.input(":cancel")
+        script.exports_sync.input(idle, ":cancel")
         waiting.join()
         print(f"after canceling it: {host.rate()} ticks/s; the chunk got {replies[0]}", flush=True)
         script.exports_sync.dispose()
@@ -47,8 +46,8 @@ def load_harness(pid):
 
 
 def idle_interpreter(script):
-    listing = json.loads(script.exports_sync.input(":list"))
-    return next(int(re.search(r"#(\d+) ", text).group(1)) for kind, text in listing if "not seen running yet" in text)
+    pages = json.loads(script.exports_sync.pages())
+    return next(int(page["id"]) for page in pages if page["badge"]["text"] == "not seen yet")
 
 
 class Host:

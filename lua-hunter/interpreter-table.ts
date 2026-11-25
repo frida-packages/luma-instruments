@@ -66,7 +66,7 @@ export class InterpreterTable implements InterpreterObserver, SweepActivity {
             state: interpreter.main.toString(),
             thread: (interpreter.thread !== null) ? String(interpreter.thread) : missing,
             globals: (census !== null) ? globalsSummary(census.globals, census.notable) : missing,
-            console: this.#status.statusOf(interpreter),
+            status: this.#status.statusOf(interpreter),
         };
     }
 }

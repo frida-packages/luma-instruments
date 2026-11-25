@@ -10,27 +10,39 @@ const SETTLE_AFTER_DISPOSE_MS = 250;
 let widgetLogging = true;
 let widgetCalls: string[] = [];
 const scanStates: boolean[] = [];
+const pages = new Map<string, CustomInstrumentChildRow>();
+let shownPage: string | null = null;
 
 const ctx = {
     emit(value: unknown) {
         console.log("emit", printable(value));
     },
-    widget(id: string) {
-        return new Proxy({}, {
-            get(_target, method: string) {
-                return (...args: unknown[]) => {
-                    widgetCalls.push(`${id}.${method}`);
-                    if (id === "interpreters" && method === "setActionEnabled" && args[0] === "scan") {
-                        scanStates.push(args[1] as boolean);
-                    }
-                    if (widgetLogging) {
-                        console.log(`widget ${id}.${method}`, printable(args));
-                    }
-                };
+    widget: (id: string) => widgetProxy(id),
+    children(template: string) {
+        return {
+            add(id: string, row: CustomInstrumentChildRow) {
+                pages.set(id, row);
+                return pageHandle(template, id);
             },
-        });
+            get: (id: string) => pages.has(id) ? pageHandle(template, id) : undefined,
+            ids: () => [...pages.keys()],
+            remove(id: string) {
+                if (!pages.delete(id)) {
+                    throw new Error(`there is no child ${id}`);
+                }
+            },
+        };
     },
 } as unknown as CustomInstrumentContext;
+
+const respond: CustomInstrumentActionResponder = {
+    file: () => {
+        throw new Error("Lua Hunter offered a file");
+    },
+    show(child) {
+        shownPage = child?.id ?? null;
+    },
+};
 
 const startedAt = Date.now();
 const handle = await instrument.create(ctx, config, {} as CustomInstrumentRestoredState);
@@ -39,29 +51,37 @@ await firstSweepEnded();
 console.log(`first sweep ended ${Date.now() - startedAt} ms after create began`);
 
 rpc.exports = {
-    async input(text: string): Promise<string> {
+    async input(number: number, text: string): Promise<string> {
         const replies: Reply[] = [];
-        await handle.onConsoleInput!({ widget: "console", entryId: "input", text }, {
+        const child = { template: "interpreter" as const, id: String(number) };
+        await handle.onConsoleInput!({ child, widget: "console", entryId: "input", text }, {
             output: text => replies.push(["output", text]),
             error: text => replies.push(["error", text]),
             value: value => replies.push(["value", value]),
             image: () => {},
+            file: respond.file,
+            show: respond.show,
         });
         return printable(replies);
     },
-    use(number: number): void {
-        handle.onAction!({ widget: "interpreters", action: "use", item: String(number) });
+    pages(): string {
+        return printable([...pages].map(([id, row]) => ({ id, ...row })));
+    },
+    show(number: number): string | null {
+        shownPage = null;
+        handle.onAction!({ widget: "interpreters", action: "show", item: String(number) }, respond);
+        return shownPage;
     },
     scanStates(): boolean[] {
         return scanStates;
     },
     scan(): boolean[] {
-        handle.onAction!({ widget: "interpreters", action: "scan" });
+        handle.onAction!({ widget: "interpreters", action: "scan" }, respond);
         return scanStates;
     },
-    clear(): string[] {
+    clear(number: number): string[] {
         widgetCalls = [];
-        handle.onAction!({ widget: "console", action: "clear" });
+        handle.onAction!({ child: { template: "interpreter", id: String(number) }, widget: "console", action: "clear" }, respond);
         return widgetCalls;
     },
     logWidgets(enabled: boolean): void {
@@ -84,6 +104,33 @@ function snapshotLuaCode(): Map<string, Uint8Array> {
         }
     }
     return snapshot;
+}
+
+function widgetProxy(id: string) {
+    return new Proxy({}, {
+        get(_target, method: string) {
+            return (...args: unknown[]) => {
+                widgetCalls.push(`${id}.${method}`);
+                if (id === "interpreters" && method === "setActionEnabled" && args[0] === "scan") {
+                    scanStates.push(args[1] as boolean);
+                }
+                if (widgetLogging) {
+                    console.log(`widget ${id}.${method}`, printable(args));
+                }
+            };
+        },
+    });
+}
+
+function pageHandle(template: string, id: string) {
+    return {
+        template,
+        id,
+        update(row: Partial<CustomInstrumentChildRow>) {
+            pages.set(id, { ...pages.get(id)!, ...row });
+        },
+        widget: (widget: string) => widgetProxy(`${template}/${id}/${widget}`),
+    };
 }
 
 async function firstSweepEnded(): Promise<void> {

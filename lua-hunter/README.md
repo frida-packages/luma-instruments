@@ -2,7 +2,7 @@
 
 Finds the Lua interpreters embedded in a process, and gives you a console into
 each of them: PUC-Rio Lua 5.1, 5.2, 5.3 and 5.4, and LuaJIT 2. Lua typed into
-the console runs inside the interpreter you pick, on the thread that owns it.
+its console runs inside that interpreter, on the thread that owns it.
 
 ## Finding the Lua code
 
@@ -65,24 +65,32 @@ tag for threads.
 
 ## The table
 
+A status line at the top says what the hunt last found: which Lua was found
+in which module, and how much memory was searched in how long.
+
 **Interpreters** has a row per interpreter: its number, which Lua it is,
 the module its code is in and how it was found, the address of its main
 `lua_State`, the thread last seen running it, and how many globals it has,
 with the first few that are not part of the standard library, which is
-usually what tells two interpreters apart. The last column says which one the
-console is using, how many chunks are waiting for it, and whether it was
-closed, has not been seen running yet, or cannot run code.
+usually what tells two interpreters apart. The last column says how many
+chunks are waiting for it, and whether it was closed, has not been seen
+running yet, or cannot run code. The table shows up to 6 rows and then
+scrolls.
 
-Choose **Use in Console** on a row to run what you type next in that
-interpreter. **Scan**, in the table's header, does what `:scan` does; it is
-disabled while memory is being searched. `:scan` typed during a search asks
-for one more once it ends.
+Choose **Show** on a row to open that interpreter's page. **Scan**, in the
+table's header, does what `:scan` does; it is disabled while memory is being
+searched. `:scan` typed during a search asks for one more once it ends.
 
-## The console
+## The consoles
 
-What you type runs in the interpreter in use. Every reply starts with which
+Each interpreter has a page of its own under the instrument in the sidebar,
+named after it, with its module, main state, thread and number of globals
+beside the name, and a badge: seen, not seen yet, how many chunks wait for it,
+closed, or cannot run code. The page is a console that fills the window, and
+what you type there runs in that interpreter. Every reply starts with which
 interpreter ran it and on which thread. **Clear**, in the console's header,
-empties it.
+empties it. The page of a closed interpreter stays for a minute, so its last
+replies can be read, and then goes.
 
 A `lua_State` can only be used by the thread running it, so the chunk waits
 until that thread next calls into the Lua API (or the standard library, when
@@ -111,9 +119,8 @@ Directives start with a colon:
 
 | Directive | Does |
 | --- | --- |
-| `:list` | Lists the interpreters, the one in use marked with ● |
-| `:use 2` | Runs what follows in interpreter #2 |
-| `:cancel` | Drops what is waiting for the interpreter in use |
+| `:list` | Lists the interpreters, this one marked with ● |
+| `:cancel` | Drops what is waiting for this interpreter |
 | `:scan` | Looks through memory again, and watches for interpreters calling into Lua for a while |
 | `:now <lua>` | Runs Lua at once, on the instrument's own thread |
 | `:help` | Says all this |

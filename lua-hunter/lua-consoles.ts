@@ -1,38 +1,41 @@
 import type { Outcome } from "./evaluation.js";
 import type { InterpreterTable } from "./interpreter-table.js";
 import type { Interpreter, InterpreterObserver } from "./interpreters.js";
-import type { HuntLog, LuaHunt } from "./lua-hunt.js";
+import type { LuaHunt } from "./lua-hunt.js";
 import type { Settings } from "./settings.js";
 
-type ConsoleWidget = CustomInstrumentWidgetMap["console"];
+type Pages = CustomInstrumentChildren<"interpreter">;
 type Responder = CustomInstrumentConsoleResponder;
+type Badge = NonNullable<CustomInstrumentChildRow["badge"]>;
+
+export type InterpreterPage = CustomInstrumentChild<"interpreter">;
 
 const WAITING_NOTICE_DELAY_MS = 300;
+const CLOSED_PAGE_LINGER_MS = 60000;
 
 const helpLines = [
-    "Lua typed here runs in the current interpreter, on the thread that owns it, the next time that thread calls into Lua.",
+    "Lua typed here runs in this interpreter, on the thread that owns it, the next time that thread calls into Lua.",
     "An expression shows its value; print() output is shown too. Globals you set are the interpreter's own.",
     ":list            show the interpreters found",
-    ":use <number>    run what follows in that interpreter (or use the table's Use action)",
-    ":cancel          drop chunks still waiting for the current interpreter",
+    ":cancel          drop chunks still waiting for this interpreter",
     ":scan            look through loaded modules and memory again",
     ":now <lua>       run at once on the instrument's own thread; unsafe while the owner is running Lua",
     ":help            show this",
 ];
 
-export class LuaConsole implements InterpreterObserver, HuntLog {
-    readonly #widget: ConsoleWidget;
+export class LuaConsoles implements InterpreterObserver {
+    readonly #pages: Pages;
     readonly #table: InterpreterTable;
     readonly #settings: Settings;
-    #current: Interpreter | null = null;
+    readonly #closedPageRemovals = new Map<Interpreter, ReturnType<typeof setTimeout>>();
     #hunt!: LuaHunt;
 
     constructor(
-        widget: ConsoleWidget,
+        pages: Pages,
         table: InterpreterTable,
         settings: Settings,
     ) {
-        this.#widget = widget;
+        this.#pages = pages;
         this.#table = table;
         this.#settings = settings;
     }
@@ -41,80 +44,66 @@ export class LuaConsole implements InterpreterObserver, HuntLog {
         this.#hunt = hunt;
     }
 
-    fail(error: Error): void {
-        this.#widget.appendError(error.stack!);
-    }
-
-    note(text: string): void {
-        this.#widget.appendOutput(text);
-    }
-
-    onStillWaiting(interpreter: Interpreter): void {
-        this.#widget.appendOutput(`${interpreter.label} still has not come by, while other interpreters keep calling into Lua. `
-            + "It may be idle; :cancel drops what is waiting for it.");
-    }
-
     onInterpreterAdded(interpreter: Interpreter): void {
-        this.#widget.appendOutput(`${describe(interpreter)} found ${sightingLabels[interpreter.sighting]}.`);
-        if (this.#current === null && interpreter.canRun) {
-            this.use(interpreter);
-        }
+        const page = this.#pages.add(pageId(interpreter), this.#rowOf(interpreter));
+        page.widget("console").appendOutput(`${describe(interpreter)} found ${sightingLabels[interpreter.sighting]}.`);
     }
 
     onInterpreterChanged(interpreter: Interpreter): void {
-        if (interpreter === this.#current && interpreter.presence === "closed") {
-            this.#widget.appendError(`${interpreter.label} was closed. :use another one.`);
+        const page = this.pageOf(interpreter);
+        if (page === null) {
+            return;
         }
+        page.update(this.#rowOf(interpreter));
+        if (interpreter.presence === "closed" && !this.#closedPageRemovals.has(interpreter)) {
+            page.widget("console").appendError(`${interpreter.label} was closed. Its page goes away in a minute.`);
+            this.#closedPageRemovals.set(interpreter, setTimeout(() => this.#removePage(interpreter), CLOSED_PAGE_LINGER_MS));
+        }
+    }
+
+    onStillWaiting(interpreter: Interpreter): void {
+        this.pageOf(interpreter)?.widget("console").appendOutput(`${interpreter.label} still has not come by, `
+            + "while other interpreters keep calling into Lua. It may be idle; :cancel drops what is waiting for it.");
+    }
+
+    pageOf(interpreter: Interpreter): InterpreterPage | null {
+        return this.#pages.get(pageId(interpreter)) ?? null;
     }
 
     statusOf(interpreter: Interpreter): string {
         const pending = this.#hunt.rendezvous.pendingFor(interpreter);
         const parts = [
-            (interpreter === this.#current) ? "● in use" : null,
             (pending !== 0) ? `${pending} waiting` : null,
             presenceLabel(interpreter),
         ];
         return parts.filter(part => part !== null).join(", ");
     }
 
-    use(interpreter: Interpreter): void {
-        const previous = this.#current;
-        this.#current = interpreter;
-        if (previous !== null) {
-            this.#table.show(previous);
-        }
-        this.#table.show(interpreter);
-        this.#widget.appendOutput(`Console now runs in ${describe(interpreter)}.`);
+    clear(interpreter: Interpreter): void {
+        this.pageOf(interpreter)?.widget("console").clear();
     }
 
-    clear(): void {
-        this.#widget.clear();
-    }
-
-    async handle(text: string, respond: Responder): Promise<void> {
+    async handle(interpreter: Interpreter, text: string, respond: Responder): Promise<void> {
         const trimmed = text.trim();
         if (!trimmed.startsWith(":")) {
-            await this.#run(trimmed, respond, "owner");
+            await this.#run(interpreter, trimmed, respond, "owner");
             return;
         }
-        const [directive, ...rest] = trimmed.slice(1).split(/\s+/);
+        const [directive] = trimmed.slice(1).split(/\s+/);
         const argument = trimmed.slice(1 + directive.length).trim();
         switch (directive) {
             case "list":
-                this.#list(respond);
-                break;
-            case "use":
-                this.#useNumber(rest[0] ?? "", respond);
+                this.#list(interpreter, respond);
                 break;
             case "cancel":
-                this.#cancel(respond);
+                this.#cancel(interpreter, respond);
                 break;
             case "scan":
                 respond.output("Looking again…");
                 await this.#hunt.rescan();
                 break;
             case "now":
-                await this.#run(argument, respond, "instrument");
+                await this.#run(interpreter, argument, respond, "instrument");
                 break;
             case "help":
                 helpLines.forEach(line => respond.output(line));
@@ -124,12 +113,47 @@ export class LuaConsole implements InterpreterObserver, HuntLog {
         }
     }
 
-    #run(source: string, respond: Responder, thread: "owner" | "instrument"): Promise<void> {
-        const interpreter = this.#current;
-        if (interpreter === null) {
-            respond.error("No interpreter to run in yet. :list shows what was found.");
-            return Promise.resolve();
+    dispose(): void {
+        for (const removal of this.#closedPageRemovals.values()) {
+            clearTimeout(removal);
         }
+    }
+
+    #rowOf(interpreter: Interpreter): CustomInstrumentChildRow {
+        const { runtime, census } = interpreter;
+        const facts = [
+            runtime.moduleName,
+            `state ${interpreter.main}`,
+            (interpreter.thread !== null) ? `thread ${interpreter.thread}` : null,
+            (census !== null) ? `${census.globals} globals` : null,
+        ];
+        return {
+            title: interpreter.label,
+            subtitle: facts.filter(fact => fact !== null).join(" · "),
+            badge: this.#badgeOf(interpreter),
+        };
+    }
+
+    #badgeOf(interpreter: Interpreter): Badge {
+        if (interpreter.presence === "closed") {
+            return { text: "closed", tone: "ended" };
+        }
+        if (interpreter.runtime.executor === null) {
+            return { text: "cannot run code", tone: "failed" };
+        }
+        const pending = this.#hunt.rendezvous.pendingFor(interpreter);
+        if (pending !== 0) {
+            return { text: `${pending} waiting`, tone: "waiting" };
+        }
+        return (interpreter.presence === "seen") ? { text: "seen", tone: "active" } : { text: "not seen yet", tone: "neutral" };
+    }
+
+    #removePage(interpreter: Interpreter): void {
+        this.#closedPageRemovals.delete(interpreter);
+        this.#pages.remove(pageId(interpreter));
+    }
+
+    #run(interpreter: Interpreter, source: string, respond: Responder, thread: "owner" | "instrument"): Promise<void> {
         const executor = interpreter.runtime.executor;
         if (executor === null || !interpreter.canRun) {
             respond.error(cannotRunReason(interpreter));
@@ -152,53 +176,40 @@ export class LuaConsole implements InterpreterObserver, HuntLog {
                     this.#hunt.refreshCensus(interpreter, L, threadId);
                     respond.output(`${interpreter.label} on thread ${threadId}:`);
                     report(outcome, respond);
-                    this.#table.show(interpreter);
+                    this.#showPending(interpreter);
                     resolve();
                 },
                 abandon: reason => {
                     clearTimeout(notice);
                     respond.error(reason);
-                    this.#table.show(interpreter);
+                    this.#showPending(interpreter);
                     resolve();
                 },
             });
-            this.#table.show(interpreter);
+            this.#showPending(interpreter);
         });
     }
 
-    #list(respond: Responder): void {
-        const interpreters = this.#hunt.registry.all;
-        if (interpreters.length === 0) {
-            respond.output("No interpreters found yet.");
-        }
-        for (const interpreter of interpreters) {
-            const marker = (interpreter === this.#current) ? "●" : " ";
+    #list(current: Interpreter, respond: Responder): void {
+        for (const interpreter of this.#hunt.registry.all) {
+            const marker = (interpreter === current) ? "●" : " ";
             const census = interpreter.census;
             const globals = (census !== null) ? `, ${census.globals} globals` : "";
             const thread = (interpreter.thread !== null) ? `, thread ${interpreter.thread}` : "";
-            respond.output(`${marker} ${describe(interpreter)}${thread}${globals}, ${this.statusOf(interpreter)}`);
+            const status = this.statusOf(interpreter);
+            respond.output(`${marker} ${describe(interpreter)}${thread}${globals}${(status !== "") ? `, ${status}` : ""}`);
         }
     }
 
-    #useNumber(text: string, respond: Responder): void {
-        const interpreter = this.#hunt.registry.numbered(Number(text.replace(/^#/, "")));
-        if (interpreter === undefined) {
-            respond.error(`There is no interpreter ${text}. :list shows them.`);
-            return;
-        }
-        this.use(interpreter);
-        if (!interpreter.canRun) {
-            respond.error(cannotRunReason(interpreter));
-        }
-    }
-
-    #cancel(respond: Responder): void {
-        const interpreter = this.#current;
-        const dropped = (interpreter !== null) ? this.#hunt.rendezvous.recall(interpreter, "Canceled.") : 0;
+    #cancel(interpreter: Interpreter, respond: Responder): void {
+        const dropped = this.#hunt.rendezvous.recall(interpreter, "Canceled.");
         respond.output(`Dropped ${dropped} waiting chunk${(dropped === 1) ? "" : "s"}.`);
-        if (interpreter !== null) {
-            this.#table.show(interpreter);
-        }
+        this.#showPending(interpreter);
+    }
+
+    #showPending(interpreter: Interpreter): void {
+        this.#table.show(interpreter);
+        this.pageOf(interpreter)?.update({ badge: this.#badgeOf(interpreter) });
     }
 }
 
@@ -207,6 +218,10 @@ const sightingLabels = {
     creation: "as it was created",
     call: "calling into Lua",
 };
+
+function pageId(interpreter: Interpreter): string {
+    return String(interpreter.number);
+}
 
 function describe(interpreter: Interpreter): string {
     return `${interpreter.label} (${interpreter.runtime.moduleName}, main state ${interpreter.main})`;

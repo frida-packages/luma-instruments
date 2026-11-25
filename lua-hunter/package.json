@@ -25,6 +25,12 @@
     ],
     "widgets": [
       {
+        "id": "status",
+        "kind": "list",
+        "config": { "rowActions": [], "maxItems": 1 },
+        "persistence": "none"
+      },
+      {
         "id": "interpreters",
         "name": "Interpreters",
         "kind": "table",
@@ -36,26 +42,37 @@
             { "id": "state", "name": "Main lua_State", "alignment": "leading" },
             { "id": "thread", "name": "Thread", "alignment": "trailing" },
             { "id": "globals", "name": "Globals", "alignment": "leading" },
-            { "id": "console", "name": "Console", "alignment": "leading" }
+            { "id": "status", "name": "Status", "alignment": "leading" }
           ],
-          "rowActions": [{ "id": "use", "name": "Use in Console" }],
+          "rowActions": [{ "id": "show", "name": "Show" }],
           "maxRows": 256
         },
         "actions": [{ "id": "scan", "name": "Scan" }],
         "persistence": "none"
-      },
+      }
+    ],
+    "layout": { "column": ["status", { "widget": "interpreters", "maxRows": 6 }] },
+    "children": [
       {
-        "id": "console",
-        "name": "Lua",
-        "kind": "console",
-        "config": {
-          "maxEntries": 1000,
-          "prompt": ">",
-          "placeholder": "Lua to run in the interpreter in use, or :help",
-          "runButtonLabel": "Run"
-        },
-        "actions": [{ "id": "clear", "name": "Clear" }],
-        "persistence": "none"
+        "id": "interpreter",
+        "name": "Interpreters",
+        "icon": { "kind": "symbolic", "value": "cpu" },
+        "widgets": [
+          {
+            "id": "console",
+            "name": "Lua",
+            "kind": "console",
+            "config": {
+              "maxEntries": 1000,
+              "prompt": ">",
+              "placeholder": "Lua to run in this interpreter, or :help",
+              "runButtonLabel": "Run"
+            },
+            "actions": [{ "id": "clear", "name": "Clear" }],
+            "persistence": "none"
+          }
+        ],
+        "layout": { "column": [{ "widget": "console", "share": 1 }] }
       }
     ],
     "store": {

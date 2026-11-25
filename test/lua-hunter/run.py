@@ -33,11 +33,14 @@ def main():
             check = Check()
             numbers = interpreter_numbers(harness, check, len(INTERPRETERS))
             scan_button(harness, check)
+            show_button(harness, numbers, check)
             if expectation == "runs":
                 names = interpreter_names(harness, numbers, check)
                 exercise(harness, target, names, check)
-                calls = harness.clear()
-                check.expect(calls == ["console.clear"], f"Clear empties the console and nothing else: {calls}")
+                number = numbers[0]
+                calls = harness.clear(number)
+                check.expect(calls == [f"interpreter/{number}/console.clear"],
+                             f"Clear empties that interpreter's console and nothing else: {calls}")
                 stress(harness, names, rounds, check)
             else:
                 refusal(harness, numbers, check)
@@ -59,9 +62,8 @@ def explore(pid, chunks):
     time.sleep(SETTLE_SECONDS)
     try:
         for number in interpreter_numbers(harness, Check()):
-            harness.use(number)
             for chunk in chunks:
-                harness.input(chunk)
+                harness.input(number, chunk)
         for line in harness.dispose():
             print("   ", line, flush=True)
     finally:
@@ -75,12 +77,16 @@ def lifecycle(host):
         harness = Harness(target.pid)
         try:
             check.expect(target.wait_for("] closed ", count=2, timeout=10), "the host closed and reopened gamma twice")
-            listing = [payload for kind, payload in harness.input(":list") if kind == "output"]
-            check.expect(any("closed" in line for line in listing), "closed interpreters are shown as closed")
-            check.expect(len(listing) >= 4, f"reopened interpreters are found as they are created: {len(listing)} listed")
-            newest = max(int(re.search(r"#(\d+) ", line).group(1)) for line in listing)
-            harness.use(newest)
-            replies = harness.input("host_name")
+            pages = harness.pages()
+            for page in pages:
+                print("   ", page, flush=True)
+            check.expect(any(page["badge"]["text"] == "closed" and page["badge"]["tone"] == "ended" for page in pages),
+                         "closed interpreters' pages are badged closed")
+            check.expect(len(pages) >= 4, f"reopened interpreters get a page as they are created: {len(pages)} pages")
+            newest = max(int(page["id"]) for page in pages)
+            listing = [payload for kind, payload in harness.input(newest, ":list") if kind == "output"]
+            check.expect(any("closed" in line for line in listing), "closed interpreters are listed as closed")
+            replies = harness.input(newest, "host_name")
             check.expect(any(kind == "value" and payload == "gamma" for kind, payload in replies)
                          or any(kind == "error" and "closed" in payload for kind, payload in replies),
                          f"the newest one runs code, or says it closed first: {replies}")
@@ -98,18 +104,15 @@ def lifecycle(host):
 
 
 def interpreter_numbers(harness, check, expected=None):
-    listing = harness.input(":list")
-    lines = [payload for kind, payload in listing if kind == "output"]
-    for line in lines:
-        print("   ", line, flush=True)
-    found = {}
-    for line in lines:
-        match = re.search(r"#(\d+) ", line)
-        if match is not None:
-            found[int(match.group(1))] = line
+    pages = harness.pages()
+    for page in pages:
+        print("   ", page, flush=True)
+    numbers = [int(page["id"]) for page in pages]
     if expected is not None:
-        check.expect(len(found) == expected, f"{expected} interpreters listed, got {len(found)}")
-    return list(found)
+        check.expect(len(numbers) == expected, f"{expected} interpreters have a page, got {len(numbers)}")
+        check.expect(all(re.fullmatch(rf"#{page['id']} \S.*", page["title"]) and "state 0x" in page["subtitle"] for page in pages),
+                     "each page is titled with its interpreter and says its state")
+    return numbers
 
 
 def scan_button(harness, check):
@@ -124,11 +127,15 @@ def scan_button(harness, check):
     check.expect(after[-1] is True, f"Scan is enabled again once the sweep ends: {after}")
 
 
+def show_button(harness, numbers, check):
+    shown = [harness.show(number) for number in numbers]
+    check.expect(shown == [str(number) for number in numbers], f"Show on each row shows that interpreter's page: {shown}")
+
+
 def interpreter_names(harness, numbers, check):
     names = {}
     for number in numbers:
-        harness.use(number)
-        replies = harness.input("host_name")
+        replies = harness.input(number, "host_name")
         values = [payload for kind, payload in replies if kind == "value"]
         if values:
             names[values[0]] = number
@@ -138,33 +145,32 @@ def interpreter_names(harness, numbers, check):
 
 def exercise(harness, target, names, check):
     for name, number in names.items():
-        harness.use(number)
         marker = f"marker-{name}-{number}"
-        harness.input(f"marker = {json.dumps(marker)}")
+        harness.input(number, f"marker = {json.dumps(marker)}")
         check.expect(target.wait_for(f"[{name}] observed marker = {marker}"), f"{name}'s script saw the marker it was given")
 
-        replies = harness.input("error('boom')")
+        replies = harness.input(number, "error('boom')")
         check.expect(any(kind == "error" and "boom" in payload for kind, payload in replies), f"{name}: error comes back: {replies}")
 
-        replies = harness.input("local t = nil; return t.field")
+        replies = harness.input(number, "local t = nil; return t.field")
         check.expect(any(kind == "error" and "attempt to index" in payload for kind, payload in replies),
                      f"{name}: runtime error comes back: {replies}")
 
-        replies = harness.input("return (")
+        replies = harness.input(number, "return (")
         check.expect(any(kind == "error" for kind, _ in replies), f"{name}: syntax error comes back: {replies}")
 
-        replies = harness.input("config")
+        replies = harness.input(number, "config")
         table = next((payload for kind, payload in replies if kind == "value"), None)
         check.expect(isinstance(table, dict) and table.get("speed") == 3 and table.get("tags") == ["red", "green"],
                      f"{name}: config comes back as a table: {table}")
 
-        replies = harness.input("print('hello', 1, nil, true) return 1, 'two', {3}")
+        replies = harness.input(number, "print('hello', 1, nil, true) return 1, 'two', {3}")
         outputs = [payload for kind, payload in replies if kind == "output"]
         values = [payload for kind, payload in replies if kind == "value"]
         check.expect("hello\t1\tnil\ttrue" in outputs, f"{name}: print is captured: {outputs}")
         check.expect(values == [1, "two", [3]], f"{name}: several values come back: {values}")
 
-        replies = harness.input("_G.print")
+        replies = harness.input(number, "_G.print")
         values = [payload for kind, payload in replies if kind == "value"]
         check.expect(len(values) == 1 and "builtin" in values[0], f"{name}: print is the host's own afterwards: {values}")
 
@@ -176,8 +182,7 @@ def stress(harness, names, rounds, check):
     previous = {}
     for round in range(rounds):
         for name, number in names.items():
-            harness.use(number)
-            replies = harness.input(f"return counter, {round} * 2, host_name")
+            replies = harness.input(number, f"return counter, {round} * 2, host_name")
             values = [payload for kind, payload in replies if kind == "value"]
             ok = len(values) == 3 and values[1] == round * 2 and values[2] == name and values[0] >= previous.get(name, 0)
             if not ok:
@@ -194,8 +199,7 @@ def stress(harness, names, rounds, check):
 
 def refusal(harness, numbers, check):
     for number in numbers:
-        harness.use(number)
-        replies = harness.input("return 1")
+        replies = harness.input(number, "return 1")
         check.expect(any(kind == "error" and "no code can be run" in payload for kind, payload in replies),
                      f"#{number}: code is refused: {replies}")
 
@@ -210,9 +214,9 @@ class Harness:
         self.script.on("message", self.on_message)
         self.script.load()
 
-    def input(self, text):
-        print(f"  > {text}", flush=True)
-        replies = json.loads(self.script.exports_sync.input(text))
+    def input(self, number, text):
+        print(f"  #{number}> {text}", flush=True)
+        replies = json.loads(self.script.exports_sync.input(number, text))
         for kind, payload in replies:
             print(f"    {kind}: {json.dumps(payload) if kind == 'value' else payload}", flush=True)
         return replies
@@ -223,11 +227,14 @@ class Harness:
     def scan(self):
         return self.script.exports_sync.scan()
 
-    def use(self, number):
-        self.script.exports_sync.use(number)
+    def pages(self):
+        return json.loads(self.script.exports_sync.pages())
 
-    def clear(self):
-        return self.script.exports_sync.clear()
+    def show(self, number):
+        return self.script.exports_sync.show(number)
+
+    def clear(self, number):
+        return self.script.exports_sync.clear(number)
 
     def log_widgets(self, enabled):
         self.script.exports_sync.log_widgets(enabled)
