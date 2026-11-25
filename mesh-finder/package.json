@@ -66,7 +66,7 @@
         "id": "mesh",
         "name": "Mesh",
         "kind": "view",
-        "config": { "class": "MeshView", "height": 420 },
+        "config": { "class": "MeshView", "height": 320 },
         "persistence": "session"
       },
       {
@@ -83,6 +83,10 @@
         "persistence": "none"
       }
     ],
+    "layout": { "column": [
+      { "widget": "meshes", "share": 45, "maxRows": 6 },
+      { "row": [{ "widget": "mesh", "share": 60 }, { "widget": "viewer", "share": 40 }], "share": 55 }
+    ] },
     "store": {
       "summary": "Find the 3D meshes a game or app holds in its Direct3D 11, Metal, Vulkan and OpenGL buffers, with exact layouts learned from its draw calls, and export any of them as OBJ.",
       "category": "ui",
