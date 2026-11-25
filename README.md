@@ -12,6 +12,7 @@ Instruments for [Luma](https://luma.frida.re), published in its store.
 | [Mesh Finder](mesh-finder) | UI | The 3D meshes a game or app holds in its Direct3D 11, Metal, Vulkan and OpenGL buffers, as OBJ |
 | [GStreamer](gstreamer) | Runtime | The GStreamer pipelines a process is running, each as a live graph of bins, elements, pads and caps to click through |
 | [Flutter](flutter) | Runtime | A Flutter app's engine, Dart version and snapshot, the files that hold its Dart, and its platform-channel messages, decoded |
+| [Electron](electron) | Runtime | An Electron app's versions, fuses and app.asar, its web contents with their security preferences, live IPC, and a JavaScript console in the main process and each page |
 
 Each folder is one instrument: TypeScript sources beside a `package.json`
 whose `luma` object carries its icon, compatibility, settings, widgets and
