@@ -1,6 +1,8 @@
 /// <reference path="./instrument-typings.d.ts" />
 
+import { readExecutableImage } from "../../tls-plaintext/executable-image.js";
 import { instrument } from "../../tls-plaintext/main.js";
+import { locateStaticBoringSsl } from "../../tls-plaintext/static-boringssl.js";
 
 const defaultSettings: CustomInstrumentSettingMap = {
     capturePayloads: true,
@@ -10,6 +12,8 @@ const defaultSettings: CustomInstrumentSettingMap = {
 const ctx = {
     emit(value: unknown) {
         console.log(`emit ${render(value)}`);
+        const { direction, data } = value as { direction: string; data: ArrayBuffer };
+        send({ chunk: direction }, data);
     },
     widget(id: string) {
         return new Proxy({}, {
@@ -28,6 +32,7 @@ const actionRespond: CustomInstrumentActionResponder = {
 };
 
 const hookableExports = ["SSL_read", "SSL_read_ex", "SSL_write", "SSL_write_ex", "SSL_do_handshake", "SSL_free"];
+const hookableFunctions = findHookableFunctions();
 const pristinePrologues = snapshotPrologues();
 const handle = await instrument.create(ctx, { settings: defaultSettings }, {});
 
@@ -40,6 +45,7 @@ rpc.exports = {
     },
     async dispose() {
         await handle.dispose?.();
+        Interceptor.flush();
         const current = snapshotPrologues();
         for (const [name, bytes] of pristinePrologues) {
             console.log(`prologue ${name} ${current.get(name) === bytes ? "restored" : "CHANGED"}`);
@@ -47,17 +53,36 @@ rpc.exports = {
     },
 };
 
-function snapshotPrologues(): Map<string, string> {
-    const prologues = new Map<string, string>();
+function findHookableFunctions(): Map<string, NativePointer> {
+    const functions = new Map<string, NativePointer>();
     for (const module of Process.enumerateModules()) {
         for (const name of hookableExports) {
             const address = module.findExportByName(name);
             if (address !== null) {
-                prologues.set(`${module.name}!${name}`, hexOf(address.readByteArray(16)!));
+                functions.set(`${module.name}!${name}`, address);
             }
         }
+        for (const [name, address] of staticEntryPoints(module)) {
+            functions.set(`${module.name}!${name}`, address);
+        }
     }
-    return prologues;
+    return functions;
+}
+
+function staticEntryPoints(module: Module): [string, NativePointer][] {
+    const bundled = !module.path.startsWith("/System/") && !module.path.startsWith("/usr/lib/");
+    const image = (bundled && module.findExportByName("SSL_read") === null) ? readExecutableImage(module.base) : null;
+    const location = (image !== null) ? locateStaticBoringSsl(image) : null;
+    if (location?.kind !== "placed") {
+        return [];
+    }
+    return Object.entries(location.entryPoints)
+        .filter((entry): entry is [string, NativePointer] => entry[1] !== null)
+        .map(([name, address]) => [`static ${name}`, address]);
+}
+
+function snapshotPrologues(): Map<string, string> {
+    return new Map([...hookableFunctions].map(([name, address]) => [name, hexOf(address.readByteArray(16)!)]));
 }
 
 function hexOf(bytes: ArrayBuffer): string {
@@ -70,5 +95,5 @@ function render(value: unknown): string {
 
 function preview(bytes: ArrayBuffer): string {
     const text = Array.from(new Uint8Array(bytes), byte => byte >= 0x20 && byte < 0x7f ? String.fromCharCode(byte) : ".").join("");
-    return `<${bytes.byteLength} bytes: ${text.slice(0, 96)}>`;
+    return `<${bytes.byteLength} bytes, sha256 ${Checksum.compute("sha256", bytes)}: ${text.slice(0, 96)}>`;
 }

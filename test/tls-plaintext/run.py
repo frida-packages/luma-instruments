@@ -7,6 +7,7 @@ import frida
 
 here = Path(__file__).resolve().parent
 repository = here.parent.parent
+streams = {"sent": bytearray(), "received": bytearray()}
 
 
 def main():
@@ -46,10 +47,15 @@ def run(step, script):
         script.exports_sync.clear(argument)
     elif action == "dispose":
         script.exports_sync.dispose()
+    elif action == "count":
+        direction, _, path = argument.partition(",")
+        print(f"{direction} holds {path} {streams[direction].count(Path(path).read_bytes())} times", flush=True)
 
 
 def print_message(message, data):
-    if message["type"] == "log":
+    if message["type"] == "send" and "chunk" in message["payload"]:
+        streams[message["payload"]["chunk"]] += data
+    elif message["type"] == "log":
         print(message["payload"], flush=True)
     else:
         print(message, flush=True)
