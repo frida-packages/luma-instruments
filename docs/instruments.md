@@ -170,7 +170,7 @@ returns a handle, or a promise of one. Every method of the handle is optional:
 | Method | Called |
 | --- | --- |
 | `updateConfig(config)` | The user changed a setting. |
-| `onAction({ widget, action, item })` | The user chose one of a widget's actions, or an action on a list or table row. `item` is the row's id, and absent for a widget's own action. |
+| `onAction({ widget, action, item }, respond)` | The user chose one of a widget's actions, or an action on a list or table row. `item` is the row's id, and absent for a widget's own action. `respond.file` offers the user a file to save; see [Actions and console input](#actions-and-console-input). |
 | `onConsoleInput({ widget, entryId, text }, respond)` | The user submitted text in a console widget. |
 | `onViewMessage({ widget, value, data, from })` | A view sent a message; see [views.md](views.md). |
 | `dispose()` | The instance is removed, disabled or about to be loaded again. Undo everything `create` did. |
@@ -430,6 +430,39 @@ instance's buttons are. When the user submits, Luma shows the input and calls
 with that input. An exception thrown by `onConsoleInput`, or a promise from it
 that rejects, is shown as an error entry. To write to the console at other
 times, use the widget's own `append…` methods.
+
+`onAction` gets a `respond` object too. It and the console's have `file`,
+which offers one file to the user who chose the action or submitted the input;
+Luma asks them where to save it. `name` is a plain file name, such as `cube.obj`, with no path,
+and `mediaType` a media type such as `model/obj`. Given `bytes`, an
+`ArrayBuffer`, a typed array or an array of numbers, `file` offers them as they
+are:
+
+```ts
+respond.file({ name: "server.der", mediaType: "application/pkix-cert", bytes: der });
+```
+
+Without `bytes`, it returns a Node `Writable` to write or pipe the file into,
+and end; it can still be written after the handler has returned. Mesh Finder's
+**Export OBJ** writes its OBJ this way, in the pieces it builds it in, rather
+than joining them into one buffer first:
+
+```ts
+const file = respond.file({ name: "#3 Cube vertices.obj", mediaType: "model/obj" });
+for (const piece of obj.pieces) {
+    file.write(piece);
+}
+file.end();
+```
+
+Call `file` while the handler runs, before it returns or its promise settles,
+and at most once per call. A name that is not a plain file name, or a media
+type that is not one, throws a `TypeError`. A file is at most 64 MiB: more
+`bytes` than that throw a `RangeError`, and the write that takes a stream past
+it fails with one, so check the size before offering, as Mesh Finder does,
+when the user should hear why in the instrument's own words. The agent never
+learns where the file was saved, or whether it was; to say what was offered,
+write to the console. When a mission chose the action, the file is dropped.
 
 ## Persistence
 
