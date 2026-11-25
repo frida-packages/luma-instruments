@@ -46,6 +46,11 @@ Other commands:
 **Clear**, in the console's header, empties the console and leaves the scan
 as it is.
 
+The console sits beside the count and the candidates, and **Memory** beside
+the locks and the writers below them, so the value you type and what it
+narrowed to are seen together. In a narrow window they stack in the order
+they are used: console, count, candidates, memory, locks, writers.
+
 The rows of the candidate list can also be kept on their own, discarded,
 locked, or shown in the **Memory** view, which shows the bytes around them
 and can be decoded with a pattern, as when looking for the rest of a
