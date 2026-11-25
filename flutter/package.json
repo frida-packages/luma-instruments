@@ -1,0 +1,196 @@
+{
+  "name": "flutter",
+  "displayName": "Flutter",
+  "version": "1.0.0",
+  "main": "main.ts",
+  "engines": { "luma": ">=4.0.0" },
+  "luma": {
+    "icon": { "kind": "symbolic", "value": "antenna" },
+    "compatibility": { "osIDs": ["macos"], "archs": ["x64", "arm64"] },
+    "settings": [
+      {
+        "id": "bytesKept",
+        "name": "Bytes kept per message",
+        "schema": { "kind": "uint", "default": 65536, "min": 256, "max": 1048576 },
+        "optional": false,
+        "enabledByDefault": true
+      },
+      {
+        "id": "messagesPerSecond",
+        "name": "Messages shown per second (more are only counted)",
+        "schema": { "kind": "uint", "default": 100, "min": 1, "max": 10000 },
+        "optional": false,
+        "enabledByDefault": true
+      },
+      {
+        "id": "hideChannels",
+        "name": "Hide channels matching",
+        "schema": { "kind": "regex", "default": "^flutter/" },
+        "optional": true,
+        "enabledByDefault": false
+      },
+      {
+        "id": "emitMessages",
+        "name": "Add each message and reply to the event stream",
+        "schema": { "kind": "boolean", "default": false },
+        "optional": false,
+        "enabledByDefault": true
+      },
+      {
+        "id": "askVmService",
+        "name": "Ask the Dart VM service, where one listens, for isolates and libraries",
+        "schema": { "kind": "boolean", "default": true },
+        "optional": false,
+        "enabledByDefault": true
+      }
+    ],
+    "widgets": [
+      {
+        "id": "status",
+        "kind": "list",
+        "config": { "rowActions": [], "maxItems": 1 },
+        "persistence": "none"
+      },
+      {
+        "id": "facts",
+        "name": "Flutter",
+        "kind": "table",
+        "config": {
+          "columns": [
+            { "id": "what", "name": "What", "alignment": "leading" },
+            { "id": "value", "name": "Value", "alignment": "leading" }
+          ],
+          "rowActions": [],
+          "maxRows": 200
+        },
+        "actions": [{ "id": "refresh", "name": "Refresh" }],
+        "persistence": "none"
+      },
+      {
+        "id": "files",
+        "name": "Files",
+        "kind": "table",
+        "config": {
+          "columns": [
+            { "id": "file", "name": "File", "alignment": "leading" },
+            { "id": "holds", "name": "Holds", "alignment": "leading" },
+            { "id": "size", "name": "Size", "alignment": "trailing" }
+          ],
+          "rowActions": [{ "id": "save", "name": "Save" }],
+          "maxRows": 100
+        },
+        "persistence": "none"
+      },
+      {
+        "id": "channels",
+        "name": "Channels",
+        "kind": "table",
+        "config": {
+          "columns": [
+            { "id": "channel", "name": "Channel", "alignment": "leading" },
+            { "id": "kind", "name": "Kind", "alignment": "leading" },
+            { "id": "codec", "name": "Codec", "alignment": "leading" },
+            { "id": "toHost", "name": "Dart → host", "alignment": "trailing" },
+            { "id": "toDart", "name": "Host → Dart", "alignment": "trailing" },
+            { "id": "bytes", "name": "Bytes", "alignment": "trailing" },
+            { "id": "method", "name": "Last method", "alignment": "leading" },
+            { "id": "active", "name": "Last active", "alignment": "trailing" }
+          ],
+          "rowActions": [{ "id": "show", "name": "Show" }],
+          "maxRows": 1000
+        },
+        "persistence": "none"
+      },
+      {
+        "id": "messages",
+        "name": "Messages",
+        "kind": "table",
+        "config": {
+          "columns": [
+            { "id": "number", "name": "#", "alignment": "trailing" },
+            { "id": "time", "name": "Time", "alignment": "trailing" },
+            { "id": "direction", "name": "Direction", "alignment": "leading" },
+            { "id": "channel", "name": "Channel", "alignment": "leading" },
+            { "id": "kind", "name": "Kind", "alignment": "leading" },
+            { "id": "message", "name": "Message", "alignment": "leading" },
+            { "id": "reply", "name": "Reply", "alignment": "leading" },
+            { "id": "size", "name": "Size", "alignment": "trailing" },
+            { "id": "latency", "name": "Latency", "alignment": "trailing" }
+          ],
+          "rowActions": [{ "id": "inspect", "name": "Inspect" }],
+          "maxRows": 1000
+        },
+        "actions": [{ "id": "clear", "name": "Clear" }],
+        "persistence": "none"
+      },
+      {
+        "id": "console",
+        "name": "Console",
+        "kind": "console",
+        "config": {
+          "maxEntries": 500,
+          "prompt": ">",
+          "placeholder": "inspect 12, packages, channels, strings re, isolates, save App, help",
+          "runButtonLabel": "Run"
+        },
+        "actions": [{ "id": "clear", "name": "Clear" }],
+        "persistence": "none"
+      }
+    ],
+    "layout": { "column": [
+      "status",
+      { "row": [{ "widget": "facts", "share": 60, "maxRows": 6 }, { "widget": "files", "share": 40, "maxRows": 6 }], "foldBelow": 760 },
+      { "widget": "channels", "maxRows": 6 },
+      { "row": [{ "widget": "messages", "share": 62, "maxRows": 10 }, { "widget": "console", "share": 38 }], "share": 100, "foldBelow": 1000 }
+    ] },
+    "children": [
+      {
+        "id": "channel",
+        "name": "Channels",
+        "icon": { "kind": "symbolic", "value": "antenna" },
+        "widgets": [
+          {
+            "id": "messages",
+            "name": "Messages",
+            "kind": "table",
+            "config": {
+              "columns": [
+                { "id": "number", "name": "#", "alignment": "trailing" },
+                { "id": "time", "name": "Time", "alignment": "trailing" },
+                { "id": "direction", "name": "Direction", "alignment": "leading" },
+                { "id": "kind", "name": "Kind", "alignment": "leading" },
+                { "id": "message", "name": "Message", "alignment": "leading" },
+                { "id": "reply", "name": "Reply", "alignment": "leading" },
+                { "id": "size", "name": "Size", "alignment": "trailing" },
+                { "id": "latency", "name": "Latency", "alignment": "trailing" }
+              ],
+              "rowActions": [{ "id": "inspect", "name": "Inspect" }],
+              "maxRows": 1000
+            },
+            "actions": [{ "id": "clear", "name": "Clear" }],
+            "persistence": "none"
+          },
+          {
+            "id": "console",
+            "name": "Decoded",
+            "kind": "console",
+            "config": {
+              "maxEntries": 200,
+              "prompt": ">",
+              "placeholder": "inspect 12, help",
+              "runButtonLabel": "Run"
+            },
+            "actions": [{ "id": "clear", "name": "Clear" }],
+            "persistence": "none"
+          }
+        ],
+        "layout": { "column": [{ "widget": "messages", "share": 55, "maxRows": 10 }, { "widget": "console", "share": 45 }] }
+      }
+    ],
+    "store": {
+      "summary": "Take a Flutter app apart while it runs: its engine, Dart version and snapshot, the files that hold its compiled Dart, and every platform-channel message between Dart and the host, decoded.",
+      "category": "runtime",
+      "access": { "kind": "free" }
+    }
+  }
+}
