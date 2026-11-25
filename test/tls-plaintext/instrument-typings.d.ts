@@ -236,8 +236,10 @@ declare interface CustomInstrumentWidgetMap {
     sent: CustomInstrumentCounterWidget & CustomInstrumentWidgetActions<"clear">;
     /** Received */
     received: CustomInstrumentCounterWidget & CustomInstrumentWidgetActions<"clear">;
+    /** Libraries */
+    libraries: CustomInstrumentTableWidget<"module" | "backend" | "status">;
     /** Connections */
-    connections: CustomInstrumentTableWidget<"host" | "peer" | "protocol" | "cipher" | "sent" | "received" | "request" | "active"> & CustomInstrumentWidgetActions<"clear">;
+    connections: CustomInstrumentTableWidget<"host" | "peer" | "library" | "protocol" | "cipher" | "sent" | "received" | "request" | "active"> & CustomInstrumentWidgetActions<"clear">;
     /** Latest payload */
     payload: CustomInstrumentHexWidget;
 }

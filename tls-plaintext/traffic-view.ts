@@ -1,5 +1,5 @@
 import type { Connection } from "./connection.js";
-import type { Direction } from "./tls-libraries.js";
+import type { Direction, LibraryReport } from "./tls-libraries.js";
 
 const flushDelay = 250;
 const payloadViewLimit = 65536;
@@ -13,6 +13,7 @@ interface PayloadRun {
 }
 
 export class TrafficView {
+    readonly #librariesTable: CustomInstrumentWidgetMap["libraries"];
     readonly #connectionsTable: CustomInstrumentWidgetMap["connections"];
     readonly #sentCounter: CustomInstrumentWidgetMap["sent"];
     readonly #receivedCounter: CustomInstrumentWidgetMap["received"];
@@ -25,11 +26,16 @@ export class TrafficView {
     #pendingFlush: ReturnType<typeof setTimeout> | null = null;
 
     constructor(ctx: CustomInstrumentContext) {
+        this.#librariesTable = ctx.widget("libraries");
         this.#connectionsTable = ctx.widget("connections");
         this.#sentCounter = ctx.widget("sent");
         this.#receivedCounter = ctx.widget("received");
         this.#payloadHex = ctx.widget("payload");
         this.#showTotals();
+    }
+
+    showLibrary(report: LibraryReport): void {
+        this.#librariesTable.upsertRow({ id: report.module, cells: { ...report } });
     }
 
     showConnection(connection: Connection): void {
@@ -114,6 +120,7 @@ function connectionCells(connection: Connection) {
     return {
         host: serverName ?? missing,
         peer: peer ?? missing,
+        library: connection.libraryName,
         protocol: protocolSummary(connection),
         cipher: cipher ?? missing,
         sent: formattedByteCount(connection.sent),

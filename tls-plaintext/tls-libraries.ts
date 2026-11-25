@@ -1,13 +1,24 @@
+import { readExecutableImage } from "./executable-image.js";
+import { locateStaticBoringSsl, type BoringSslEntryPoints } from "./static-boringssl.js";
+
 export type Direction = "sent" | "received";
 
 export interface TlsTrafficObserver {
     onHandshake(session: NativePointer, library: TlsLibrary): void;
     onData(session: NativePointer, library: TlsLibrary, direction: Direction, data: NativePointer, length: number): void;
     onFree(session: NativePointer): void;
+    onLibrary(report: LibraryReport): void;
 }
 
 export interface TlsLibrary {
+    name: string;
     describe(session: NativePointer): SessionDetails;
+}
+
+export interface LibraryReport {
+    module: string;
+    backend: string;
+    status: string;
 }
 
 export interface SessionDetails {
@@ -62,19 +73,11 @@ class TlsInterceptor {
     hook(module: Module): void {
         const read = module.findExportByName("SSL_read");
         const write = module.findExportByName("SSL_write");
-        if (read === null || write === null) {
-            return;
+        if (read !== null && write !== null) {
+            this.#hookExports(module, read, write);
+        } else if (mayCarryStaticBoringSsl(module)) {
+            this.#hookStaticBoringSsl(module);
         }
-
-        const library = openTlsLibrary(module);
-        const hooked: HookedModule = { listeners: [], functions: [] };
-        this.#attachTransfer(hooked, read, library, "received", returnedLength);
-        this.#attachTransfer(hooked, module.findExportByName("SSL_read_ex"), library, "received", storedLength);
-        this.#attachTransfer(hooked, write, library, "sent", returnedLength);
-        this.#attachTransfer(hooked, module.findExportByName("SSL_write_ex"), library, "sent", storedLength);
-        this.#attachHandshake(hooked, module.findExportByName("SSL_do_handshake"), library);
-        this.#attachFree(hooked, module.findExportByName("SSL_free"));
-        this.#hookedModules.set(module.path, hooked);
     }
 
     unhook(module: Module): void {
@@ -91,6 +94,50 @@ class TlsInterceptor {
             this.#release(hooked);
         }
         this.#hookedModules.clear();
+    }
+
+    #hookExports(module: Module, read: NativePointer, write: NativePointer): void {
+        const library = openTlsLibrary(module);
+        const hooked: HookedModule = { listeners: [], functions: [] };
+        this.#attachTransfer(hooked, read, library, "received", returnedLength);
+        this.#attachTransfer(hooked, module.findExportByName("SSL_read_ex"), library, "received", storedLength);
+        this.#attachTransfer(hooked, write, library, "sent", returnedLength);
+        this.#attachTransfer(hooked, module.findExportByName("SSL_write_ex"), library, "sent", storedLength);
+        this.#attachHandshake(hooked, module.findExportByName("SSL_do_handshake"), library);
+        this.#attachFree(hooked, module.findExportByName("SSL_free"));
+        this.#hookedModules.set(module.path, hooked);
+        this.#observer.onLibrary({ module: module.name, backend: "Exported SSL_read and SSL_write", status: "Hooked" });
+    }
+
+    #hookStaticBoringSsl(module: Module): void {
+        const image = readExecutableImage(module.base);
+        if (image === null) {
+            return;
+        }
+        const location = locateStaticBoringSsl(image);
+        switch (location.kind) {
+            case "absent":
+                return;
+            case "unplaced":
+                this.#observer.onLibrary({ module: module.name, backend: staticBackend, status: `Not hooked: ${location.reason}` });
+                return;
+            case "placed":
+                this.#hookEntryPoints(module, location.entryPoints);
+                this.#observer.onLibrary({ module: module.name, backend: staticBackend, status: placedStatus(location.entryPoints) });
+                return;
+        }
+    }
+
+    #hookEntryPoints(module: Module, entryPoints: BoringSslEntryPoints): void {
+        const serverNames = new Map<string, string>();
+        const library = staticBoringSslLibrary(module, serverNames);
+        const hooked: HookedModule = { listeners: [], functions: [] };
+        this.#attachTransfer(hooked, entryPoints.read, library, "received", returnedLength);
+        this.#attachTransfer(hooked, entryPoints.write, library, "sent", returnedLength);
+        this.#attachHandshake(hooked, entryPoints.doHandshake, library);
+        this.#attachSessionCreation(hooked, entryPoints.newSession, serverNames);
+        this.#attachServerNaming(hooked, entryPoints.setHostName, serverNames);
+        this.#hookedModules.set(module.path, hooked);
     }
 
     #attachTransfer(
@@ -149,6 +196,29 @@ class TlsInterceptor {
         });
     }
 
+    #attachSessionCreation(hooked: HookedModule, target: NativePointer | null, serverNames: Map<string, string>): void {
+        const observer = this.#observer;
+        this.#attach(hooked, target, {
+            onLeave(retval) {
+                serverNames.delete(retval.toString());
+                observer.onFree(retval);
+            },
+        });
+    }
+
+    #attachServerNaming(hooked: HookedModule, target: NativePointer | null, serverNames: Map<string, string>): void {
+        this.#attach(hooked, target, {
+            onEnter(args) {
+                const name = args[1];
+                if (name.isNull()) {
+                    serverNames.delete(args[0].toString());
+                } else {
+                    serverNames.set(args[0].toString(), name.readUtf8String()!);
+                }
+            },
+        });
+    }
+
     #attach(hooked: HookedModule, target: NativePointer | null, callbacks: ScriptInvocationListenerCallbacks): void {
         if (target === null || this.#claimedFunctions.has(target.toString())) {
             return;
@@ -168,6 +238,12 @@ class TlsInterceptor {
     }
 }
 
+const systemModulePrefixes = (Process.platform === "darwin") ? ["/System/", "/usr/lib/"] : ["/system/", "/apex/", "/vendor/"];
+
+function mayCarryStaticBoringSsl(module: Module): boolean {
+    return !systemModulePrefixes.some(prefix => module.path.startsWith(prefix));
+}
+
 const hostNameType = 0;
 
 function openTlsLibrary(module: Module): TlsLibrary {
@@ -179,6 +255,7 @@ function openTlsLibrary(module: Module): TlsLibrary {
     const socketHandle = exportedFunction(module, "SSL_get_fd", "int", ["pointer"]);
 
     return {
+        name: module.name,
         describe(session) {
             const cipher = currentCipher?.(session);
             const negotiated = cipher !== undefined && !cipher.isNull();
@@ -247,6 +324,35 @@ function peerAddress(handle: number | undefined): string | null {
     }
     const ip = address.ip.replace(/^::ffff:/, "");
     return ip.includes(":") ? `[${ip}]:${address.port}` : `${ip}:${address.port}`;
+}
+
+const staticBackend = "Static BoringSSL, found by its error reports";
+
+function placedStatus(entryPoints: BoringSslEntryPoints): string {
+    const hooked = [
+        "SSL_read",
+        "SSL_write",
+        "SSL_do_handshake",
+        ...(entryPoints.newSession !== null ? ["SSL_new"] : []),
+        ...(entryPoints.setHostName !== null ? ["SSL_set_tlsext_host_name"] : []),
+    ];
+    return `Hooked ${hooked.join(", ")}`;
+}
+
+function staticBoringSslLibrary(module: Module, serverNames: Map<string, string>): TlsLibrary {
+    return {
+        name: module.name,
+        describe(session) {
+            return {
+                serverName: serverNames.get(session.toString()) ?? null,
+                version: null,
+                cipher: null,
+                alpn: null,
+                peer: null,
+                complete: true,
+            };
+        },
+    };
 }
 
 function returnedLength(retval: InvocationReturnValue): number {

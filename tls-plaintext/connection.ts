@@ -20,6 +20,10 @@ export class Connection {
         this.#library = library;
     }
 
+    get libraryName(): string {
+        return this.#library.name;
+    }
+
     get label(): string {
         return this.details.serverName ?? this.details.peer ?? "";
     }

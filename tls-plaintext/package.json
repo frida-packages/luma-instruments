@@ -48,6 +48,21 @@
         "persistence": "none"
       },
       {
+        "id": "libraries",
+        "name": "Libraries",
+        "kind": "table",
+        "config": {
+          "columns": [
+            { "id": "module", "name": "Module", "alignment": "leading" },
+            { "id": "backend", "name": "Found as", "alignment": "leading" },
+            { "id": "status", "name": "Status", "alignment": "leading" }
+          ],
+          "rowActions": [],
+          "maxRows": 100
+        },
+        "persistence": "none"
+      },
+      {
         "id": "connections",
         "name": "Connections",
         "kind": "table",
@@ -55,6 +70,7 @@
           "columns": [
             { "id": "host", "name": "Host", "alignment": "leading" },
             { "id": "peer", "name": "Peer", "alignment": "leading" },
+            { "id": "library", "name": "Library", "alignment": "leading" },
             { "id": "protocol", "name": "Protocol", "alignment": "leading" },
             { "id": "cipher", "name": "Cipher", "alignment": "leading" },
             { "id": "sent", "name": "Sent", "alignment": "trailing" },
@@ -78,11 +94,12 @@
     ],
     "layout": { "column": [
       { "row": ["sent", "received"], "foldBelow": 240 },
+      { "widget": "libraries", "maxRows": 3 },
       { "widget": "connections", "share": 55, "maxRows": 10 },
       { "widget": "payload", "share": 45 }
     ] },
     "store": {
-      "summary": "See a process's TLS traffic in plaintext: every OpenSSL and BoringSSL connection with its host, protocol, ALPN and cipher, and the bytes it reads and writes.",
+      "summary": "See a process's TLS traffic in plaintext: every OpenSSL and BoringSSL connection, including BoringSSL linked statically into Flutter apps, with its host, protocol, ALPN and cipher, and the bytes it reads and writes.",
       "category": "networking",
       "access": { "kind": "free" }
     }

@@ -1,7 +1,7 @@
 import { Connection } from "./connection.js";
 import { readHttp1StartLine } from "./http1-start-line.js";
 import type { PayloadCapture } from "./payload-capture.js";
-import type { Direction, TlsLibrary, TlsTrafficObserver } from "./tls-libraries.js";
+import type { Direction, LibraryReport, TlsLibrary, TlsTrafficObserver } from "./tls-libraries.js";
 import type { TrafficView } from "./traffic-view.js";
 
 export class TlsTraffic implements TlsTrafficObserver {
@@ -29,6 +29,10 @@ export class TlsTraffic implements TlsTrafficObserver {
 
     onFree(session: NativePointer): void {
         this.#connections.delete(session.toString());
+    }
+
+    onLibrary(report: LibraryReport): void {
+        this.#view.showLibrary(report);
     }
 
     #connectionFor(session: NativePointer, library: TlsLibrary): Connection {
