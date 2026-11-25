@@ -1,0 +1,13 @@
+#import <Cocoa/Cocoa.h>
+#import "AppDelegate.h"
+
+int main(int argc, const char *argv[]) {
+  @autoreleasepool {
+    NSApplication *application = [NSApplication sharedApplication];
+    [application setActivationPolicy:NSApplicationActivationPolicyProhibited];
+    AppDelegate *delegate = [AppDelegate new];
+    application.delegate = delegate;
+    [application run];
+  }
+  return 0;
+}
