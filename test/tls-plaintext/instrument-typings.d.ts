@@ -60,7 +60,7 @@ declare interface CustomInstrumentTableWidget<Column extends string> {
 }
 
 declare interface CustomInstrumentHexWidget {
-    setHex(state: { bytes: ArrayBuffer | number[], baseAddress?: number | string }): void;
+    setHex(state: { bytes: ArrayBuffer | number[], baseAddress?: number | string | NativePointer }): void;
     clear(): void;
 }
 
@@ -200,7 +200,7 @@ declare interface CustomInstrumentTableSnapshot<Column extends string> {
 }
 
 declare interface CustomInstrumentHexSnapshot {
-    hex: { bytes: string; base_address: number } | null;
+    hex: { bytes: string; base_address: NativePointer } | null;
 }
 
 declare interface CustomInstrumentConsoleSnapshot {
