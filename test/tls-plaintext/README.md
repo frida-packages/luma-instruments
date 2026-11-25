@@ -2,7 +2,9 @@
 
 `harness.ts` loads the instrument with a fake context that prints every
 `emit` and widget call. `instrument-typings.d.ts` is what Luma generates for
-the instrument's settings and widgets; regenerate it when they change.
+the instrument's settings and widgets; regenerate it when they change, or when
+Luma's typings do, with
+`python3 test/generate-typings.py ~/src/luma tls-plaintext test/tls-plaintext/instrument-typings.d.ts`.
 
 Targets, built outside the repository:
 

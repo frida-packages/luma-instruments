@@ -26,7 +26,7 @@ write, and run the harness from the repository root:
 
 ```sh
 clang -O1 -g -framework CoreFoundation -o /tmp/trainer-game test/trainer/game.c
-python3 test/trainer/generate-typings.py ~/src/luma trainer test/trainer/luma.d.ts
+python3 test/generate-typings.py ~/src/luma trainer test/trainer/luma.d.ts
 /tmp/trainer-game &
 frida -p $! -l test/trainer/harness.ts -q -t 30
 kill %1

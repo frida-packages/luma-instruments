@@ -61,7 +61,7 @@ would write, and build the targets outside the repository:
 ```sh
 mkdir -p node_modules/@types
 ln -s ~/src/luma/Agent/node_modules/@types/frida-gum node_modules/@types/frida-gum
-python3 test/xpc-spy/generate-typings.py ~/src/luma mesh-finder test/mesh-finder/luma.d.ts
+python3 test/generate-typings.py ~/src/luma mesh-finder test/mesh-finder/luma.d.ts
 clang -fobjc-arc -framework Foundation -framework Metal -o /tmp/metal-target test/mesh-finder/metal-target.m
 clang -framework OpenGL -o /tmp/opengl-target test/mesh-finder/opengl-target.c
 ```

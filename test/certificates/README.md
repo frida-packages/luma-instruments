@@ -22,7 +22,8 @@ disposes mid-scan and reports any widget call made after that, then creates
 the instrument again and checks that the new instance's **Rescan** is enabled
 once its first scan has finished. `instrument-typings.d.ts` is what Luma
 generates for the instrument's settings and widgets; regenerate it when they
-change.
+change, or when Luma's typings do, with
+`python3 test/generate-typings.py ~/src/luma certificates test/certificates/instrument-typings.d.ts`.
 
 Build the target outside the repository, against each OpenSSL to be tried:
 
