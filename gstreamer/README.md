@@ -1,7 +1,7 @@
 # GStreamer
 
 Finds the GStreamer pipelines a process is running, those made before Luma
-attached included, and draws the live graph of any of them: bins around
+attached included, and draws the live graph of each on a page of its own: bins around
 their elements, pads on the elements, and the negotiated caps on every link.
 Each bin, element, pad and link in the drawing is an object: click one and it
 opens beside the graph, with its properties, its pads, what it is linked to,
@@ -47,12 +47,17 @@ is being read.
 - **Pipelines**: a row per top-level bin, with its name, its type, whether it
   is a pipeline or a bare bin, its state, how many elements it holds at every
   depth, its address, and whether it was found by the memory scan or by a
-  state change. **Show** puts its graph in the view. **Rescan memory**, in
-  the table's header, searches again. It is disabled until GStreamer is
-  loaded, and while a search is under way.
-- **Graph**: the pipeline being shown. The first one found is shown without
-  asking, a pipeline in preference to a bare bin; when the one shown is freed,
-  its last graph stays until the next one found takes its place.
+  state change. **Show** opens its page. **Rescan memory**, in the table's
+  header, searches again. It is disabled until GStreamer is loaded, and while
+  a search is under way. The table shows up to 10 rows and then scrolls.
+- **Bins**, under the instrument in the sidebar: a page per top-level bin,
+  named after it, with its type, element count and address beside the name
+  and its state as a badge, green while playing and amber while paused or
+  changing state. The page is the bin's graph, filling the window, and keeps
+  its own camera, so switching between bins loses neither. A bin's page goes
+  when the bin is freed or added to another bin. The pages are kept with the
+  session; when the instrument starts again, those whose bin the first
+  search of memory no longer finds are removed.
 
 The graph is drawn left to right. A bin is a box around what it holds, as
 deep as the pipeline goes; an element is a box with its type, name and state,
@@ -90,10 +95,10 @@ A click on empty canvas clears the selection.
   properties that differ from their defaults, which is the default and what
   `GST_DEBUG_GRAPH_SHOW_ALL` gives; or everything, with property values and
   caps in full rather than cut short.
-- **Seconds between refreshes of the shown graph**: 2 by default. The graph is
-  sent to the view only when it differs from the last one. At 0 the graph is
-  taken when a pipeline is shown and when a state changes in it, and the
-  table's rows are not refreshed on a timer.
+- **Seconds between refreshes of the graphs**: 2 by default. Every bin's graph
+  is taken again, and sent to its page only when it differs from the last
+  one. At 0 a graph is taken when its bin is shown and when a state changes in
+  it, and the table's rows are not refreshed on a timer.
 
 ## What it does not find
 

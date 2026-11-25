@@ -1,6 +1,6 @@
 import { isLiveTopLevelBin } from "./bin-candidates.js";
+import type { BinPage, BinPages } from "./bin-pages.js";
 import { BinScanner, type BinScanObserver, type CompletedScan, type ScanProgress } from "./bin-scan.js";
-import type { GraphDisplay } from "./graph-display.js";
 import { GStreamerApi } from "./gstreamer-api.js";
 import { GStreamerLibraryWatch, type LibraryArrival } from "./gstreamer-library.js";
 import type { PipelineTable } from "./pipeline-table.js";
@@ -22,14 +22,10 @@ const settleMilliseconds = 250;
 export class PipelineWatch implements BinScanObserver {
     readonly #status: ScanStatus;
     readonly #table: PipelineTable;
-    readonly #graph: GraphDisplay;
+    readonly #pages: BinPages;
     readonly #settings: Settings;
     readonly #libraryWatch = new GStreamerLibraryWatch((library, arrival) => this.#onLibrary(library, arrival));
     #gst: LoadedGStreamer | null = null;
-    #shown: TrackedBin | null = null;
-    #arrivals: TrackedBin[] = [];
-    #scanning = false;
-    #scansFinished = 0;
     readonly #changed = new Set<TrackedBin>();
     #pendingRefresh: ReturnType<typeof setTimeout> | null = null;
     #refreshTimer: ReturnType<typeof setInterval> | null = null;
@@ -38,12 +34,12 @@ export class PipelineWatch implements BinScanObserver {
     constructor(
         status: ScanStatus,
         table: PipelineTable,
-        graph: GraphDisplay,
+        pages: BinPages,
         settings: Settings,
     ) {
         this.#status = status;
         this.#table = table;
-        this.#graph = graph;
+        this.#pages = pages;
         this.#settings = settings;
     }
 
@@ -51,30 +47,31 @@ export class PipelineWatch implements BinScanObserver {
         this.#status.showWaitingForLibrary();
         this.#table.enableRescan(false);
         this.#libraryWatch.start();
+        if (this.#gst === null) {
+            this.#pages.dropUnconfirmed();
+        }
     }
 
     applySettings(previousDetails: Settings["details"]): void {
         this.#startRefreshTimer();
-        if (this.#settings.details !== previousDetails && this.#shown !== null) {
-            this.#refresh(this.#shown);
+        if (this.#settings.details !== previousDetails && this.#gst !== null) {
+            this.#refreshAll();
         }
     }
 
-    show(id: string): void {
+    show(id: string): BinPage | null {
         const bin = this.#gst!.bins.find(id);
         if (bin === undefined) {
-            return;
+            return null;
         }
-        this.#shown = bin;
-        this.#arrivals = [];
         this.#refresh(bin);
+        return this.#pages.find(bin);
     }
 
     rescan(): void {
         const gst = this.#gst!;
         const classes = gst.api.binClasses();
         gst.classes = new Set(classes.map(cls => cls.toString()));
-        this.#scanning = true;
         this.#table.enableRescan(false);
         gst.scanner.start(classes);
     }
@@ -105,19 +102,15 @@ export class PipelineWatch implements BinScanObserver {
 
     onScanFinished(scan: CompletedScan): void {
         this.#status.showScanFinished(scan);
-        this.#scanning = false;
         this.#table.enableRescan(true);
         this.#refreshChanged();
-        this.#scansFinished++;
-        if (this.#scansFinished === 1 && this.#gst!.bins.all().length === 0) {
-            this.#graph.clear();
-        }
+        this.#pages.dropUnconfirmed();
     }
 
     onScanFailed(error: Error): void {
         this.#status.showScanFailed(error);
-        this.#scanning = false;
         this.#table.enableRescan(true);
+        this.#pages.dropUnconfirmed();
     }
 
     #onLibrary(library: Module, arrival: LibraryArrival): void {
@@ -146,11 +139,7 @@ export class PipelineWatch implements BinScanObserver {
     }
 
     #track(object: NativePointer, foundBy: Discovery): void {
-        const { bin, isNew } = this.#gst!.bins.track(object, foundBy);
-        if (isNew) {
-            this.#arrivals.push(bin);
-        }
-        this.#changed.add(bin);
+        this.#changed.add(this.#gst!.bins.track(object, foundBy));
         this.#pendingRefresh ??= setTimeout(() => this.#refreshChanged(), settleMilliseconds);
     }
 
@@ -162,7 +151,6 @@ export class PipelineWatch implements BinScanObserver {
         const bins = [...this.#changed];
         this.#changed.clear();
         bins.forEach(bin => this.#refresh(bin));
-        this.#showNextIfNothingShown();
     }
 
     #startRefreshTimer(): void {
@@ -181,48 +169,29 @@ export class PipelineWatch implements BinScanObserver {
 
     #refreshAll(): void {
         this.#gst!.bins.all().forEach(bin => this.#refresh(bin));
-        this.#showNextIfNothingShown();
     }
 
     #refresh(bin: TrackedBin): void {
         const { api, bins } = this.#gst!;
-        const isShown = bin === this.#shown;
         const { detailFlags, details } = this.#settings;
         const taken = bins.hold(bin, object => api.hasParent(object) ? null : {
             facts: api.factsOf(object),
-            dot: isShown ? api.dotOf(object, detailFlags) : null,
+            dot: api.dotOf(object, detailFlags),
         });
         if (taken === null) {
             this.#forgetGone(bin);
             return;
         }
-        bin.facts = taken.facts;
         this.#table.showBin(bin, taken.facts);
-        if (taken.dot !== null) {
-            this.#graph.show(bin, taken.facts, details, taken.dot);
-        }
+        this.#pages.show(bin, taken.facts, details, taken.dot);
     }
 
     #forgetGone(bin: TrackedBin): void {
         const { bins } = this.#gst!;
         bins.forget(bin);
-        if (this.#shown === bin) {
-            this.#shown = null;
-        }
         if (bins.find(bin.id) === undefined) {
             this.#table.removeBin(bin);
-        }
-    }
-
-    #showNextIfNothingShown(): void {
-        if (this.#shown !== null || this.#scanning) {
-            return;
-        }
-        const { bins } = this.#gst!;
-        this.#arrivals = this.#arrivals.filter(bin => bin.facts !== null && bins.find(bin.id) === bin);
-        const next = this.#arrivals.find(bin => bin.facts!.isPipeline) ?? this.#arrivals[0];
-        if (next !== undefined) {
-            this.show(next.id);
+            this.#pages.remove(bin);
         }
     }
 }

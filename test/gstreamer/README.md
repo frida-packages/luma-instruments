@@ -22,24 +22,28 @@ found, the element names its graph must show, and whether it should be listed
 before the signal, after it, both or never.
 
 `harness.ts` loads the instrument with a fake `ctx` that records every widget
-call, and checks that:
+call and keeps the children the instrument adds, and checks that:
 
 - the scan lists exactly the expected bins, with their names, types, kinds,
   states, recursive element counts, addresses as row ids and "memory scan" as
   how they were found, and again after **Rescan memory** in the `pipelines`
   table's header, which is disabled during each scan and enabled after it;
-- a pipeline's graph is shown without asking;
-- **Show** on each row sends that bin's graph, with a `digraph` payload naming
-  each of its elements;
+- each listed bin has a page, titled with its name, its type and element count
+  in the subtitle and its state as the badge, with the right tone, and its
+  graph sent to it without asking; no other page is left;
+- **Show** on each row shows that bin's page through `respond.show`, whose
+  graph is a `digraph` payload naming each of its elements;
 - each detail level sends a graph with that `details`: states leaves the caps
   out, the default shows them cut short, and verbose shows them in full;
 - an unchanging graph is not sent again while the refresh timer runs;
-- after `SIGUSR1`, `late-pipeline` is listed as found by a state change, the
-  rows of `app-pipeline` and of `adopted-bin`, which now has a parent, are
-  gone, `spare-bin` was never listed, and the view, which was showing
-  `app-pipeline`, went on to `late-pipeline` without being cleared;
+- after `SIGUSR1`, `late-pipeline` is listed as found by a state change and
+  has a page, the rows and pages of `app-pipeline` and of `adopted-bin`, which
+  now has a parent, are gone, and `spare-bin` was never listed;
 - after `dispose()` no widget call is made and `gst_element_set_state` is back
-  to its original bytes.
+  to its original bytes;
+- created again with the pages of the first instance and one of a bin long
+  gone, as Luma restores them, the instrument removes only the gone one once
+  its first scan has ended.
 
 `run.py` starts the target, attaches, runs the harness, detaches, sends
 `SIGUSR2`, and exits non-zero if a check failed or the target could not
@@ -53,7 +57,7 @@ would write, and build the target outside the repository:
 ```sh
 mkdir -p node_modules/@types
 ln -s ~/src/luma/Agent/node_modules/@types/frida-gum node_modules/@types/frida-gum
-python3 test/xpc-spy/generate-typings.py ~/src/luma gstreamer test/gstreamer/luma.d.ts
+python3 test/generate-typings.py ~/src/luma gstreamer test/gstreamer/luma.d.ts
 clang -o /tmp/gstreamer-target test/gstreamer/target.c $(pkg-config --cflags --libs gstreamer-1.0)
 ```
 

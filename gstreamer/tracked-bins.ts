@@ -1,20 +1,14 @@
-import type { BinFacts, GStreamerApi } from "./gstreamer-api.js";
+import type { GStreamerApi } from "./gstreamer-api.js";
 
 export type Discovery = "memory scan" | "state change";
 
 export class TrackedBin {
     readonly id: string;
     readonly weakRef = Memory.alloc(Process.pointerSize);
-    facts: BinFacts | null = null;
 
     constructor(readonly address: NativePointer, readonly foundBy: Discovery) {
         this.id = address.toString();
     }
-}
-
-export interface Tracking {
-    bin: TrackedBin;
-    isNew: boolean;
 }
 
 export class TrackedBins {
@@ -25,10 +19,10 @@ export class TrackedBins {
         this.#api = api;
     }
 
-    track(object: NativePointer, foundBy: Discovery): Tracking {
+    track(object: NativePointer, foundBy: Discovery): TrackedBin {
         const known = this.#bins.get(object.toString());
         if (known !== undefined && this.#isAlive(known)) {
-            return { bin: known, isNew: false };
+            return known;
         }
         if (known !== undefined) {
             this.forget(known);
@@ -36,7 +30,7 @@ export class TrackedBins {
         const bin = new TrackedBin(object, foundBy);
         this.#api.initWeakRef(bin.weakRef, object);
         this.#bins.set(bin.id, bin);
-        return { bin, isNew: true };
+        return bin;
     }
 
     find(id: string): TrackedBin | undefined {

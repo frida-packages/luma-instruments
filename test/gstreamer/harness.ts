@@ -1,7 +1,7 @@
 /// <reference path="./luma.d.ts" />
 
 import { instrument } from "../../gstreamer/main.js";
-import type { GraphState } from "../../gstreamer/graph-display.js";
+import type { GraphState } from "../../gstreamer/bin-pages.js";
 import { scanningTitle } from "../../gstreamer/scan-status.js";
 
 interface Expectation {
@@ -21,6 +21,7 @@ interface Row {
 }
 
 interface SentGraph {
+    child: string;
     value: GraphState;
     data: ArrayBuffer;
     dot: string;
@@ -41,6 +42,7 @@ const IDLE_MS = 2500;
 const SIGNAL_SETTLE_MS = 1500;
 const AFTER_DISPOSE_MS = 2500;
 const COMPARED_BYTES = 16;
+const STALE_CHILD = "0x1";
 const details: Detail[] = ["states", "all", "verbose"];
 const capsDetail = "format=(string)I420";
 const fullCaps = "framerate=(fraction)15/1, pixel-aspect-ratio=(fraction)1/1";
@@ -48,6 +50,9 @@ const fullCaps = "framerate=(fraction)15/1, pixel-aspect-ratio=(fraction)1/1";
 const rows = new Map<string, Row>();
 const graphs: SentGraph[] = [];
 const calls: WidgetCall[] = [];
+const pages = new Map<string, CustomInstrumentChildRow>();
+const removedPages: string[] = [];
+let shownPage: string | null | undefined;
 let disposed = false;
 let scansFinished = 0;
 let statusTitle = "";
@@ -62,11 +67,38 @@ const ctx = {
     widget(id: string) {
         return new Proxy({}, {
             get(_target, method: string) {
-                return (...args: any[]) => record(id, method, args);
+                return (...args: any[]) => record(id, method, args, null);
             },
         });
     },
+    children(template: string) {
+        return {
+            add(id: string, row: CustomInstrumentChildRow) {
+                calls.push({ widget: `${template}/${id}`, method: "add", afterDispose: disposed });
+                pages.set(id, row);
+                return pageHandle(id);
+            },
+            get: (id: string) => pages.has(id) ? pageHandle(id) : undefined,
+            ids: () => [...pages.keys()],
+            remove(id: string) {
+                calls.push({ widget: `${template}/${id}`, method: "remove", afterDispose: disposed });
+                if (!pages.delete(id)) {
+                    throw new Error(`there is no child ${id}`);
+                }
+                removedPages.push(id);
+            },
+        };
+    },
 } as unknown as CustomInstrumentContext;
+
+const respond: CustomInstrumentActionResponder = {
+    file: () => {
+        throw new Error("GStreamer offered a file");
+    },
+    show(child) {
+        shownPage = child?.id ?? null;
+    },
+};
 
 rpc.exports = {
     test(out: string): Promise<number> {
@@ -82,13 +114,13 @@ async function test(out: string): Promise<number> {
     const setState = Module.getGlobalExportByName("gst_element_set_state");
     const pristine = hexOf(setState.readByteArray(COMPARED_BYTES)!);
 
-    const handle = await instrument.create(ctx, configWith("all", 1), { graph: { state: null } });
+    const handle = await instrument.create(ctx, configWith("all", 1), {});
     checkRescan(false, "during the first scan");
     await scanFinished(1);
     checkRescan(true, "after the first scan");
     checkRows(expectations, "before-signal");
-    checkAutoShown(expectations);
-    handle.onAction!({ widget: "pipelines", action: "rescan" });
+    checkPages(expectations, "before-signal");
+    handle.onAction!({ widget: "pipelines", action: "rescan" }, respond);
     checkRescan(false, "during the rescan");
     await scanFinished(2);
     checkRescan(true, "after the rescan");
@@ -107,6 +139,7 @@ async function test(out: string): Promise<number> {
     verify(hexOf(setState.readByteArray(COMPARED_BYTES)!) === pristine,
         "gst_element_set_state is back to its original bytes",
         "gst_element_set_state was left changed after dispose");
+    await checkRestored(expectations);
     console.log(`\n${failures} failures`);
     return failures;
 }
@@ -114,7 +147,7 @@ async function test(out: string): Promise<number> {
 async function explore(out: string, seconds: number): Promise<number> {
     const setState = Module.getGlobalExportByName("gst_element_set_state");
     const pristine = hexOf(setState.readByteArray(COMPARED_BYTES)!);
-    const handle = await instrument.create(ctx, configWith("all", 1), { graph: { state: null } });
+    const handle = await instrument.create(ctx, configWith("all", 1), {});
     await scanFinished(1);
     await sleep(seconds * 1000);
     console.log(`\n${rows.size} rows:`);
@@ -124,7 +157,7 @@ async function explore(out: string, seconds: number): Promise<number> {
     for (const row of binRows()) {
         for (const detail of ["all", "verbose"] as Detail[]) {
             await handle.updateConfig!(configWith(detail, 1));
-            handle.onAction!({ widget: "pipelines", action: "show", item: row.id });
+            handle.onAction!({ widget: "pipelines", action: "show", item: row.id }, respond);
             const shown = latestGraphOf(row.id);
             verify(shown !== null && shown.dot.startsWith("digraph"),
                 `${row.cells.name} (${detail}): ${shown?.dot.length} bytes of dot`,
@@ -145,8 +178,22 @@ async function explore(out: string, seconds: number): Promise<number> {
     return failures;
 }
 
-function record(widget: string, method: string, args: any[]): void {
-    calls.push({ widget, method, afterDispose: disposed });
+function pageHandle(id: string) {
+    return {
+        template: "bin",
+        id,
+        widget(widget: string) {
+            return new Proxy({}, {
+                get(_target, method: string) {
+                    return (...args: any[]) => record(widget, method, args, id);
+                },
+            });
+        },
+    };
+}
+
+function record(widget: string, method: string, args: any[], child: string | null): void {
+    calls.push({ widget: (child !== null) ? `bin/${child}/${widget}` : widget, method, afterDispose: disposed });
     if (widget === "pipelines" && method === "setActionEnabled" && args[0] === "rescan") {
         rescanEnabled = args[1];
     } else if (widget === "scan" && method === "upsertItem") {
@@ -161,11 +208,11 @@ function record(widget: string, method: string, args: any[]): void {
         rows.delete(args[0]);
     } else if (widget === "pipelines" && method === "clear") {
         rows.clear();
-    } else if (widget === "graph" && method === "setState") {
+    } else if (child !== null && widget === "graph" && method === "setState") {
         const data = args[1] as ArrayBuffer;
-        graphs.push({ value: args[0], data, dot: textOf(data) });
-    } else if (widget === "graph") {
-        console.log(`graph.${method}()`);
+        graphs.push({ child, value: args[0], data, dot: textOf(data) });
+    } else if (child !== null) {
+        console.log(`bin ${child} ${widget}.${method}()`);
     }
 }
 
@@ -215,22 +262,35 @@ function checkRows(expectations: Expectation[], phase: "before-signal" | "after-
     verify(strays.length === 0, "nothing unexpected is listed", `unexpected rows: ${strays.map(row => row.cells.name).join(", ")}`);
 }
 
-function checkAutoShown(expectations: Expectation[]): void {
-    const first = graphs[0];
-    if (first === undefined) {
-        verify(false, "", "no graph was shown without asking");
-        return;
+function checkPages(expectations: Expectation[], phase: "before-signal" | "after-signal"): void {
+    const expected = expectations.filter(phase === "before-signal" ? isListedBeforeSignal : isListedAfterSignal);
+    for (const e of expected) {
+        const row = rowNamed(e.name);
+        const page = (row !== undefined) ? pages.get(row.id) : undefined;
+        const graph = (row !== undefined) ? latestGraphOf(row.id) : null;
+        const wantedTone = { playing: "active", paused: "waiting", ready: "neutral", null: "ended" }[e.state];
+        const problems = [
+            ...(page === undefined ? ["it has no page"] : []),
+            ...(page !== undefined && page.title !== e.name ? [`its page is titled ${page.title}`] : []),
+            ...(page !== undefined && !(page.subtitle ?? "").startsWith(`${e.type} · ${e.elements} element`) ? [`its page's subtitle is ${page.subtitle}`] : []),
+            ...(page !== undefined && (page.badge?.text !== e.state || page.badge?.tone !== wantedTone)
+                ? [`its badge is ${JSON.stringify(page.badge)}`] : []),
+            ...(graph === null ? ["no graph was sent to its page without asking"] : []),
+            ...(graph !== null && graph.value.pipeline.name !== e.name ? [`its page's graph is of ${graph.value.pipeline.name}`] : []),
+        ];
+        verify(problems.length === 0, `${e.name} has its page, titled, badged ${e.state} and with its graph`,
+            `${e.name}: ${problems.join("; ")}`);
     }
-    const expected = expectations.find(e => e.name === first.value.pipeline.name);
-    verify(expected !== undefined && expected.kind === "pipeline",
-        `${first.value.pipeline.name} was shown without asking`,
-        `the graph shown without asking is ${first.value.pipeline.name}`);
+    const strays = [...pages.keys()].filter(id => !expected.some(e => rowNamed(e.name)?.id === id));
+    verify(strays.length === 0, "no page is left for a bin that is not listed", `pages with no listed bin: ${strays.join(", ")}`);
 }
 
 function checkShown(handle: CustomInstrumentHandle, expected: Expectation, out: string): void {
     const row = rowNamed(expected.name)!;
-    handle.onAction!({ widget: "pipelines", action: "show", item: row.id });
-    const shown = graphs[graphs.length - 1];
+    shownPage = undefined;
+    handle.onAction!({ widget: "pipelines", action: "show", item: row.id }, respond);
+    verify(shownPage === row.id, `Show ${expected.name} shows its page`, `Show ${expected.name} showed ${shownPage}`);
+    const shown = latestGraphOf(row.id)!;
     const { pipeline } = shown.value;
     const missing = expected.children.filter(child => !shown.dot.includes(child));
     const problems = [
@@ -251,8 +311,7 @@ async function checkDetails(handle: CustomInstrumentHandle, out: string): Promis
     const dots = new Map<Detail, SentGraph>();
     for (const detail of details) {
         await handle.updateConfig!(configWith(detail, 1));
-        handle.onAction!({ widget: "pipelines", action: "show", item: row.id });
-        const shown = graphs[graphs.length - 1];
+        const shown = latestGraphOf(row.id)!;
         dots.set(detail, shown);
         verify(shown.value.details === detail && shown.value.pipeline.id === row.id,
             `detail ${detail}: ${shown.dot.length} bytes`,
@@ -269,25 +328,21 @@ async function checkDetails(handle: CustomInstrumentHandle, out: string): Promis
 
 async function checkIdle(handle: CustomInstrumentHandle): Promise<void> {
     const row = rowNamed("lonely-bin")!;
-    handle.onAction!({ widget: "pipelines", action: "show", item: row.id });
-    const before = graphs.length;
+    handle.onAction!({ widget: "pipelines", action: "show", item: row.id }, respond);
+    const before = graphs.filter(graph => graph.child === row.id).length;
     await sleep(IDLE_MS);
-    verify(graphs.length === before, "an unchanging graph is not sent again",
-        `${graphs.length - before} states were sent for an unchanging graph`);
+    const after = graphs.filter(graph => graph.child === row.id).length;
+    verify(after === before, "an unchanging graph is not sent again", `${after - before} states were sent for an unchanging graph`);
 }
 
 async function checkSignal(handle: CustomInstrumentHandle, expectations: Expectation[], out: string): Promise<void> {
-    const app = rowNamed("app-pipeline")!;
-    handle.onAction!({ widget: "pipelines", action: "show", item: app.id });
-    const clearsBefore = calls.filter(call => call.widget === "graph" && call.method === "clear").length;
+    const gone = ["app-pipeline", "adopted-bin"].map(name => rowNamed(name)!.id);
     new NativeFunction(Module.getGlobalExportByName("raise"), "int", ["int"])(SIGUSR1);
     await sleep(SIGNAL_SETTLE_MS);
     checkRows(expectations, "after-signal");
-    const clearsAfter = calls.filter(call => call.widget === "graph" && call.method === "clear").length;
-    const last = graphs[graphs.length - 1];
-    verify(clearsAfter === clearsBefore && last.value.pipeline.name === "late-pipeline",
-        "after app-pipeline died the view went on to late-pipeline without being cleared",
-        `after app-pipeline died the view shows ${last.value.pipeline.name}, cleared ${clearsAfter - clearsBefore} times`);
+    checkPages(expectations, "after-signal");
+    verify(gone.every(id => removedPages.includes(id)), "the pages of app-pipeline, freed, and adopted-bin, adopted, were removed",
+        `removed pages: ${removedPages.join(", ")}`);
     const late = rowNamed("late-pipeline");
     if (late !== undefined) {
         checkShown(handle, expectations.find(e => e.name === "late-pipeline")!, out);
@@ -298,6 +353,20 @@ function checkQuietAfterDispose(): void {
     const late = calls.filter(call => call.afterDispose);
     verify(late.length === 0, "no widget call after dispose",
         `widget calls after dispose: ${late.map(call => `${call.widget}.${call.method}`).join(", ")}`);
+}
+
+async function checkRestored(expectations: Expectation[]): Promise<void> {
+    const kept = [...pages.keys()];
+    pages.set(STALE_CHILD, { title: "freed-long-ago", subtitle: "GstPipeline", badge: { text: "playing", tone: "active" } });
+    removedPages.length = 0;
+    disposed = false;
+    const handle = await instrument.create(ctx, configWith("all", 1), {});
+    await scanFinished(3);
+    verify(removedPages.length === 1 && removedPages[0] === STALE_CHILD && kept.every(id => pages.has(id)),
+        `once created again, the instance pruned the page of a bin that is gone and kept the ${kept.length} live ones`,
+        `once created again, it removed ${JSON.stringify(removedPages)} and kept ${[...pages.keys()].join(", ")}`);
+    checkPages(expectations, "after-signal");
+    await handle.dispose!();
 }
 
 function isListedBeforeSignal(e: Expectation): boolean {
@@ -317,7 +386,7 @@ function binRows(): Row[] {
 }
 
 function latestGraphOf(id: string): SentGraph | null {
-    return [...graphs].reverse().find(graph => graph.value.pipeline.id === id) ?? null;
+    return [...graphs].reverse().find(graph => graph.child === id && graph.value.pipeline.id === id) ?? null;
 }
 
 function saveDot(out: string, name: string, graph: SentGraph): void {

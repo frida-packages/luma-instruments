@@ -1,4 +1,4 @@
-import { GraphDisplay } from "./graph-display.js";
+import { BinPages } from "./bin-pages.js";
 import { PipelineTable } from "./pipeline-table.js";
 import { PipelineWatch } from "./pipeline-watch.js";
 import { ScanStatus } from "./scan-status.js";
@@ -9,8 +9,8 @@ export const instrument: CustomInstrument = {
         const settings = new Settings(config);
         const status = new ScanStatus(ctx.widget("scan"));
         const table = new PipelineTable(ctx.widget("pipelines"), status);
-        const graph = new GraphDisplay(ctx.widget("graph"));
-        const watch = new PipelineWatch(status, table, graph, settings);
+        const pages = new BinPages(ctx.children("bin"));
+        const watch = new PipelineWatch(status, table, pages, settings);
         watch.start();
 
         return {
@@ -19,9 +19,9 @@ export const instrument: CustomInstrument = {
                 settings.apply(next);
                 watch.applySettings(previousDetails);
             },
-            onAction({ action, item }) {
+            onAction({ action, item }, respond) {
                 if (action === "show") {
-                    watch.show(item);
+                    respond.show(watch.show(item));
                 } else {
                     watch.rescan();
                 }

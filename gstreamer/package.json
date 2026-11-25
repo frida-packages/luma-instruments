@@ -25,7 +25,7 @@
       },
       {
         "id": "refreshInterval",
-        "name": "Seconds between refreshes of the shown graph (0: only on Show)",
+        "name": "Seconds between refreshes of the graphs (0: only on Show and state changes)",
         "schema": { "kind": "uint", "default": 2, "min": 0, "max": 3600 },
         "optional": false,
         "enabledByDefault": true
@@ -57,13 +57,23 @@
         },
         "actions": [{ "id": "rescan", "name": "Rescan memory" }],
         "persistence": "none"
-      },
+      }
+    ],
+    "layout": { "column": ["scan", { "widget": "pipelines", "maxRows": 10 }] },
+    "children": [
       {
-        "id": "graph",
-        "name": "Graph",
-        "kind": "view",
-        "config": { "class": "PipelineGraphView", "height": 480 },
-        "persistence": "session"
+        "id": "bin",
+        "name": "Bins",
+        "icon": { "kind": "symbolic", "value": "network" },
+        "widgets": [
+          {
+            "id": "graph",
+            "kind": "view",
+            "config": { "class": "PipelineGraphView", "height": 320 },
+            "persistence": "session"
+          }
+        ],
+        "layout": { "column": [{ "widget": "graph", "share": 1 }] }
       }
     ],
     "store": {
