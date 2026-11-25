@@ -30,6 +30,10 @@ Python's `libssl` when a script first imports `ssl`.
   connection sent or received in a row, so an HTTP/1 response shows up whole
   rather than as its last chunk. It holds up to 64 KiB.
 
+The two counters sit side by side at the top, even on a phone, and the
+connections and the latest payload share the rest of the page, the table
+above the hex view.
+
 Each captured chunk is also an event, carrying `direction` (`sent` or
 `received`), `host`, `peer` when known, `length` and `data`, which Luma shows
 as a hex dump and can decode with a pattern. When a write begins with an
