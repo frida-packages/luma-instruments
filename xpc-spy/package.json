@@ -64,6 +64,7 @@
         "persistence": "none"
       }
     ],
+    "layout": { "column": [{ "widget": "services", "maxRows": 8 }, { "widget": "messages", "share": 1 }] },
     "store": {
       "summary": "The XPC messages a process sends and receives, per service: requests, replies and events as expandable values, with NSXPC selectors and optional sender backtraces.",
       "category": "ipc",
