@@ -20,6 +20,13 @@ const ctx = {
     },
 } as unknown as CustomInstrumentContext;
 
+const actionRespond: CustomInstrumentActionResponder = {
+    file: () => {
+        throw new Error("TLS Plaintext offered a file");
+    },
+    show: child => console.log(`respond.show ${child?.id ?? "page"}`),
+};
+
 const hookableExports = ["SSL_read", "SSL_read_ex", "SSL_write", "SSL_write_ex", "SSL_do_handshake", "SSL_free"];
 const pristinePrologues = snapshotPrologues();
 const handle = await instrument.create(ctx, { settings: defaultSettings }, {});
@@ -29,7 +36,7 @@ rpc.exports = {
         await handle.updateConfig?.({ settings });
     },
     async clear(widget: "sent" | "received" | "connections") {
-        await handle.onAction!({ widget, action: "clear" });
+        await handle.onAction!({ widget, action: "clear" }, actionRespond);
     },
     async dispose() {
         await handle.dispose?.();
