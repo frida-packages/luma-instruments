@@ -1,0 +1,6 @@
+{
+  "name": "luma-electron-fixture",
+  "productName": "Luma Electron Fixture",
+  "version": "1.2.3",
+  "main": "main.js"
+}
