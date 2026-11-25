@@ -56,13 +56,16 @@ removes the value it writes.
 
 `churn.m` is a process whose threads, four unless given another number, each
 create a client of an in-process listener, send it a request and cancel it, in
-a tight loop. Given a second number, it first connects that many standing
-clients, each with a request the listener's peer holds unanswered. `churn.ts`
-searches its memory for existing connections and requests awaiting a reply
-100 times while that goes on, and prints how many searches threw, how many of
-the handler functions found are not at the start of a block's code, and how
-long the process was stopped; the first two should be 0, and the target should
-keep printing its round count:
+a tight loop, with at most 32 connections in flight per thread so that they
+cannot outrun the listener. Given a second number, it first connects that many
+standing clients, each with a request the listener's peer holds unanswered.
+`churn.ts` searches its memory for existing connections and requests awaiting
+a reply 100 times while that goes on, and prints how many searches threw, how
+many of the handler functions found are not at the start of a block's code,
+and how long the process was stopped; the first two should be 0, and the
+target should keep printing its round count. On a heavily loaded machine a
+search can throw because the process's threads could not all be stopped
+outside the allocator in time, which is the instrument failing closed:
 
 ```sh
 clang -fobjc-arc -framework Foundation -o /tmp/xpc-spy-churn test/xpc-spy/churn.m
@@ -71,9 +74,4 @@ sleep 1
 frida -p $! -l test/xpc-spy/churn.ts -q -t 2
 ```
 
-Run it at once: in this target, attaching Frida, even without a script, stops
-canceled connections from being torn down, and about 20 seconds later libxpc
-runs out of ports and aborts it. With 16 threads that takes under 10 seconds,
-and the connections left behind soon number more than the instrument reads
-while the process is stopped; `/tmp/xpc-spy-churn 1 300` gives a process with
-many connections under churn that stays below that.
+`/tmp/xpc-spy-churn 4 300` gives a process with many connections under churn.

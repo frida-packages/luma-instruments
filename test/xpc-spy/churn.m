@@ -2,6 +2,8 @@
 #import <xpc/xpc.h>
 #include <pthread.h>
 
+#define CONNECTIONS_IN_FLIGHT 32
+
 static xpc_endpoint_t endpoint;
 static volatile long rounds;
 static NSMutableArray *held_requests;
@@ -11,11 +13,14 @@ static void *churn(void *context)
 {
     dispatch_queue_t reply_queue = dispatch_queue_create("replies", NULL);
     long thread = (long)context;
+    dispatch_semaphore_t in_flight = dispatch_semaphore_create(CONNECTIONS_IN_FLIGHT);
     for (;;) {
+        dispatch_semaphore_wait(in_flight, DISPATCH_TIME_FOREVER);
         @autoreleasepool {
             xpc_connection_t client = xpc_connection_create_from_endpoint(endpoint);
             xpc_connection_set_event_handler(client, ^(xpc_object_t event) {
-                (void)thread;
+                if (event == XPC_ERROR_CONNECTION_INVALID)
+                    dispatch_semaphore_signal(in_flight);
             });
             xpc_connection_resume(client);
             xpc_object_t request = xpc_dictionary_create(NULL, NULL, 0);
