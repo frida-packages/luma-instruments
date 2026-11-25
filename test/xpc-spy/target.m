@@ -67,6 +67,36 @@ static void serve_peer(xpc_connection_t peer)
     xpc_connection_resume(peer);
 }
 
+#define HELD_REPLY_TICK 3
+
+static xpc_object_t held_request;
+
+static void serve_standing_peer(xpc_connection_t peer)
+{
+    xpc_connection_set_event_handler(peer, ^(xpc_object_t event) {
+        if (xpc_get_type(event) != XPC_TYPE_DICTIONARY)
+            return;
+        if (strcmp(xpc_dictionary_get_string(event, "op"), "hold") == 0) {
+            held_request = event;
+            return;
+        }
+        int64_t seq = xpc_dictionary_get_int64(event, "seq");
+        printf("[standing peer] poke seq=%lld\n", seq);
+        if (held_request != nil && seq >= HELD_REPLY_TICK) {
+            xpc_object_t reply = xpc_dictionary_create_reply(held_request);
+            xpc_dictionary_set_string(reply, "status", "released");
+            xpc_dictionary_set_int64(reply, "seq", seq);
+            xpc_connection_send_message(peer, reply);
+            held_request = nil;
+        }
+        xpc_object_t note = xpc_dictionary_create(NULL, NULL, 0);
+        xpc_dictionary_set_string(note, "notice", "pushed to standing client");
+        xpc_dictionary_set_int64(note, "seq", seq);
+        xpc_connection_send_message(peer, note);
+    });
+    xpc_connection_resume(peer);
+}
+
 static xpc_connection_t make_client(xpc_endpoint_t endpoint, const char *label)
 {
     xpc_connection_t client = xpc_connection_create_from_endpoint(endpoint);
@@ -105,6 +135,35 @@ int main(int argc, char *argv[])
 
         xpc_connection_t early_client = make_client(endpoint, "early");
 
+        dispatch_queue_t reply_queue = dispatch_queue_create("replies", NULL);
+
+        __block int standing_peers = 0;
+        xpc_connection_t standing_listener = xpc_connection_create(NULL, server_queue);
+        xpc_connection_set_event_handler(standing_listener, ^(xpc_object_t peer) {
+            if (xpc_get_type(peer) != XPC_TYPE_CONNECTION)
+                return;
+            printf("[standing listener] peer #%d\n", ++standing_peers);
+            if (standing_peers == 1)
+                serve_standing_peer(peer);
+            else
+                serve_peer(peer);
+        });
+        xpc_connection_resume(standing_listener);
+        xpc_endpoint_t standing_endpoint = xpc_endpoint_create(standing_listener);
+
+        xpc_connection_t standing_client = xpc_connection_create_from_endpoint(standing_endpoint);
+        xpc_connection_set_event_handler(standing_client, ^(xpc_object_t event) {
+            char *description = xpc_copy_description(event);
+            printf("[standing client] event: %.120s\n", description);
+            free(description);
+        });
+        xpc_connection_resume(standing_client);
+        xpc_object_t hold = xpc_dictionary_create(NULL, NULL, 0);
+        xpc_dictionary_set_string(hold, "op", "hold");
+        xpc_connection_send_message_with_reply(standing_client, hold, reply_queue, ^(xpc_object_t reply) {
+            printf("[standing client] held reply status=%s\n", xpc_dictionary_get_string(reply, "status"));
+        });
+
         GreeterService *service = [GreeterService new];
         NSXPCListener *nsListener = [NSXPCListener anonymousListener];
         nsListener.delegate = service;
@@ -115,9 +174,16 @@ int main(int argc, char *argv[])
 
         NSUserDefaults *defaults = [[NSUserDefaults alloc] initWithSuiteName:@"re.frida.xpc-spy-test"];
 
-        dispatch_queue_t reply_queue = dispatch_queue_create("replies", NULL);
         for (int64_t tick = 0;; tick++) {
             xpc_connection_send_message(early_client, make_request(tick, false));
+            xpc_connection_send_message(standing_client, make_request(tick, false));
+
+            if (tick % 4 == 1) {
+                xpc_connection_t visitor = make_client(standing_endpoint, "visitor");
+                xpc_object_t visitor_reply = xpc_connection_send_message_with_reply_sync(visitor, make_request(tick, true));
+                printf("[visitor] sync reply status=%s\n", xpc_dictionary_get_string(visitor_reply, "status"));
+                xpc_connection_cancel(visitor);
+            }
 
             xpc_connection_send_message_with_reply(early_client, make_request(tick, true), reply_queue, ^(xpc_object_t reply) {
                 printf("[early] async reply type=%s\n", xpc_type_get_name(xpc_get_type(reply)));
@@ -126,7 +192,7 @@ int main(int argc, char *argv[])
             xpc_object_t sync_reply = xpc_connection_send_message_with_reply_sync(early_client, make_request(tick, true));
             printf("[early] sync reply seq=%lld\n", xpc_dictionary_get_int64(sync_reply, "seq"));
 
-            if (tick % 3 == 0) {
+            if (tick % 4 == 3) {
                 xpc_connection_t late_client = make_client(endpoint, "late");
                 xpc_object_t late_reply = xpc_connection_send_message_with_reply_sync(late_client, make_request(tick, true));
                 printf("[late] sync reply status=%s\n", xpc_dictionary_get_string(late_reply, "status"));

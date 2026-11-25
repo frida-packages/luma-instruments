@@ -25,17 +25,32 @@ const ctx = {
     },
 } as unknown as CustomInstrumentContext;
 
+const respond: CustomInstrumentConsoleResponder = {
+    output: text => console.log("respond.output", text),
+    error: text => console.log("respond.error", text),
+    value: value => console.log("respond.value", printable(value)),
+    image: () => {},
+    file: unexpectedFile,
+    show: child => console.log(`respond.show ${child?.id ?? "page"}`),
+};
+
+const actionRespond: CustomInstrumentActionResponder = {
+    file: unexpectedFile,
+    show: respond.show,
+};
+
 const restoredRow = { id: "(anonymous)", cells: { service: "(anonymous)", peer: "1", sent: "500", received: "700", seen: "", last: "" } };
 const restored = { services: { rows: [restoredRow] } };
 
+const creationStart = Date.now();
 const handle = await instrument.create(ctx, initialConfig, restored as unknown as CustomInstrumentRestoredState);
-console.log("created");
+console.log(`created in ${Date.now() - creationStart} ms`);
 
 setTimeout(() => inspect(["#3", "99999"]), 3000);
 
 setTimeout(() => {
-    handle.onAction!({ widget: "services", action: "clear" });
-    handle.onAction!({ widget: "messages", action: "clear" });
+    handle.onAction!({ widget: "services", action: "clear" }, actionRespond);
+    handle.onAction!({ widget: "messages", action: "clear" }, actionRespond);
     console.log("cleared services and messages");
     inspect(["#3"]);
 }, CLEAR_AFTER_MS);
@@ -52,13 +67,12 @@ setTimeout(() => {
 
 function inspect(texts: string[]): void {
     for (const text of texts) {
-        handle.onConsoleInput!({ widget: "messages", entryId: text, text }, {
-            output: (text: string) => console.log("respond.output", text),
-            error: (text: string) => console.log("respond.error", text),
-            value: (value: unknown) => console.log("respond.value", printable(value)),
-            image: () => {},
-        });
+        handle.onConsoleInput!({ widget: "messages", entryId: text, text }, respond);
     }
+}
+
+function unexpectedFile(): never {
+    throw new Error("XPC Spy offered a file");
 }
 
 function printable(value: unknown): string {
