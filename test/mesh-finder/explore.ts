@@ -1,5 +1,7 @@
 /// <reference path="./luma.d.ts" />
 
+import { Buffer } from "buffer";
+import { Writable } from "stream";
 import { instrument } from "../../mesh-finder/main.js";
 
 interface Row {
@@ -10,7 +12,7 @@ interface Row {
 const EXPORTED_MESHES = 5;
 
 const rows = new Map<string, Row>();
-let lastOutput = "";
+let lastOffer: Promise<string> | null = null;
 
 const ctx = {
     emit() {
@@ -24,16 +26,29 @@ const ctx = {
                     } else if (id === "meshes" && method === "removeRow") {
                         rows.delete(args[0]);
                     } else if (id === "viewer") {
-                        lastOutput = String(args[0]);
-                        if (!lastOutput.startsWith("# ")) {
-                            console.log(`${new Date().toISOString().slice(11, 23)} viewer.${method}: ${lastOutput}`);
-                        }
+                        console.log(`${new Date().toISOString().slice(11, 23)} viewer.${method}: ${args[0]}`);
                     }
                 };
             },
         });
     },
 } as unknown as CustomInstrumentContext;
+
+const respond: CustomInstrumentActionResponder = {
+    file: (() => {
+        const chunks: Buffer[] = [];
+        const stream = new Writable({
+            write(chunk: Buffer, _encoding, callback) {
+                chunks.push(chunk);
+                callback();
+            },
+        });
+        lastOffer = new Promise<string>(resolve => stream.on("finish", () => resolve(Buffer.concat(chunks).toString())));
+        return stream;
+    }) as CustomInstrumentOfferFile,
+    show() {
+    },
+};
 
 const config: CustomInstrumentConfig = { settings: { watchDraws: true, guessUndrawn: true, minimumConfidence: 60, minimumVertices: 3 } };
 
@@ -53,10 +68,11 @@ rpc.exports = {
             .sort((a, b) => Number(b.cells.triangles) - Number(a.cells.triangles))
             .slice(0, EXPORTED_MESHES);
         for (const row of largest) {
-            lastOutput = "";
-            handle.onAction!({ widget: "meshes", action: "obj", item: row.id });
-            if (lastOutput.startsWith("# ")) {
-                send({ type: "obj", path: `${out}/mesh${row.id}.obj`, text: lastOutput });
+            lastOffer = null;
+            handle.onAction!({ widget: "meshes", action: "obj", item: row.id }, respond);
+            const offer = lastOffer as Promise<string> | null;
+            if (offer !== null) {
+                send({ type: "obj", path: `${out}/mesh${row.id}.obj`, text: await offer });
                 console.log(`exported ${out}/mesh${row.id}.obj (${row.cells.triangles} triangles)`);
             }
         }

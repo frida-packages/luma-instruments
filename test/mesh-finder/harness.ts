@@ -1,5 +1,7 @@
 /// <reference path="./luma.d.ts" />
 
+import { Buffer } from "buffer";
+import { Writable } from "stream";
 import { instrument } from "../../mesh-finder/main.js";
 import { glTapEntryPointNames } from "../../mesh-finder/gl-tap.js";
 import { direct3D11Libraries, openGLLibraries, vulkanLibraries } from "../../mesh-finder/graphics-libraries.js";
@@ -42,6 +44,12 @@ interface Row {
     cells: Record<string, string>;
 }
 
+interface Offer {
+    name: string;
+    mediaType: string;
+    text: Promise<string>;
+}
+
 interface ParsedObj {
     vertices: number[][];
     faces: number;
@@ -60,7 +68,7 @@ const phases: Record<Phase, number> = { attached: 1, disposed: 2 };
 const rows = new Map<string, Row>();
 const pristineCode = new Map<string, ArrayBuffer>();
 const pristineRanges = new Map<string, string>();
-let lastOutput = "";
+let lastOffer: Offer | null = null;
 let lastViewState: ViewState | null = null;
 let viewerCleared = false;
 const scanStates: boolean[] = [];
@@ -85,11 +93,8 @@ const ctx = {
                         lastViewState = { value: args[0], data: args[1] };
                     } else if (id === "viewer" && method === "clear") {
                         viewerCleared = true;
-                    } else if (id === "viewer") {
-                        lastOutput = String(args[0]);
-                        if (!lastOutput.startsWith("# ")) {
-                            console.log(`viewer.${method}: ${lastOutput}`);
-                        }
+                    } else if (id === "viewer" && !String(args[0]).startsWith("Offered ")) {
+                        console.log(`viewer.${method}: ${args[0]}`);
                     }
                 };
             },
@@ -97,11 +102,30 @@ const ctx = {
     },
 } as unknown as CustomInstrumentContext;
 
+const respond: CustomInstrumentActionResponder = {
+    file: ((header: CustomInstrumentOfferedFileHeader) => {
+        const chunks: Buffer[] = [];
+        const stream = new Writable({
+            write(chunk: Buffer, _encoding, callback) {
+                chunks.push(chunk);
+                callback();
+            },
+        });
+        const text = new Promise<string>(resolve => stream.on("finish", () => resolve(Buffer.concat(chunks).toString())));
+        lastOffer = { name: header.name, mediaType: header.mediaType, text };
+        return stream;
+    }) as CustomInstrumentOfferFile,
+    show() {
+    },
+};
+
 const quietReply = {
     output: (text: string) => console.log(`reply: ${text}`),
     error: (text: string) => console.log(`reply error: ${text}`),
     value: () => {},
     image: () => {},
+    file: respond.file,
+    show: respond.show,
 };
 
 const config: CustomInstrumentConfig = { settings: { watchDraws: true, guessUndrawn: true, minimumConfidence: 60, minimumVertices: 3 } };
@@ -133,7 +157,7 @@ async function run(out: string | null, target: Target, observeMs = 0): Promise<n
     await new Promise(resolve => setTimeout(resolve, LATE_UPLOAD_MS));
     const scanFailures = await checkScan(handle);
     const clearFailures = checkClear(handle);
-    const failures = check(handle, expectations, out);
+    const failures = await check(handle, expectations, out);
     target.enter("disposed");
     const changed = changedHookedCode();
     const snapshots = pristineCode.size + pristineRanges.size;
@@ -182,7 +206,7 @@ async function checkScan(handle: CustomInstrumentHandle): Promise<number> {
     if (scanStates.length === 0 || scanStates[0] || !await scanEnabledWithin(SETTLE_MS)) {
         problems.push(`the searches create started did not disable Scan and enable it again: ${JSON.stringify(scanStates)}`);
     }
-    handle.onAction!({ widget: "meshes", action: "scan" });
+    handle.onAction!({ widget: "meshes", action: "scan" }, respond);
     if (isScanEnabled()) {
         problems.push("Scan is not disabled while its search runs");
     }
@@ -227,23 +251,26 @@ async function scanEnabledWithin(milliseconds: number): Promise<boolean> {
 
 function checkClear(handle: CustomInstrumentHandle): number {
     const rowsBefore = rows.size;
-    handle.onAction!({ widget: "viewer", action: "clear" });
+    handle.onAction!({ widget: "viewer", action: "clear" }, respond);
     const cleared = viewerCleared && rows.size === rowsBefore;
     console.log(cleared ? "PASS Clear empties the console and leaves the meshes" : "FAIL Clear did not empty only the console");
     return cleared ? 0 : 1;
 }
 
-function check(handle: CustomInstrumentHandle, expectations: Expectation[], out: string | null): number {
+async function check(handle: CustomInstrumentHandle, expectations: Expectation[], out: string | null): Promise<number> {
     console.log(`\n${rows.size} rows in the table:`);
     const exported = new Map<string, ParsedObj | null>();
+    let failures = 0;
     for (const row of rows.values()) {
         console.log(`  ${Object.values(row.cells).join(" | ")}`);
-        lastOutput = "";
-        handle.onAction!({ widget: "meshes", action: "obj", item: row.id });
-        exported.set(row.id, lastOutput.startsWith("# ") ? parseObj(lastOutput) : null);
+        const offer = offeredObj(handle, row);
+        if (offer !== null && (offer.name !== `${row.cells.mesh}.obj` || offer.mediaType !== "model/obj")) {
+            failures++;
+            console.log(`FAIL ${row.cells.mesh} was offered as ${JSON.stringify(offer.name)}, ${offer.mediaType}`);
+        }
+        exported.set(row.id, (offer !== null) ? parseObj(await offer.text) : null);
     }
 
-    let failures = 0;
     if (rows.has(LEFT_BY_EARLIER_INSTANCE)) {
         failures++;
         console.log("FAIL a row left in the table by an earlier instance is still there");
@@ -294,10 +321,9 @@ function check(handle: CustomInstrumentHandle, expectations: Expectation[], out:
     }
 
     handle.onConsoleInput!({ widget: "viewer", entryId: "1", text: "list" }, {
+        ...quietReply,
         output: text => console.log(`list:\n${text}`),
         error: text => console.log(`list error: ${text}`),
-        value: () => {},
-        image: () => {},
     });
     handle.dispose!();
     const written = (out !== null) ? `; OBJ files are in ${out}` : "";
@@ -362,6 +388,12 @@ function readOnlyDirect3D11(): Map<string, string> {
     return ranges;
 }
 
+function offeredObj(handle: CustomInstrumentHandle, row: Row): Offer | null {
+    lastOffer = null;
+    handle.onAction!({ widget: "meshes", action: "obj", item: row.id }, respond);
+    return lastOffer;
+}
+
 function parseObj(text: string): ParsedObj {
     const vertices: number[][] = [];
     let faces = 0;
@@ -397,7 +429,7 @@ function matches(expected: Expectation, row: Row, obj: ParsedObj | null): boolea
 
 function problemShowing(handle: CustomInstrumentHandle, expected: Expectation, row: Row): string | null {
     lastViewState = null;
-    handle.onAction!({ widget: "meshes", action: "show", item: row.id });
+    handle.onAction!({ widget: "meshes", action: "show", item: row.id }, respond);
     if (expected.contents !== "cpu-visible") {
         return (lastViewState === null) ? null : "a mesh with no CPU contents was handed to the viewer";
     }

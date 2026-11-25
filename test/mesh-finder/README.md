@@ -36,15 +36,22 @@ the harness checks that it is not listed. Each target exports
 through and chooses **Scan**, checks that it is disabled during the searches
 and enabled after, and that a typed `scan` meanwhile is refused, checks that
 **Clear** empties the console and leaves the table as it was, then exports
-every mesh in the table as OBJ and checks each expected one by its counts,
-bounding box and first vertices, writing it to the output directory. A row that
+every mesh in the table as OBJ, through a fake `respond.file` that checks the
+file is offered as `model/obj` under the mesh's title, and checks each
+expected one by its counts, bounding box and first vertices, writing it to the
+output directory. A row that
 matches nothing expected fails the run. It then shows each one and checks what
 the viewer was handed: the counts, the size of the data, the first vertices,
 and that every index is in range. Last, it disposes the instrument and checks
 that every hooked function is back to its original bytes; on Windows, that all
 of `d3d11.dll`'s code and read-only data, vtables included, are.
 `explore.ts` is for other processes: it lists what was found after a number
-of seconds and exports the five largest meshes.
+of seconds and exports the five largest meshes. `export-check.ts` needs no
+target: it exports meshes made up on the spot and checks the offered files
+byte for byte, a name cut to 255 bytes, and that a mesh with no contents and
+one whose OBJ would exceed 64 MiB are refused in the console with no file
+offered. `python3 test/mesh-finder/run.py --export` runs it in Frida's system
+session.
 
 Luma compiles instruments against its own frida-gum typings, which have
 `Memory.findPointers`; the `frida` CLI's built-in ones may not. Link Luma's

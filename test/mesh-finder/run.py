@@ -11,6 +11,8 @@ def main():
     if sys.argv[1] == "--bundle":
         Path(sys.argv[2]).write_text(build("harness.ts"))
         return
+    if sys.argv[1] == "--export":
+        check_export()
     pid, out = int(sys.argv[1]), sys.argv[2]
     exploring = len(sys.argv) > 3
     bundle = build("explore.ts" if exploring else "harness.ts")
@@ -24,6 +26,17 @@ def main():
         failures = 0
     else:
         failures = script.exports_sync.run(out)
+    script.unload()
+    session.detach()
+    sys.exit(1 if failures else 0)
+
+
+def check_export():
+    session = frida.attach(0)
+    script = session.create_script(build("export-check.ts"))
+    script.on("message", print_message)
+    script.load()
+    failures = script.exports_sync.run()
     script.unload()
     session.detach()
     sys.exit(1 if failures else 0)
