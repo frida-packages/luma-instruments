@@ -4,6 +4,7 @@ import { MeshCatalog } from "./mesh-catalog.js";
 import { MeshDisplay } from "./mesh-display.js";
 import { MeshFinder } from "./mesh-finder.js";
 import { MeshTable } from "./mesh-table.js";
+import { offerObj } from "./obj-export.js";
 import { Settings } from "./settings.js";
 import { ViewerCommands } from "./viewer-commands.js";
 
@@ -26,7 +27,7 @@ export const instrument: CustomInstrument = {
                 apis.applySettings();
                 table.refilter(catalog.all());
             },
-            onAction({ action, item }) {
+            onAction({ action, item }, respond) {
                 if (action === "clear") {
                     viewer.clear();
                     return;
@@ -42,7 +43,7 @@ export const instrument: CustomInstrument = {
                 if (action === "show") {
                     display.showMesh(mesh);
                 } else {
-                    commands.exportObj(mesh, viewerReply);
+                    offerObj(mesh, { ...viewerReply, file: respond.file });
                 }
             },
             onConsoleInput({ text }, respond) {

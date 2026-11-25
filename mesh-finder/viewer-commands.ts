@@ -3,18 +3,19 @@ import type { Mesh } from "./mesh.js";
 import type { MeshCatalog } from "./mesh-catalog.js";
 import type { MeshDisplay } from "./mesh-display.js";
 import { learnedFrom, meshTitle } from "./mesh-table.js";
-import { objOf } from "./obj-export.js";
+import { offerObj } from "./obj-export.js";
 
 export interface Reply {
     output(text: string): void;
     error(text: string): void;
+    file: CustomInstrumentOfferFile;
 }
 
 const LISTED_MESHES = 50;
 
 const help = [
     "show <n>  shows mesh #n",
-    "obj <n>   writes mesh #n here as a Wavefront OBJ",
+    "obj <n>   offers mesh #n as a Wavefront OBJ file to save",
     "list      lists the meshes found so far",
     "scan      looks for buffers again, such as after a new level has loaded",
 ].join("\n");
@@ -41,7 +42,7 @@ export class ViewerCommands {
                 this.#withMesh(argument, reply, mesh => this.#display.showMesh(mesh));
                 break;
             case "obj":
-                this.#withMesh(argument, reply, mesh => this.exportObj(mesh, reply));
+                this.#withMesh(argument, reply, mesh => offerObj(mesh, reply));
                 break;
             case "list":
                 reply.output(this.#listing());
@@ -55,15 +56,6 @@ export class ViewerCommands {
                 break;
             default:
                 this.#withMesh(verb, reply, mesh => this.#display.showMesh(mesh));
-        }
-    }
-
-    exportObj(mesh: Mesh, reply: Reply): void {
-        const obj = objOf(mesh);
-        if (obj.kind === "text") {
-            reply.output(obj.text);
-        } else {
-            reply.error(obj.reason);
         }
     }
 

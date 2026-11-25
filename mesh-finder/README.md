@@ -178,9 +178,12 @@ declared by the API comes with a confidence.
   instrument was added, have nothing to show, and meshes whose positions and
   indices exceed the 64 MiB a view can be handed are refused; the console
   says which.
-- **Export OBJ** writes the mesh to the console as a Wavefront OBJ, ready to
-  copy into a file and open in any 3D tool. Point clouds are written as `p`
-  elements. Meshes that would make more than 16 MiB of OBJ are refused.
+- **Export OBJ** offers the mesh as a Wavefront OBJ file, ready to open in any
+  3D tool, and Luma asks where to save it. The file is named after the mesh as
+  the table names it, such as `#3 Cube vertices.obj`, with characters a file
+  name cannot have, such as `/` and `:`, made `-`. Point clouds are written as
+  `p` elements. Meshes that would make more than 64 MiB of OBJ are refused,
+  and the console says so.
 
 **Scan**, in the table's header, looks for buffers again, such as after a new
 level has loaded. It is disabled while a search is under way, and while
@@ -189,8 +192,9 @@ learned from draws. An OpenGL or Direct3D 11 search reads the buffers on the
 thread that draws, the next time it does, and gives up after 3 seconds when
 it does not.
 
-The **Console** also takes commands: `show 3`, `obj 3`, `list`, and `scan`,
-which does what **Scan** does, or says why it cannot.
+The **Console** also takes commands: `show 3`, `obj 3`, which does what
+**Export OBJ** does, `list`, and `scan`, which does what **Scan** does, or says
+why it cannot.
 **Clear**, in its header, empties it.
 
 The view keeps the last mesh shown with the session, so it is still there
