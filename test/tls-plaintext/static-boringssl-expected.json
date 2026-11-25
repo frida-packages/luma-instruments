@@ -1,0 +1,132 @@
+{
+  "flutter-3.50.1-release.x64": {
+    "kind": "placed",
+    "entryPoints": {
+      "read": "0x6a5390",
+      "write": "0x6a5750",
+      "doHandshake": "0x6a4f70",
+      "newSession": "0x6a44f0",
+      "setHostName": "0x6a5e50"
+    }
+  },
+  "flutter-3.50.1-release.arm64": {
+    "kind": "placed",
+    "entryPoints": {
+      "read": "0x640d80",
+      "write": "0x641140",
+      "doHandshake": "0x640968",
+      "newSession": "0x63ffd4",
+      "setHostName": "0x641900"
+    }
+  },
+  "flutter-3.50.1-profile.arm64": {
+    "kind": "placed",
+    "entryPoints": {
+      "read": "0x642940",
+      "write": "0x642d00",
+      "doHandshake": "0x642528",
+      "newSession": "0x641b94",
+      "setHostName": "0x6434c0"
+    }
+  },
+  "flutter-3.50.1-profile.x64": {
+    "kind": "placed",
+    "entryPoints": {
+      "read": "0x6a6fb0",
+      "write": "0x6a7370",
+      "doHandshake": "0x6a6b90",
+      "newSession": "0x6a6110",
+      "setHostName": "0x6a7a70"
+    }
+  },
+  "flutter-3.50.1-debug.arm64": {
+    "kind": "placed",
+    "entryPoints": {
+      "read": "0x642580",
+      "write": "0x642940",
+      "doHandshake": "0x642168",
+      "newSession": "0x6417d4",
+      "setHostName": "0x643100"
+    }
+  },
+  "flutter-3.50.1-debug.x64": {
+    "kind": "placed",
+    "entryPoints": {
+      "read": "0x6a6b50",
+      "write": "0x6a6f10",
+      "doHandshake": "0x6a6730",
+      "newSession": "0x6a5cb0",
+      "setHostName": "0x6a7610"
+    }
+  },
+  "flutter-3.50.1-android.arm64": {
+    "kind": "placed",
+    "entryPoints": {
+      "read": "0x6f0ee4",
+      "write": "0x6f172c",
+      "doHandshake": "0x6f0aa0",
+      "newSession": null,
+      "setHostName": null
+    }
+  },
+  "flutter-3.50.1-android.x64": {
+    "kind": "placed",
+    "entryPoints": {
+      "read": "0x7c0dcd",
+      "write": "0x7c183f",
+      "doHandshake": "0x7c09b0",
+      "newSession": null,
+      "setHostName": null
+    }
+  },
+  "rustdesk-1.4.6.arm64": {
+    "kind": "placed",
+    "entryPoints": {
+      "read": "0x5b74f8",
+      "write": "0x5b78ac",
+      "doHandshake": "0x5b70d8",
+      "newSession": "0x5b6918",
+      "setHostName": "0x5b80b0"
+    }
+  },
+  "wonderous-2.0.16.x64": {
+    "kind": "placed",
+    "entryPoints": {
+      "read": "0x5e6d90",
+      "write": "0x5e7160",
+      "doHandshake": "0x5e6950",
+      "newSession": "0x5e60a0",
+      "setHostName": "0x5e78d0"
+    }
+  },
+  "wonderous-2.0.16.arm64": {
+    "kind": "placed",
+    "entryPoints": {
+      "read": "0x56ecc4",
+      "write": "0x56f06c",
+      "doHandshake": "0x56e8a4",
+      "newSession": "0x56e108",
+      "setHostName": "0x56f838"
+    }
+  },
+  "localsend-1.19.0.x64": {
+    "kind": "placed",
+    "entryPoints": {
+      "read": "0x663550",
+      "write": "0x663910",
+      "doHandshake": "0x663130",
+      "newSession": "0x662640",
+      "setHostName": "0x664020"
+    }
+  },
+  "localsend-1.19.0.arm64": {
+    "kind": "placed",
+    "entryPoints": {
+      "read": "0x5fc8ac",
+      "write": "0x5fcc4c",
+      "doHandshake": "0x5fc494",
+      "newSession": "0x5fbaf8",
+      "setHostName": "0x5fd394"
+    }
+  }
+}
