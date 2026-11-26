@@ -24,6 +24,11 @@ vtable's shape alone: the first pure virtual slot is `evaluateJavaScript`,
 and the others are counted from the first slot JSI implements itself. The
 status line says which way each was found.
 
+A scan reads memory only as copies the kernel makes, so memory the app lets
+go of while the scan runs is skipped instead of touched. That matters in apps
+with a crash reporter of their own, such as Microsoft Office's: such a
+reporter sees the fault before Frida can catch it, and hangs or ends the app.
+
 A runtime is used only on its own thread. That thread is learned the first
 time it calls into its runtime, while the instrument watches for a few
 seconds after it starts and after **Scan**, or whenever something waits for

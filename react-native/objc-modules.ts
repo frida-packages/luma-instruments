@@ -1,6 +1,7 @@
+import type { MemorySearch } from "./memory-search.js";
 import { type ObjCRuntime, objCRuntime } from "./objc-runtime.js";
 import type { BridgeTable, ModuleKind, NativeModuleInfo } from "./platforms.js";
-import { heapRanges } from "./runtime-instances.js";
+import { searchHeap } from "./runtime-instances.js";
 
 interface RegistryMarkers {
     bridgeModule: NativePointer;
@@ -24,7 +25,7 @@ export class ObjCModuleRegistry {
     #classes: ModuleClass[] = [];
     #holders: NativePointer[] = [];
 
-    list(): NativeModuleInfo[] {
+    async list(search: MemorySearch): Promise<NativeModuleInfo[]> {
         const objc = this.#objc;
         const markers = (objc !== null) ? markersOf(objc) : null;
         if (objc === null || markers === null) {
@@ -38,7 +39,8 @@ export class ObjCModuleRegistry {
             moduleClass.info.base = classes.some(other => other !== moduleClass && descendsFrom(objc, other.cls, moduleClass.cls));
         }
         this.#classes = classes;
-        this.#holders = instancesOf(objc, MODULE_HOLDER_CLASSES.map(name => objc.getClass(name)).filter(cls => !cls.isNull()));
+        this.#holders = await instancesOf(objc, MODULE_HOLDER_CLASSES.map(name => objc.getClass(name)).filter(cls => !cls.isNull()),
+            search);
         return classes.map(moduleClass => moduleClass.info);
     }
 
@@ -155,11 +157,11 @@ function strippedName(name: string): string {
     return (prefix !== undefined) ? name.slice(prefix.length) : name;
 }
 
-function instancesOf(objc: ObjCRuntime, classes: NativePointer[]): NativePointer[] {
+async function instancesOf(objc: ObjCRuntime, classes: NativePointer[], search: MemorySearch): Promise<NativePointer[]> {
     if (classes.length === 0) {
         return [];
     }
-    return Memory.findPointers(heapRanges(), classes, { mask: objc.isaClassMask })
+    return (await searchHeap(search, classes, objc.isaClassMask))
         .filter(({ value }) => value.and(objc.isaMagicMask).equals(objc.isaMagicValue))
         .map(({ address }) => address);
 }

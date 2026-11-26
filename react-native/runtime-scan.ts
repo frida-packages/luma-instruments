@@ -1,5 +1,6 @@
 import type { BundleCatalog } from "./bundles.js";
 import type { AnchorRoute } from "./jsi-vtables.js";
+import { MemorySearch } from "./memory-search.js";
 import type { ModuleTable } from "./module-table.js";
 import type { Platform } from "./platforms.js";
 import type { Rendezvous } from "./rendezvous.js";
@@ -39,7 +40,7 @@ export class RuntimeScan {
             return this.#current;
         }
         this.#table.showScanning(true);
-        this.#current = this.#scan().finally(() => {
+        this.#current = this.#scan(new MemorySearch()).finally(() => {
             this.#current = null;
             this.#table.showScanning(false);
             if (this.#again) {
@@ -50,34 +51,41 @@ export class RuntimeScan {
         return this.#current;
     }
 
-    async #scan(): Promise<void> {
+    async #scan(search: MemorySearch): Promise<void> {
         this.#status.note("Looking for JavaScript runtimes…");
-        this.#modules.list(this.#platform.nativeModules());
-        const search = await findRuntimeClasses(anchorRoutes);
-        this.#rendezvous.watchClasses(search.classes);
-        const instances = await findInstances(search.classes.map(runtimeClass => runtimeClass.vtable));
-        for (const { address, vtable } of instances.instances) {
-            const runtimeClass = search.classes.find(candidate => candidate.vtable.equals(vtable))!;
+        this.#modules.list(await this.#platform.nativeModules(search));
+        const classes = await findRuntimeClasses(anchorRoutes, search);
+        this.#rendezvous.watchClasses(classes.classes);
+        const instances = await findInstances(classes.classes.map(runtimeClass => runtimeClass.vtable), search);
+        for (const { address, vtable } of instances) {
+            const runtimeClass = classes.classes.find(candidate => candidate.vtable.equals(vtable))!;
             this.#registry.admit(address, runtimeClass);
         }
         this.#rendezvous.explore();
-        const bundles = await this.#bundles.scan();
-        this.#status.note(summaryOf(search, this.#registry.all.length, bundles),
-            `${formattedMiB(instances.bytesSearched)} of heap searched in ${instances.durationMs} ms; `
-            + `${search.modulesSearched} modules looked at`);
+        const bundles = await this.#bundles.scan(search);
+        this.#status.note(summaryOf(classes, this.#registry.all.length, bundles), detailOf(search, classes));
     }
 }
 
-function summaryOf(search: ClassSearch, runtimes: number, bundles: number): string {
-    if (search.classes.length === 0) {
-        return (search.bases.length === 0)
+function summaryOf(classes: ClassSearch, runtimes: number, bundles: number): string {
+    if (classes.classes.length === 0) {
+        return (classes.bases.length === 0)
             ? "No JSI runtime implementation was found in this process."
-            : `JSI is linked into ${search.bases.map(base => base.module.name).join(", ")}, but no Hermes, JSC or V8 runtime class was found.`;
+            : `JSI is linked into ${classes.bases.map(base => base.module.name).join(", ")}, but no Hermes, JSC or V8 runtime class was found.`;
     }
-    const classes = search.classes.map(runtimeClass =>
+    const found = classes.classes.map(runtimeClass =>
         `${runtimeClass.engine} in ${runtimeClass.base.module.name} (through ${runtimeClass.base.route})`);
-    return `${runtimes} runtime${(runtimes === 1) ? "" : "s"} known; ${[...new Set(classes)].join(", ")}; `
+    return `${runtimes} runtime${(runtimes === 1) ? "" : "s"} known; ${[...new Set(found)].join(", ")}; `
         + `${bundles} new bundle${(bundles === 1) ? "" : "s"} found.`;
+}
+
+function detailOf(search: MemorySearch, classes: ClassSearch): string {
+    const parts = [
+        `${formattedMiB(search.bytesSearched)} searched in ${Date.now() - search.startedAt} ms`,
+        `${classes.modulesSearched} modules looked at`,
+        (search.bytesUnreadable !== 0) ? `${formattedMiB(search.bytesUnreadable)} could no longer be read and was skipped` : null,
+    ];
+    return parts.filter(part => part !== null).join("; ");
 }
 
 function formattedMiB(bytes: number): string {

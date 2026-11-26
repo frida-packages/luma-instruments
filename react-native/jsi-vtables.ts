@@ -1,3 +1,4 @@
+import { type MemorySearch, readPointer } from "./memory-search.js";
 import { primaryVtablesOf, typeNamesEndingWith } from "./rtti.js";
 
 export interface JsiSlots {
@@ -35,9 +36,9 @@ const SLOTS_BEFORE_PUSH_SCOPE = 2;
 const PURE_SLOTS_FROM_INSTRUMENTATION_TO_UTF8 = 21;
 const PURE_SLOTS_FROM_INSTRUMENTATION_TO_CALL = 51;
 
-export function findJsiBase(module: Module, routes: AnchorRoute[]): JsiBase | null {
+export function findJsiBase(module: Module, routes: AnchorRoute[], search: MemorySearch): JsiBase | null {
     for (const route of routes) {
-        const base = (route === "exports") ? baseFromExports(module) : baseFromTypeNames(module);
+        const base = (route === "exports") ? baseFromExports(module) : baseFromTypeNames(module, search);
         if (base !== null) {
             return base;
         }
@@ -68,11 +69,11 @@ function baseFromExports(module: Module): JsiBase | null {
     };
 }
 
-function baseFromTypeNames(module: Module): JsiBase | null {
+function baseFromTypeNames(module: Module, search: MemorySearch): JsiBase | null {
     const ranges = readableRangesOf(module);
-    const vtable = typeNamesEndingWith(ranges, BASE_TYPE_NAME)
+    const vtable = typeNamesEndingWith(ranges, BASE_TYPE_NAME, search)
         .filter(candidate => candidate.text === BASE_TYPE_NAME)
-        .flatMap(name => primaryVtablesOf(ranges, name))[0];
+        .flatMap(name => primaryVtablesOf(ranges, name, search))[0];
     if (vtable === undefined) {
         return null;
     }
@@ -97,8 +98,8 @@ export function structuralSlots(entries: NativePointer[]): JsiSlots {
 export function slotEntries(vtable: NativePointer): NativePointer[] {
     const entries: NativePointer[] = [];
     for (let i = 0; i !== MAX_SLOTS; i++) {
-        const entry = vtable.add(i * Process.pointerSize).readPointer().strip();
-        if (!isCode(entry)) {
+        const entry = readPointer(vtable.add(i * Process.pointerSize))?.strip() ?? null;
+        if (entry === null || !isCode(entry)) {
             break;
         }
         entries.push(entry);

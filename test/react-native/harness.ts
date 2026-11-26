@@ -4,6 +4,7 @@ import { Buffer } from "buffer";
 import { Writable } from "stream";
 import { findJsiBase, slotEntries, structuralSlots } from "../../react-native/jsi-vtables.js";
 import { instrument } from "../../react-native/main.js";
+import { MemorySearch } from "../../react-native/memory-search.js";
 
 type Reply = [kind: "output" | "error" | "value", payload: unknown];
 
@@ -111,8 +112,8 @@ rpc.exports = {
         const modules = Process.enumerateModules().filter(module => module.findExportByName("_ZTVN8facebook3jsi7RuntimeE") !== null
             || module.path === Process.mainModule.path);
         return printable(modules.map(module => {
-            const exported = findJsiBase(module, ["exports"]);
-            const named = findJsiBase(module, ["type names"]);
+            const exported = findJsiBase(module, ["exports"], new MemorySearch());
+            const named = findJsiBase(module, ["type names"], new MemorySearch());
             return {
                 module: module.name,
                 exports: exported?.slots ?? null,

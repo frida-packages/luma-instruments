@@ -1,4 +1,5 @@
 import { TypeInfo, VtablePrefix } from "./cxx-abi.pat";
+import { type MemorySearch, readMemory } from "./memory-search.js";
 
 export interface TypeName {
     text: string;
@@ -8,15 +9,15 @@ export interface TypeName {
 const APPLE_NON_UNIQUE_NAME_BIT = ptr("0x8000000000000000");
 const PRINTABLE_FIRST = 0x21;
 const PRINTABLE_LAST = 0x7e;
+const LONGEST_NAME = 4096;
 
-export function typeNamesEndingWith(ranges: MemoryRange[], suffix: string): TypeName[] {
+export function typeNamesEndingWith(ranges: MemoryRange[], suffix: string, search: MemorySearch): TypeName[] {
     const names: TypeName[] = [];
     for (const range of ranges) {
-        for (const match of scanQuietly(range, asciiPattern(`${suffix}\0`))) {
-            const end = match.address.add(suffix.length);
-            for (const start of nameStartsBefore(end)) {
-                if (!names.some(name => name.address.equals(start))) {
-                    names.push({ text: start.readUtf8String()!, address: start });
+        for (const match of search.scan(range, asciiPattern(`${suffix}\0`))) {
+            for (const name of namesEndingAt(range, match.add(suffix.length))) {
+                if (!names.some(known => known.address.equals(name.address))) {
+                    names.push(name);
                 }
             }
         }
@@ -24,14 +25,13 @@ export function typeNamesEndingWith(ranges: MemoryRange[], suffix: string): Type
     return names;
 }
 
-export function primaryVtablesOf(ranges: MemoryRange[], name: TypeName): NativePointer[] {
+export function primaryVtablesOf(ranges: MemoryRange[], name: TypeName, search: MemorySearch): NativePointer[] {
     const references = [name.address, name.address.or(APPLE_NON_UNIQUE_NAME_BIT)];
     const typeInfos = ranges.flatMap(range =>
-        references.flatMap(reference => scanQuietly(range, TypeInfo.pattern({ name: reference }))))
-        .map(match => match.address);
+        references.flatMap(reference => search.scan(range, TypeInfo.pattern({ name: reference }))));
     return ranges.flatMap(range =>
-        typeInfos.flatMap(typeInfo => scanQuietly(range, VtablePrefix.pattern({ offsetToTop: 0, typeInfo }))))
-        .map(match => match.address.add(VtablePrefix.size));
+        typeInfos.flatMap(typeInfo => search.scan(range, VtablePrefix.pattern({ offsetToTop: 0, typeInfo }))))
+        .map(address => address.add(VtablePrefix.size));
 }
 
 export function readableTypeName(mangled: string): string {
@@ -46,19 +46,30 @@ export function readableTypeName(mangled: string): string {
     return (parts.length !== 0) ? parts.join("::") : mangled;
 }
 
-function nameStartsBefore(end: NativePointer): NativePointer[] {
-    let runStart = end;
-    while (isPrintable(runStart.sub(1).readU8())) {
-        runStart = runStart.sub(1);
+function namesEndingAt(range: MemoryRange, end: NativePointer): TypeName[] {
+    const windowStart = maxPointer(range.base, end.sub(LONGEST_NAME));
+    const bytes = readMemory(windowStart, Number(end.sub(windowStart).toString()));
+    if (bytes === null) {
+        return [];
     }
-    const run = runStart.readUtf8String(Number(end.sub(runStart).toString()))!;
-    const starts: NativePointer[] = [];
+    const view = new Uint8Array(bytes);
+    let runStart = view.length;
+    while (runStart !== 0 && isPrintable(view[runStart - 1])) {
+        runStart--;
+    }
+    const run = String.fromCharCode(...view.subarray(runStart));
+    const names: TypeName[] = [];
     for (let offset = 0; offset !== run.length; offset++) {
-        if (isNestedName(run.slice(offset))) {
-            starts.push(runStart.add(offset));
+        const text = run.slice(offset);
+        if (isNestedName(text)) {
+            names.push({ text, address: end.sub(run.length - offset) });
         }
     }
-    return starts;
+    return names;
+}
+
+function maxPointer(a: NativePointer, b: NativePointer): NativePointer {
+    return (a.compare(b) > 0) ? a : b;
 }
 
 function isNestedName(text: string): boolean {
@@ -86,12 +97,4 @@ function isPrintable(byte: number): boolean {
 
 function asciiPattern(text: string): string {
     return Array.from(text, character => character.charCodeAt(0).toString(16).padStart(2, "0")).join(" ");
-}
-
-function scanQuietly(range: MemoryRange, pattern: string): MemoryScanMatch[] {
-    try {
-        return Memory.scanSync(range.base, range.size, pattern);
-    } catch (e) {
-        return [];
-    }
 }

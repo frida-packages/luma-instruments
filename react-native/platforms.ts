@@ -1,4 +1,5 @@
 import { RunLoopWaker } from "./apple-run-loops.js";
+import type { MemorySearch } from "./memory-search.js";
 import { ObjCModuleRegistry } from "./objc-modules.js";
 
 export type ModuleKind = "native module" | "TurboModule" | "view manager" | "Fabric component";
@@ -20,7 +21,7 @@ export interface Platform {
     readonly wakes: boolean;
     readonly knowsLoadedModules: boolean;
     wake(thread: ThreadId, task: () => void): boolean;
-    nativeModules(): NativeModuleInfo[];
+    nativeModules(search: MemorySearch): Promise<NativeModuleInfo[]>;
     loadedModuleNames(): Set<string>;
     bridgeTable(): BridgeTable | null;
     dispose(): void;
@@ -47,8 +48,8 @@ class ApplePlatform implements Platform {
         return this.#waker.wake(thread, task);
     }
 
-    nativeModules(): NativeModuleInfo[] {
-        return this.#modules.list();
+    nativeModules(search: MemorySearch): Promise<NativeModuleInfo[]> {
+        return this.#modules.list(search);
     }
 
     loadedModuleNames(): Set<string> {
@@ -72,7 +73,7 @@ class GenericPlatform implements Platform {
         return false;
     }
 
-    nativeModules(): NativeModuleInfo[] {
+    async nativeModules(): Promise<NativeModuleInfo[]> {
         return [];
     }
 

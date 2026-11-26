@@ -1,5 +1,6 @@
 import { Buffer } from "buffer";
 import { HermesBytecodeHeader } from "./hermes-bytecode.pat";
+import { type MemorySearch, readMemory } from "./memory-search.js";
 import { lastPathComponent } from "./runtime-descriptions.js";
 import type { Runtime } from "./runtimes.js";
 
@@ -49,12 +50,12 @@ export class BundleCatalog {
         table.clear();
     }
 
-    async scan(): Promise<number> {
+    async scan(search: MemorySearch): Promise<number> {
         const before = this.#bundles.length;
         for (const path of mappedBundleFiles()) {
             this.#remember({ kind: "file", path });
         }
-        for (const address of await hermesBytecodeInMemory()) {
+        for (const address of await hermesBytecodeInMemory(search)) {
             this.#remember({ kind: "memory", address });
         }
         return this.#bundles.length - before;
@@ -86,6 +87,11 @@ export class BundleCatalog {
         const name = fileNameOf(bundle);
         const file = reply.file({ name, mediaType: mediaTypes[bundle.format] });
         for (const chunk of chunksOf(bundle)) {
+            if (chunk === null) {
+                file.end();
+                reply.error(`Bundle #${bundle.number} can no longer be read from memory; the app has let it go.`);
+                return;
+            }
             file.write(Buffer.from(chunk));
         }
         file.end();
@@ -128,25 +134,17 @@ function mappedBundleFiles(): string[] {
     return [...new Set(paths)];
 }
 
-async function hermesBytecodeInMemory(): Promise<NativePointer[]> {
+async function hermesBytecodeInMemory(search: MemorySearch): Promise<NativePointer[]> {
     const pattern = HermesBytecodeHeader.pattern({ magic: HERMES_BYTECODE_MAGIC });
     const found: NativePointer[] = [];
     for (const range of Process.enumerateRanges("r--")) {
         if (range.file !== undefined || range.size > LARGEST_SEARCHED_RANGE) {
             continue;
         }
-        found.push(...matchesIn(range, pattern));
+        found.push(...search.scan(range, pattern));
         await new Promise(resolve => setTimeout(resolve, 0));
     }
     return found.filter(address => (bytecodeHeaderAt(address)?.fileLength ?? 0) >= SMALLEST_BUNDLE_IN_MEMORY);
-}
-
-function matchesIn(range: MemoryRange, pattern: string): NativePointer[] {
-    try {
-        return Memory.scanSync(range.base, range.size, pattern).map(match => match.address);
-    } catch (e) {
-        return [];
-    }
 }
 
 function filePathOf(url: string | null): string | null {
@@ -174,13 +172,13 @@ function fileNameOf(bundle: Bundle): string {
     return (name.length === 0 || name.startsWith(".")) ? fallback : name;
 }
 
-function* chunksOf(bundle: Bundle): Generator<ArrayBuffer> {
+function* chunksOf(bundle: Bundle): Generator<ArrayBuffer | null> {
     for (let offset = 0; offset < bundle.size; offset += CHUNK_BYTES) {
         const length = Math.min(CHUNK_BYTES, bundle.size - offset);
         const { location } = bundle;
         yield (location.kind === "file")
             ? readFile(location.path, offset, length)
-            : location.address.add(offset).readByteArray(length)!;
+            : readMemory(location.address.add(offset), length);
     }
 }
 
@@ -197,31 +195,32 @@ function withoutFirmlinkPrefix(path: string): string {
 
 function contentsAt(location: BundleLocation): Pick<Bundle, "size" | "format" | "bytecodeVersion"> | null {
     if (location.kind === "memory") {
-        const header = bytecodeHeaderAt(location.address)!;
-        return { size: header.fileLength, format: "Hermes bytecode", bytecodeVersion: header.version };
+        const header = bytecodeHeaderAt(location.address);
+        return (header !== null) ? { size: header.fileLength, format: "Hermes bytecode", bytecodeVersion: header.version } : null;
     }
     const size = fileSize(location.path);
     if (size === null) {
         return null;
     }
-    const start = Memory.alloc(HermesBytecodeHeader.size);
-    start.writeByteArray(readFile(location.path, 0, Math.min(size, HermesBytecodeHeader.size)));
-    const header = (size >= HermesBytecodeHeader.size) ? bytecodeHeaderAt(start) : null;
+    const header = (size >= HermesBytecodeHeader.size) ? bytecodeHeaderIn(readFile(location.path, 0, HermesBytecodeHeader.size)) : null;
     return (header !== null)
         ? { size, format: "Hermes bytecode", bytecodeVersion: header.version }
         : { size, format: "JavaScript", bytecodeVersion: null };
 }
 
 function bytecodeHeaderAt(address: NativePointer): HermesBytecodeHeader | null {
-    const header = HermesBytecodeHeader.at(address);
-    try {
-        const plausible = header.magic.equals(HERMES_BYTECODE_MAGIC)
-            && header.version >= LOWEST_BYTECODE_VERSION && header.version <= HIGHEST_BYTECODE_VERSION
-            && header.fileLength >= HermesBytecodeHeader.size;
-        return plausible ? header : null;
-    } catch (e) {
-        return null;
-    }
+    const bytes = readMemory(address, HermesBytecodeHeader.size);
+    return (bytes !== null) ? bytecodeHeaderIn(bytes) : null;
+}
+
+function bytecodeHeaderIn(bytes: ArrayBuffer): HermesBytecodeHeader | null {
+    const copy = Memory.alloc(HermesBytecodeHeader.size);
+    copy.writeByteArray(bytes);
+    const header = HermesBytecodeHeader.at(copy);
+    const plausible = header.magic.equals(HERMES_BYTECODE_MAGIC)
+        && header.version >= LOWEST_BYTECODE_VERSION && header.version <= HIGHEST_BYTECODE_VERSION
+        && header.fileLength >= HermesBytecodeHeader.size;
+    return plausible ? header : null;
 }
 
 function fileSize(path: string): number | null {
