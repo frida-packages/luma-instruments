@@ -30,6 +30,7 @@ export class GStreamerApi {
     readonly #typeNameFromInstance: NativeFunction<NativePointer, [NativePointer]>;
     readonly #instanceIsA: NativeFunction<number, [NativePointer, NativePointer]>;
     readonly #free: NativeFunction<void, [NativePointer]>;
+    readonly #malloc0: NativeFunction<NativePointer, [number]>;
     readonly #objectUnref: NativeFunction<void, [NativePointer]>;
     readonly #weakRefInit: NativeFunction<void, [NativePointer, NativePointer]>;
     readonly #weakRefGet: NativeFunction<NativePointer, [NativePointer]>;
@@ -55,6 +56,7 @@ export class GStreamerApi {
         this.#typeNameFromInstance = new NativeFunction(glib("g_type_name_from_instance"), "pointer", ["pointer"]);
         this.#instanceIsA = new NativeFunction(glib("g_type_check_instance_is_a"), "int", ["pointer", "pointer"], exclusive);
         this.#free = new NativeFunction(glib("g_free"), "void", ["pointer"]);
+        this.#malloc0 = new NativeFunction(glib("g_malloc0"), "pointer", ["size_t"]);
         this.#objectUnref = new NativeFunction(glib("g_object_unref"), "void", ["pointer"]);
         this.#weakRefInit = new NativeFunction(glib("g_weak_ref_init"), "void", ["pointer", "pointer"], exclusive);
         this.#weakRefGet = new NativeFunction(glib("g_weak_ref_get"), "pointer", ["pointer"], exclusive);
@@ -104,16 +106,19 @@ export class GStreamerApi {
         return this.#instanceIsA(object, this.#binType) !== 0;
     }
 
-    initWeakRef(weakRef: NativePointer, object: NativePointer): void {
+    newWeakRef(object: NativePointer): NativePointer {
+        const weakRef = this.#malloc0(Process.pointerSize);
         this.#weakRefInit(weakRef, object);
+        return weakRef;
     }
 
     strongRefFrom(weakRef: NativePointer): NativePointer {
         return this.#weakRefGet(weakRef);
     }
 
-    clearWeakRef(weakRef: NativePointer): void {
+    releaseWeakRef(weakRef: NativePointer): void {
         this.#weakRefClear(weakRef);
+        this.#free(weakRef);
     }
 
     unref(object: NativePointer): void {

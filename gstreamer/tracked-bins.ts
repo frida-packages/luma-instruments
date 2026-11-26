@@ -4,10 +4,9 @@ export type Discovery = "memory scan" | "state change";
 
 export class TrackedBin {
     readonly id: string;
-    readonly weakRef = Memory.alloc(Process.pointerSize);
     forgotten = false;
 
-    constructor(readonly address: NativePointer, readonly foundBy: Discovery) {
+    constructor(readonly address: NativePointer, readonly foundBy: Discovery, readonly weakRef: NativePointer) {
         this.id = address.toString();
     }
 }
@@ -28,8 +27,7 @@ export class TrackedBins {
         if (known !== undefined) {
             this.forget(known);
         }
-        const bin = new TrackedBin(object, foundBy);
-        this.#api.initWeakRef(bin.weakRef, object);
+        const bin = new TrackedBin(object, foundBy, this.#api.newWeakRef(object));
         this.#bins.set(bin.id, bin);
         return bin;
     }
@@ -62,7 +60,7 @@ export class TrackedBins {
             return;
         }
         bin.forgotten = true;
-        this.#api.clearWeakRef(bin.weakRef);
+        this.#api.releaseWeakRef(bin.weakRef);
         if (this.#bins.get(bin.id) === bin) {
             this.#bins.delete(bin.id);
         }
