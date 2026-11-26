@@ -90,7 +90,7 @@ export class FakeWidgets {
         return {
             setCounter: ({ value, unit, delta }: { value: number; unit?: string; delta?: number }) => {
                 this.#counters.set(id, value);
-                if (unit === "candidates") {
+                if (unit === "candidate" || unit === "candidates") {
                     console.log(`  ${id}: ${value} ${unit} (${delta})`);
                 }
             },

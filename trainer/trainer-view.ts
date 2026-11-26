@@ -77,7 +77,7 @@ export class TrainerView {
     }
 
     showCandidates(set: CandidateSet, previous: CandidateSet | null, names: () => RegionNames): void {
-        this.#counter.setCounter({ value: set.count, unit: "candidates", delta: set.count - this.#shownCount });
+        this.#counter.setCounter({ value: set.count, unit: (set.count === 1) ? "candidate" : "candidates", delta: set.count - this.#shownCount });
         this.#shownCount = set.count;
         this.#list.clear();
         this.listed = [];
