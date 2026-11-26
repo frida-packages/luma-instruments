@@ -15,7 +15,10 @@ compiled from it) and installs two host functions, `nativeReport` and
 - `name:churn` calls it 250 times, destroys the runtime and makes a new one
 
 `tick` counts and prints when the global `marker` changes; the host prints
-`CORRUPT` when `tick` does not return the count it expects.
+`CORRUPT` when `tick` does not return the count it expects. Like a crash
+reporter, the host takes the task's `EXC_BAD_ACCESS` exception port and prints
+`FAULT` for every access fault, then declines it so that Frida's signal
+handler still sees it.
 
 `build-targets.sh` downloads Hermes from React Native 0.72.17, 0.76.9 and
 0.81.4 and Hermes V1 from Maven Central, and React Native 0.81.6's JSI and
@@ -66,11 +69,11 @@ one console, that **Show** shows each page, that Hermes bytecode found in
 memory is offered byte for byte (or that a plain bundle in no file is refused
 with a reason), and runs 300 evaluations. After disposing, the code of the
 host and of the engine must be back to what it was, and the host still
-running with nothing corrupt.
+running with nothing corrupt and no `FAULT` printed.
 
 `run.py churn <host> <bundle>` checks that a destroyed runtime's page is
 badged destroyed and that a runtime made later is found by **Scan** and
-answers.
+answers, with no `FAULT` printed.
 
 `run.py app <app binary> <old|new>` runs one of the apps and checks what its
 runtime says about itself (React Native, the architecture, Fabric, a

@@ -59,6 +59,7 @@ def host_scenario(host, bundle, flavor, route):
             time.sleep(0.5)
             check.expect(target.alive(), "target still running after dispose")
             check.expect(not target.corrupt(), "target reported no corruption")
+            check.expect(not target.faulted(), "no scan or evaluation caused an access fault, which a crash reporter would see")
         finally:
             harness.detach()
     finally:
@@ -92,6 +93,7 @@ def churn_scenario(host, bundle):
             time.sleep(0.5)
             check.expect(target.alive(), "target still running after dispose")
             check.expect(not target.corrupt(), "target reported no corruption")
+            check.expect(not target.faulted(), "no scan or evaluation caused an access fault, which a crash reporter would see")
         finally:
             harness.detach()
     finally:
@@ -490,6 +492,9 @@ class Target:
     def wait_for(self, text, count=1, timeout=5):
         with self.changed:
             return self.changed.wait_for(lambda: sum(text in line for line in self.lines) >= count, timeout)
+
+    def faulted(self):
+        return any(line.startswith("FAULT ") for line in self.lines)
 
     def corrupt(self):
         return any("CORRUPT" in line for line in self.lines)

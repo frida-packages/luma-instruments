@@ -1,5 +1,6 @@
 #include <CoreFoundation/CoreFoundation.h>
 #include <jsi/jsi.h>
+#include <mach/mach.h>
 #ifdef JSI_HOST_JSC
 #include <JSCRuntime.h>
 #else
@@ -36,7 +37,31 @@ static const double kTickSeconds = 0.02;
 static const double kQuietTickSeconds = 4;
 static const char *kReactNativeThreadName = "com.facebook.react.JavaScript";
 static const int kChurnTicks = 250;
+static const mach_msg_id_t kMachExceptionRaise = 2405;
+static const mach_msg_id_t kReplyIdOffset = 100;
 
+#pragma pack(push, 4)
+struct ExceptionRequest {
+    mach_msg_header_t header;
+    mach_msg_body_t body;
+    mach_msg_port_descriptor_t thread;
+    mach_msg_port_descriptor_t task;
+    NDR_record_t ndr;
+    exception_type_t exception;
+    mach_msg_type_number_t codeCount;
+    int64_t code[2];
+    mach_msg_trailer_t trailer;
+};
+
+struct ExceptionReply {
+    mach_msg_header_t header;
+    NDR_record_t ndr;
+    kern_return_t result;
+};
+#pragma pack(pop)
+
+static void watchAccessFaults();
+static void *serveExceptions(void *data);
 static void *runThread(void *data);
 static std::unique_ptr<jsi::Runtime> makeRuntime();
 static std::unique_ptr<jsi::Runtime> openRuntime(Runtime *runtime);
@@ -60,6 +85,7 @@ int main(int argc, char *argv[])
         fprintf(stderr, "usage: %s <bundle> <name>:<timer|quiet|idle|churn>...\n", argv[0]);
         return 1;
     }
+    watchAccessFaults();
     std::shared_ptr<jsi::Buffer> bundle = readFile(argv[1]);
     std::vector<pthread_t> threads;
     printf("pid %d\n", getpid());
@@ -76,6 +102,42 @@ int main(int argc, char *argv[])
         pthread_join(thread, nullptr);
     }
     return 0;
+}
+
+static void watchAccessFaults()
+{
+    mach_port_t port;
+    mach_port_allocate(mach_task_self(), MACH_PORT_RIGHT_RECEIVE, &port);
+    mach_port_insert_right(mach_task_self(), port, port, MACH_MSG_TYPE_MAKE_SEND);
+    task_set_exception_ports(mach_task_self(), EXC_MASK_BAD_ACCESS, port,
+        static_cast<exception_behavior_t>(EXCEPTION_DEFAULT | MACH_EXCEPTION_CODES), THREAD_STATE_NONE);
+    pthread_t thread;
+    pthread_create(&thread, nullptr, serveExceptions, reinterpret_cast<void *>(static_cast<uintptr_t>(port)));
+}
+
+static void *serveExceptions(void *data)
+{
+    mach_port_t port = static_cast<mach_port_t>(reinterpret_cast<uintptr_t>(data));
+    pthread_setname_np("exception-port");
+    for (;;) {
+        ExceptionRequest request = {};
+        if (mach_msg(&request.header, MACH_RCV_MSG, 0, sizeof(request), port, MACH_MSG_TIMEOUT_NONE, MACH_PORT_NULL) != KERN_SUCCESS) {
+            continue;
+        }
+        if (request.header.msgh_id == kMachExceptionRaise) {
+            printf("FAULT caught by the exception port: exception %d, code %lld, address 0x%llx\n", request.exception,
+                static_cast<long long>(request.code[0]), static_cast<unsigned long long>(request.code[1]));
+            fflush(stdout);
+        }
+        ExceptionReply reply = {};
+        reply.header.msgh_bits = MACH_MSGH_BITS(MACH_MSGH_BITS_REMOTE(request.header.msgh_bits), 0);
+        reply.header.msgh_remote_port = request.header.msgh_remote_port;
+        reply.header.msgh_size = sizeof(reply);
+        reply.header.msgh_id = request.header.msgh_id + kReplyIdOffset;
+        reply.ndr = NDR_record;
+        reply.result = KERN_FAILURE;
+        mach_msg(&reply.header, MACH_SEND_MSG, sizeof(reply), 0, MACH_PORT_NULL, MACH_MSG_TIMEOUT_NONE, MACH_PORT_NULL);
+    }
 }
 
 static void *runThread(void *data)
