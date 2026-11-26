@@ -125,10 +125,9 @@ narrower, the rows fold and the page scrolls.
   such as Blutter, take the `App` binary this instrument saves and the Dart
   version it names.
 - **Send or replay messages.**
-- **Show Flutter's HTTPS traffic.** `dart:io` uses the BoringSSL built into
-  the engine, whose functions are not exported, so TLS Plaintext does not see
-  it yet either. Apps that use the platform's HTTP stack, through plugins such
-  as `cupertino_http`, are seen by TLS Plaintext.
+- **Show Flutter's HTTPS traffic.** That is TLS Plaintext's to show: it finds
+  the BoringSSL built into the engine, which `dart:io` uses, and the
+  platform's own, which plugins such as `cupertino_http` go through.
 - **See an engine before it runs.** A macOS Flutter app starts its engine when
   its window first appears; until then there are no messages.
 - **iOS, Android, Linux and Windows.** The instrument knows their engine

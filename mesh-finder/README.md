@@ -8,7 +8,7 @@ whatever else the game draws.
 
 It works with Direct3D 11 on Windows, with Metal and desktop OpenGL on
 macOS, and with Vulkan, desktop OpenGL and OpenGL ES on Linux. It needs Luma
-3.0.0 or later for its 3D view.
+4.0.0 or later.
 
 ## How it finds them
 
