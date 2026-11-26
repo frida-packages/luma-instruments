@@ -7,7 +7,7 @@ const MALLOC_TAGS = new Set([1, 2, 3, 4, 6, 7, 8, 9, 11, 12]);
 export class AppleMemory {
     readonly #task = Module.getGlobalExportByName("mach_task_self_").readU32();
     readonly #readOverwrite = new NativeFunction(Module.getGlobalExportByName("mach_vm_read_overwrite"), "int",
-        ["uint", "pointer", "size_t", "pointer", "pointer"]);
+        ["uint", "pointer", "size_t", "pointer", "pointer"], { scheduling: "exclusive" });
     readonly #regionRecurse = new NativeFunction(Module.getGlobalExportByName("mach_vm_region_recurse"), "int",
         ["uint", "pointer", "pointer", "pointer", "pointer", "pointer"]);
     readonly #mallocSize = new NativeFunction(Module.getGlobalExportByName("malloc_size"), "size_t", ["pointer"]);
