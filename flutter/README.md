@@ -99,9 +99,10 @@ it.
   snapshot), `strings REGEX` (the snapshot's strings), `libraries [REGEX]`
   (from the VM service), `save FILE`, and `help`.
 
-On a wide window the facts and the files share a row, the channels sit under
-them, and the messages and the console share the rest. On a laptop the same
-holds; narrower, the rows fold and the page scrolls.
+On a wide window the facts and the files share a row, the channels share the
+next with the console, and the messages take the rest of the width and height,
+so that a message and its reply can be read. On a laptop the same holds;
+narrower, the rows fold and the page scrolls.
 
 ## Settings
 

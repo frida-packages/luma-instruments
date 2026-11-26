@@ -140,8 +140,8 @@
     "layout": { "column": [
       "status",
       { "row": [{ "widget": "facts", "share": 60, "maxRows": 6 }, { "widget": "files", "share": 40, "maxRows": 6 }], "foldBelow": 760 },
-      { "widget": "channels", "maxRows": 6 },
-      { "row": [{ "widget": "messages", "share": 62, "maxRows": 10 }, { "widget": "console", "share": 38 }], "share": 100, "foldBelow": 1000 }
+      { "row": [{ "widget": "channels", "share": 58, "maxRows": 6 }, { "widget": "console", "share": 42 }], "share": 40, "foldBelow": 1000 },
+      { "widget": "messages", "share": 60, "maxRows": 10 }
     ] },
     "children": [
       {
