@@ -61,11 +61,13 @@ with its state. The page has:
 - every web preference it was created with, its session and session preloads,
   and its window;
 - a **JavaScript** console that runs in the page's main world, as its own
-  scripts do, through `executeJavaScript`. Promises are awaited, and `var`s
-  stay for later inputs. `:preload <js>` runs in the isolated world that a
-  context-isolated preload runs in. When the page's Content Security Policy
-  forbids `eval`, the input runs as a script of its own, and its value is
-  copied out the way Electron copies it, so a DOM node comes back empty.
+  scripts do, through `executeJavaScript`. A promise an input evaluates to is
+  awaited, and `var`s stay for later inputs; `await` itself works only inside
+  an async function, as in `(async () => await fetch(location.href))()`.
+  `:preload <js>` runs in the isolated world that a context-isolated preload
+  runs in. When the page's Content Security Policy forbids `eval`, the input
+  runs as a script of its own, and its value is copied out the way Electron
+  copies it, so a DOM node comes back empty.
 
 **Show** on a row opens the page. **DevTools** opens DevTools for it in a
 window of its own, without taking focus. A destroyed page's page stays for a
@@ -105,10 +107,11 @@ shown.
 The page's **JavaScript** console runs in the main process, on its event
 loop, with Node and Electron in reach. `require` is the app's own, and
 `electron`, `app`, `BrowserWindow`, `webContents`, `webFrameMain`, `ipcMain`,
-`session`, `protocol`, `dialog` and `shell` are in scope. Promises are
-awaited, and `_` is the last value. A `var` lasts for one input, so keep
-things on `globalThis` to use them later. `:save <path>` offers a file from
-app.asar for saving.
+`session`, `protocol`, `dialog` and `shell` are in scope. A promise an input
+evaluates to is awaited, and `_` is the last value; `await` itself works only
+inside an async function, as in `(async () => await app.whenReady())()`. A
+`var` lasts for one input, so keep things on `globalThis` to use them later.
+`:save <path>` offers a file from app.asar for saving.
 
 ## app.asar
 

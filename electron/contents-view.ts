@@ -22,7 +22,8 @@ const BADGE_CHARS = 32;
 const TITLE_SEPARATORS = [" - ", " – ", " — ", " | "];
 
 const helpLines = [
-    "JavaScript typed here runs in this page's main world, as the page's own scripts do; promises are awaited.",
+    "JavaScript typed here runs in this page's main world, as the page's own scripts do; a promise it evaluates to is awaited.",
+    "await itself works only inside an async function, such as (async () => await fetch(location.href))().",
     "Variables declared with var, and properties of window, stay for later inputs.",
     ":preload <js>    run in the preload's isolated world (contextIsolation), where contextBridge and, without the sandbox, require live",
     ":help            show this",

@@ -8,7 +8,8 @@ type Responder = CustomInstrumentConsoleResponder;
 export type Reachability = () => string | null;
 
 const mainHelpLines = [
-    "JavaScript typed here runs in the main process, on its event loop; promises are awaited and _ is the last value.",
+    "JavaScript typed here runs in the main process, on its event loop; a promise it evaluates to is awaited, and _ is the last value.",
+    "await itself works only inside an async function, such as (async () => await app.whenReady())().",
     "In scope: require (the app's own), electron, app, BrowserWindow, webContents, webFrameMain, ipcMain, session, protocol, dialog, shell.",
     "var declarations last for one input only; keep things on globalThis to use them later.",
     ":save <path>     offer a file from app.asar for saving, such as :save package.json",
@@ -16,7 +17,8 @@ const mainHelpLines = [
 ];
 
 const realmHelpLines = [
-    "JavaScript typed here runs in this process's Node environment; promises are awaited and _ is the last value.",
+    "JavaScript typed here runs in this process's Node environment; a promise it evaluates to is awaited, and _ is the last value.",
+    "await itself works only inside an async function, such as (async () => await require('fs').promises.readdir('.'))().",
     ":save <path>     offer a file from app.asar for saving, such as :save package.json",
     ":help            show this",
 ];
