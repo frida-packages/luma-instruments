@@ -6,8 +6,8 @@ const DISPOSE_AFTER_MS = 16000;
 const CLEAR_AFTER_MS = 5000;
 const LUMA_VALUE_DEPTH = 3;
 
-const initialConfig: CustomInstrumentConfig = { settings: { backtraces: false, dataLimit: 64 } };
-const narrowedConfig: CustomInstrumentConfig = { settings: { services: "^com\\.apple\\.", backtraces: true, dataLimit: 8 } };
+const initialConfig: CustomInstrumentConfig = { settings: { backtraces: false, dataLimit: 64, messagesPerSecond: 100 } };
+const narrowedConfig: CustomInstrumentConfig = { settings: { services: "^com\\.apple\\.", backtraces: true, dataLimit: 8, messagesPerSecond: 1 } };
 
 const ctx = {
     emit(value: unknown) {
@@ -57,7 +57,7 @@ setTimeout(() => {
 
 setTimeout(() => {
     handle.updateConfig!(narrowedConfig);
-    console.log("updated config: only com.apple.*, backtraces on, 8 data bytes");
+    console.log("updated config: only com.apple.*, backtraces on, 8 data bytes, 1 message shown per second");
 }, DISPOSE_AFTER_MS / 2);
 
 setTimeout(() => {

@@ -21,7 +21,9 @@ long creating the instrument took and every event and widget call, the first
 of which says how many connections and requests awaiting a reply it found. It
 shows message 3, chooses **Clear** on both widgets after 5 seconds and asks
 for message 3 again, which must then be refused, changes the settings halfway
-through, and disposes the instrument after 16 seconds. `stress.ts` counts
+through, down to one message shown per second, so that the rest of each tick
+is only counted and the console says how many, and disposes the instrument
+after 16 seconds. `stress.ts` counts
 events instead of printing them, for a target started with a burst size.
 `restart.ts` creates the instrument, disposes it after 4 seconds and creates
 it again in the same script, as Luma does when an instrument is loaded again,

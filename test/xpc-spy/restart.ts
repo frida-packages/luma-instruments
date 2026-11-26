@@ -6,7 +6,7 @@ const RUNS = 2;
 const RUN_MS = 4000;
 const SETTLE_MS = 1000;
 
-const config: CustomInstrumentConfig = { settings: { backtraces: false, dataLimit: 64 } };
+const config: CustomInstrumentConfig = { settings: { backtraces: false, dataLimit: 64, messagesPerSecond: 100 } };
 const restored = { services: { rows: [] } } as unknown as CustomInstrumentRestoredState;
 
 const emitted = Array.from({ length: RUNS }, () => 0);

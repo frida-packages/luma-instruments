@@ -28,6 +28,13 @@
         "schema": { "kind": "uint", "default": 4096, "min": 0, "max": 1048576 },
         "optional": false,
         "enabledByDefault": true
+      },
+      {
+        "id": "messagesPerSecond",
+        "name": "Messages shown per second (more are only counted)",
+        "schema": { "kind": "uint", "default": 100, "min": 1, "max": 10000 },
+        "optional": false,
+        "enabledByDefault": true
       }
     ],
     "widgets": [

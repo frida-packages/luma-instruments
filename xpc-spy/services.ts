@@ -1,7 +1,14 @@
 import type { MessageEvent } from "./recorder.js";
+import type { Direction } from "./traffic.js";
 
 type ServiceTable = CustomInstrumentWidgetMap["services"];
 type ServiceSnapshot = CustomInstrumentRestoredState["services"];
+
+interface Sighting {
+    service: string;
+    direction: Direction;
+    pid: number;
+}
 
 interface ServiceRow {
     peer: string;
@@ -30,22 +37,26 @@ export class ServiceBoard {
     }
 
     note(event: MessageEvent, gist: string, seen: string): void {
-        let row = this.#rows.get(event.service);
+        this.count({ service: event.service, direction: event.direction, pid: event.pid ?? 0 }, seen).last = gist;
+    }
+
+    count(sighting: Sighting, seen: string): ServiceRow {
+        let row = this.#rows.get(sighting.service);
         if (row === undefined) {
             row = { peer: "", sent: 0, received: 0, seen, last: "" };
-            this.#rows.set(event.service, row);
+            this.#rows.set(sighting.service, row);
         }
-        if (event.direction === "sent") {
+        if (sighting.direction === "sent") {
             row.sent++;
         } else {
             row.received++;
         }
-        if (event.pid !== undefined) {
-            row.peer = String(event.pid);
+        if (sighting.pid !== 0) {
+            row.peer = String(sighting.pid);
         }
         row.seen = seen;
-        row.last = gist;
-        this.#changed.add(event.service);
+        this.#changed.add(sighting.service);
+        return row;
     }
 
     publish(): void {

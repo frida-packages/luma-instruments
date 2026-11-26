@@ -68,7 +68,9 @@ The **Recent messages** console starts with the line about the connections
 found when the instrument started, and then has a line per message, each
 starting with its number. Type a number to show that message in full; the last
 500 can be shown this way. **Clear** empties the console and forgets those
-messages, so a number from before it can no longer be shown.
+messages, so a number from before it can no longer be shown. Messages over the
+**Messages shown per second** are counted in their service's row and not
+shown, and a line says how many there were.
 
 ## Settings
 
@@ -78,6 +80,10 @@ messages, so a number from before it can no longer be shown.
 - **Capture sender backtraces**: adds where each sent message came from.
 - **Bytes kept per data value**: data longer than this keeps only its start,
   and is shown with its full length.
+- **Messages shown per second**: the most messages converted, added to the
+  console and to the event stream in a second, 100 by default. Those over it
+  are still counted, in their service's row, but not shown, so a chatty
+  process does not flood Luma.
 
 Changing a setting takes effect at once, without removing the hooks.
 

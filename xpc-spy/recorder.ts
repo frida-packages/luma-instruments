@@ -1,4 +1,5 @@
 import { invokedSelector } from "./nsxpc.js";
+import { RateWindow } from "./rate-window.js";
 import type { ServiceBoard } from "./services.js";
 import type { Settings } from "./settings.js";
 import { summarize } from "./summary.js";
@@ -31,6 +32,8 @@ export class Recorder {
     readonly #services: ServiceBoard;
     #queue: Capture[] = [];
     #flushTimer: ReturnType<typeof setTimeout> | null = null;
+    #reportTimer: ReturnType<typeof setTimeout> | null = null;
+    readonly #rate: RateWindow;
     readonly #recallable = new Map<number, MessageEvent>();
     readonly #requestSelectors = new Map<number, string>();
 
@@ -42,6 +45,7 @@ export class Recorder {
         this.#ctx = ctx;
         this.#settings = settings;
         this.#services = services;
+        this.#rate = new RateWindow(() => settings.messagesPerSecond);
     }
 
     record(capture: Capture): void {
@@ -65,6 +69,10 @@ export class Recorder {
             clearTimeout(this.#flushTimer);
             this.#flushTimer = null;
         }
+        if (this.#reportTimer !== null) {
+            clearTimeout(this.#reportTimer);
+            this.#reportTimer = null;
+        }
         for (const capture of this.#queue) {
             xpc.release(capture.object);
         }
@@ -75,20 +83,52 @@ export class Recorder {
         this.#flushTimer = null;
         const captures = this.#queue;
         this.#queue = [];
-        const log = this.#ctx.widget("messages");
         for (const capture of captures) {
-            const event = this.#eventFrom(capture);
+            if (this.#rate.admits(capture.time)) {
+                this.#show(capture);
+            } else {
+                this.#countOnly(capture);
+            }
             xpc.release(capture.object);
-
-            this.#ctx.emit(event);
-
-            const gist = event.selector ?? summarize(event.message, GIST_LENGTH);
-            const clock = clockTime(capture.time);
-            this.#services.note(event, `${arrows[event.direction]} ${event.kind} ${gist}`, clock);
-            log.appendOutput(logLine(event, gist, clock));
-            this.#keepRecallable(event);
         }
         this.#services.publish();
+        this.#reportUnshown();
+    }
+
+    #show(capture: Capture): void {
+        const event = this.#eventFrom(capture);
+
+        this.#ctx.emit(event);
+
+        const gist = event.selector ?? summarize(event.message, GIST_LENGTH);
+        const clock = clockTime(capture.time);
+        this.#services.note(event, `${arrows[event.direction]} ${event.kind} ${gist}`, clock);
+        this.#ctx.widget("messages").appendOutput(logLine(event, gist, clock));
+        this.#keepRecallable(event);
+    }
+
+    #countOnly(capture: Capture): void {
+        if (capture.reply !== undefined) {
+            this.#requestSelectors.delete(capture.reply.to);
+        }
+        this.#services.count(capture, clockTime(capture.time));
+    }
+
+    #reportUnshown(): void {
+        const unshown = this.#rate.takeUnreported();
+        if (unshown !== 0) {
+            this.#ctx.widget("messages").appendOutput(
+                `${counted(unshown, "message")} over the ${this.#settings.messagesPerSecond} shown per second only counted.`);
+        }
+        if (this.#rate.pending && this.#reportTimer === null) {
+            this.#reportTimer = setTimeout(() => this.#closeWindow(), Math.max(this.#rate.endsAt - Date.now(), 0));
+        }
+    }
+
+    #closeWindow(): void {
+        this.#reportTimer = null;
+        this.#rate.closeIfOver(Date.now());
+        this.#reportUnshown();
     }
 
     #eventFrom(capture: Capture): MessageEvent {
@@ -126,6 +166,10 @@ export class Recorder {
             this.#recallable.delete(this.#recallable.keys().next().value!);
         }
     }
+}
+
+function counted(count: number, noun: string): string {
+    return `${count} ${noun}${(count === 1) ? "" : "s"}`;
 }
 
 function clockTime(time: number): string {
