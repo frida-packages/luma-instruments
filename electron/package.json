@@ -71,8 +71,8 @@
             { "id": "url", "name": "URL", "alignment": "leading" },
             { "id": "pid", "name": "PID", "alignment": "trailing" },
             { "id": "state", "name": "State", "alignment": "leading" },
-            { "id": "node", "name": "Node integration", "alignment": "leading" },
-            { "id": "isolation", "name": "Context isolation", "alignment": "leading" },
+            { "id": "node", "name": "Node", "alignment": "leading" },
+            { "id": "isolation", "name": "Isolation", "alignment": "leading" },
             { "id": "sandbox", "name": "Sandbox", "alignment": "leading" },
             { "id": "webSecurity", "name": "Web security", "alignment": "leading" },
             { "id": "preload", "name": "Preload", "alignment": "leading" },
@@ -150,9 +150,10 @@
     ],
     "layout": { "column": [
       "status",
-      { "row": [{ "widget": "facts", "share": 40, "maxRows": 6 }, { "widget": "contents", "share": 60, "maxRows": 6 }], "foldBelow": 900 },
+      { "widget": "contents", "maxRows": 4 },
+      { "row": [{ "widget": "facts", "share": 50, "maxRows": 6 }, { "widget": "files", "share": 50, "maxRows": 6 }], "foldBelow": 900 },
       { "row": [{ "widget": "ipc", "share": 62, "maxRows": 10 }, { "widget": "message", "share": 38 }], "share": 60, "foldBelow": 900 },
-      { "row": [{ "widget": "console", "share": 62 }, { "widget": "files", "share": 38, "maxRows": 8 }], "share": 40, "foldBelow": 900 }
+      { "widget": "console", "share": 40 }
     ] },
     "children": [
       {
