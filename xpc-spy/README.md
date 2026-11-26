@@ -1,7 +1,8 @@
 # XPC Spy
 
 Shows the XPC messages a process sends and receives on macOS and iOS, grouped
-by service.
+by service, on the connections it made before Luma attached as well as on
+those it makes after.
 
 ## What it shows
 
