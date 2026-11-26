@@ -419,10 +419,11 @@ gives it that share of what the fitted columns leave, 1 being every column's
 share when it says nothing; `width:` fixes it in points, as Glamorous Toolkit
 does. When the pane is too narrow for all of them, the columns give way by
 `priority:`, highest first and the rightmost of equals first: each shrinks to
-its `minimumCharacters:`, if it names one, and is then left out, until the
-rest fit. A column that names no priority gives way before those that do, and
-the column with the lowest priority is never left out. A cut cell
-shows what it holds in a tooltip. Declaring any of this needs Luma 4.0.0.
+its `minimumCharacters:` and is then left out, until the rest fit. A column
+sized by weight that names no minimum keeps what its cells show, up to six
+characters. A column that names no priority gives way before those that do,
+and the columns of the lowest priority are never left out. A cut cell shows
+what it holds in a tooltip. Declaring any of this needs Luma 4.0.0.
 
 Every builder takes `title:` and `priority:`. Longer lists, tables and trees
 can be filtered in the widget; double-clicking a row opens what `send:`
