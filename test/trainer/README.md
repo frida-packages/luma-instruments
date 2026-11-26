@@ -47,3 +47,24 @@ instrument scans:
 frida -p <pid> -l test/trainer/large.ts -q -t 300
 frida -p <pid> -l test/trainer/bench.ts -q -t 60
 ```
+
+`store-forms.c` is a target whose thread, on command, runs one of fifteen
+stores at a locked 32-bit value: plain, wider than the value, byte and
+halfword, unscaled, floating-point and vector, pre- and post-indexed, store
+pairs, register offset, release, and an atomic swap. `store-forms.ts` locks
+the value through the instrument's locks and runs each, checking that the
+locked bytes held, that the bytes beside them and the base register came out
+as the instruction would leave them, and that each write was counted once,
+against the store, and as undone. The swap takes the path that lets the write
+happen and puts the value back:
+
+```sh
+clang -O1 -o /tmp/store-forms test/trainer/store-forms.c
+/tmp/store-forms &
+frida -p $! -l test/trainer/store-forms.ts -q -t 20
+```
+
+`poison-count.ts` locks the integer and the float, sets off the poison thread
+thirty times, and after each checks that both locks counted exactly 5000
+writes from the poison loop. Run it in a fresh game each time, `-t 400`.
+
