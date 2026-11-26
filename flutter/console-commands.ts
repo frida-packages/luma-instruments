@@ -72,7 +72,7 @@ export class ConsoleCommands {
             reply.error("The snapshot has not been read yet.");
             return;
         }
-        reply.output([...strings.packages].map(([name, libraries]) => `${name}: ${libraries} libraries`).join("\n"));
+        outputLines([...strings.packages].map(([name, libraries]) => `${name}: ${libraries} librar${(libraries === 1) ? "y" : "ies"}`), reply);
     }
 
     #channelNames(reply: Reply): void {
@@ -81,7 +81,7 @@ export class ConsoleCommands {
             reply.error("The snapshot has not been read yet.");
             return;
         }
-        reply.output(strings.channelNames.join("\n"));
+        outputLines(strings.channelNames, reply);
     }
 
     #strings(pattern: string, reply: Reply): void {
@@ -92,7 +92,7 @@ export class ConsoleCommands {
         }
         const expression = new RegExp(pattern);
         const matches = [...new Set(strings.strings.filter(text => expression.test(text)))];
-        reply.output(shownMatches(matches));
+        outputLines(shownMatches(matches), reply);
     }
 
     #libraries(pattern: string, reply: Reply): void {
@@ -103,7 +103,7 @@ export class ConsoleCommands {
         }
         const expression = new RegExp(pattern);
         const libraries = lookup.service.isolates.flatMap(isolate => isolate.libraries.map(uri => `${isolate.name}: ${uri}`));
-        reply.output(shownMatches(libraries.filter(text => expression.test(text))));
+        outputLines(shownMatches(libraries.filter(text => expression.test(text))), reply);
     }
 
     #save(name: string, reply: Reply): void {
@@ -116,7 +116,13 @@ export class ConsoleCommands {
     }
 }
 
-function shownMatches(matches: string[]): string {
-    const shown = matches.slice(0, MATCHES_SHOWN).join("\n");
-    return (matches.length > MATCHES_SHOWN) ? `${shown}\n… and ${matches.length - MATCHES_SHOWN} more` : `${shown}\n${matches.length} found`;
+function outputLines(lines: string[], reply: Reply): void {
+    for (const line of lines) {
+        reply.output(line);
+    }
+}
+
+function shownMatches(matches: string[]): string[] {
+    const shown = matches.slice(0, MATCHES_SHOWN);
+    return [...shown, (matches.length > MATCHES_SHOWN) ? `… and ${matches.length - MATCHES_SHOWN} more` : `${matches.length} found`];
 }
