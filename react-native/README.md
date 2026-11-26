@@ -47,7 +47,11 @@ runtime: its engine and version (for Hermes, its release and bytecode
 version), React Native's version, the architecture, whether the bundle is a
 production or a development one, the bundle's name, the thread and the
 status. **Show** opens the runtime's page; **Export Bundle** offers its
-bundle. **Scan** looks again.
+bundle. **Scan** looks again and **Stop Scan** ends a scan early; a scan also
+ends by itself after a minute and keeps what it found. Under the status line
+are how much memory the scan searched, how much it skipped because the app had
+let go of it, how many pointers it skipped because they were not at the start
+of a live object, and why it stopped early, if it did.
 
 **Bundles** lists the bundles found: files mapped into the process whose
 names end in `.jsbundle`, `.bundle` or `.hbc`, the file a runtime says it

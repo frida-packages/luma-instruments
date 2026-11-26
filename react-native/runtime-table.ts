@@ -33,6 +33,7 @@ export class RuntimeTable implements RuntimeObserver {
 
     showScanning(scanning: boolean): void {
         this.#table.setActionEnabled("scan", !scanning);
+        this.#table.setActionEnabled("stop", scanning);
     }
 
     onRuntimeAdded(runtime: Runtime): void {

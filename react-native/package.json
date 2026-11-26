@@ -72,7 +72,10 @@
           ],
           "maxRows": 256
         },
-        "actions": [{ "id": "scan", "name": "Scan" }],
+        "actions": [
+          { "id": "scan", "name": "Scan" },
+          { "id": "stop", "name": "Stop Scan" }
+        ],
         "persistence": "none"
       },
       {

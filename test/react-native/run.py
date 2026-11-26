@@ -41,6 +41,7 @@ def host_scenario(host, bundle, flavor, route):
             states = harness.call("wait_for_scan")
             check.expect(states[:2] == [False, True], f"Scan was disabled during the first scan and enabled after: {states}")
             check_slot_routes(harness, check)
+            check_stop(harness, check)
             pages = wait_for_pages(harness, 3)
             check.expect(len(pages) == 3 and all(re.fullmatch(r"#\d+ \S+", page["title"]) for page in pages),
                          f"each runtime has a page titled with its number and engine: {[page['title'] for page in pages]}")
@@ -245,6 +246,17 @@ def summarize(pid, seconds):
 
 def lastPathComponent(path):
     return path.rsplit("/", 1)[-1]
+
+
+def check_stop(harness, check):
+    scans = harness.call("scan_states").count(True)
+    harness.call("scan_and_stop")
+    deadline = time.time() + 10
+    while time.time() < deadline and harness.call("scan_states").count(True) == scans:
+        time.sleep(0.1)
+    status = harness.rows("status")
+    detail = status[0]["subtitle"] if status else ""
+    check.expect("stopped early because Stop Scan was pressed" in detail, f"Stop Scan stops a scan and the status says so: {detail}")
 
 
 def check_slot_routes(harness, check):

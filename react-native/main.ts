@@ -69,6 +69,8 @@ export const instrument: CustomInstrument = {
                     case "runtimes":
                         if (action === "scan") {
                             void scan.rescan();
+                        } else if (action === "stop") {
+                            scan.stop();
                         } else if (action === "show") {
                             respond.show(pages.pageOf(runtimeOf(item!)));
                         } else {
@@ -98,6 +100,7 @@ export const instrument: CustomInstrument = {
                 }
             },
             async dispose() {
+                scan.dispose();
                 await sessions.dispose();
                 rendezvous.dispose();
                 platform.dispose();

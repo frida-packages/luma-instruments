@@ -26,6 +26,23 @@ export class MemorySearch {
     bytesSearched = 0;
     bytesUnreadable = 0;
     candidatesRejected = 0;
+    readonly #timeLimitMs: number;
+    #stopReason: string | null = null;
+
+    constructor(timeLimitMs: number) {
+        this.#timeLimitMs = timeLimitMs;
+    }
+
+    get stopReason(): string | null {
+        if (this.#stopReason === null && Date.now() - this.startedAt >= this.#timeLimitMs) {
+            this.#stopReason = `it reached its limit of ${this.#timeLimitMs / 1000} s`;
+        }
+        return this.#stopReason;
+    }
+
+    stop(reason: string): void {
+        this.#stopReason ??= reason;
+    }
 
     findPointers(range: MemoryRange, values: NativePointer[], mask: NativePointer): PointerMatch[] {
         return this.#search(range, 0, copy => Memory.findPointers(copy, values, { mask }));

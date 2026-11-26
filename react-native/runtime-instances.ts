@@ -26,6 +26,9 @@ export async function findInstances(vtables: NativePointer[], search: MemorySear
 export async function searchHeap(search: MemorySearch, values: NativePointer[], mask: NativePointer): Promise<PointerMatch[]> {
     const matches: PointerMatch[] = [];
     for (const slice of slicesOf(heapRanges())) {
+        if (search.stopReason !== null) {
+            break;
+        }
         for (const range of slice) {
             matches.push(...search.findPointers(range, values, mask));
         }

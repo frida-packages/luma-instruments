@@ -52,7 +52,8 @@ python3 test/generate-typings.py ~/src/luma react-native test/react-native/luma.
 
 `run.py host <host> <bundle> <bytecode|plain> [route]` runs a host with a
 timer, a quiet and an idle runtime. It checks that **Scan** is disabled while
-the first scan runs, that the slots found from a framework's exported anchors
+the first scan runs, that **Stop Scan** ends a scan and the status says so,
+that the slots found from a framework's exported anchors
 equal those found from the vtable's shape and those found through the type
 name, and, given a route, that the runtimes were found that way. It finds
 the three runtimes, reads `hostName` in each, sets a global the host's own

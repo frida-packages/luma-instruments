@@ -43,6 +43,9 @@ export async function findRuntimeClasses(routes: AnchorRoute[], search: MemorySe
     const bases: JsiBase[] = [];
     for (const route of routes) {
         for (const module of modules) {
+            if (search.stopReason !== null) {
+                break;
+            }
             const base = findJsiBase(module, [route], search);
             if (base !== null) {
                 bases.push(base);
@@ -64,6 +67,9 @@ export async function findRuntimeClasses(routes: AnchorRoute[], search: MemorySe
 async function classesAmong(modules: Module[], bases: JsiBase[], search: MemorySearch): Promise<RuntimeClass[]> {
     const classes: RuntimeClass[] = [];
     for (const module of modules) {
+        if (search.stopReason !== null) {
+            break;
+        }
         const names = runtimeTypeNamesIn(module, search);
         classes.push(...classesIn(module, names, baseFor(module, bases), search));
         await yieldToEventLoop();

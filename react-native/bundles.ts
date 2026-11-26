@@ -138,6 +138,9 @@ async function hermesBytecodeInMemory(search: MemorySearch): Promise<NativePoint
     const pattern = HermesBytecodeHeader.pattern({ magic: HERMES_BYTECODE_MAGIC });
     const found: NativePointer[] = [];
     for (const range of Process.enumerateRanges("r--")) {
+        if (search.stopReason !== null) {
+            break;
+        }
         if (range.file !== undefined || range.size > LARGEST_SEARCHED_RANGE) {
             continue;
         }

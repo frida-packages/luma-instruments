@@ -11,6 +11,7 @@ import type { RuntimeRegistry } from "./runtimes.js";
 import type { ScanStatus } from "./scan-status.js";
 
 const anchorRoutes: AnchorRoute[] = ["exports", "type names"];
+const SCAN_TIME_LIMIT_MS = 60000;
 
 export class RuntimeScan {
     readonly #registry: RuntimeRegistry;
@@ -21,7 +22,9 @@ export class RuntimeScan {
     readonly #bundles: BundleCatalog;
     readonly #modules: ModuleTable;
     #current: Promise<void> | null = null;
+    #search: MemorySearch | null = null;
     #again = false;
+    #disposed = false;
 
     constructor(registry: RuntimeRegistry, rendezvous: Rendezvous, platform: Platform, status: ScanStatus, table: RuntimeTable,
         bundles: BundleCatalog, modules: ModuleTable) {
@@ -40,10 +43,13 @@ export class RuntimeScan {
             return this.#current;
         }
         this.#table.showScanning(true);
-        this.#current = this.#scan(new MemorySearch()).finally(() => {
+        const search = new MemorySearch(SCAN_TIME_LIMIT_MS);
+        this.#search = search;
+        this.#current = this.#scan(search).finally(() => {
             this.#current = null;
+            this.#search = null;
             this.#table.showScanning(false);
-            if (this.#again) {
+            if (this.#again && !this.#disposed) {
                 this.#again = false;
                 void this.rescan();
             }
@@ -51,23 +57,51 @@ export class RuntimeScan {
         return this.#current;
     }
 
+    stop(): void {
+        this.#again = false;
+        this.#search?.stop("Stop Scan was pressed");
+    }
+
+    dispose(): void {
+        this.#disposed = true;
+        this.#again = false;
+        this.#search?.stop("the instrument was removed");
+    }
+
     async #scan(search: MemorySearch): Promise<void> {
         this.#status.note("Looking for JavaScript runtimes…");
-        this.#modules.list(await this.#platform.nativeModules(search));
+        const modules = await this.#platform.nativeModules(search);
+        if (this.#disposed) {
+            return;
+        }
+        this.#modules.list(modules);
         const classes = await findRuntimeClasses(anchorRoutes, search);
+        if (this.#disposed) {
+            return;
+        }
         this.#rendezvous.watchClasses(classes.classes);
         const instances = await findInstances(classes.classes.map(runtimeClass => runtimeClass.vtable), search);
+        if (this.#disposed) {
+            return;
+        }
         for (const { address, vtable } of instances) {
             const runtimeClass = classes.classes.find(candidate => candidate.vtable.equals(vtable))!;
             this.#registry.admit(address, runtimeClass);
         }
         this.#rendezvous.explore();
         const bundles = await this.#bundles.scan(search);
-        this.#status.note(summaryOf(classes, this.#registry.all.length, bundles), detailOf(search, classes));
+        if (this.#disposed) {
+            return;
+        }
+        this.#status.note(summaryOf(classes, search, this.#registry.all.length, bundles), detailOf(search, classes));
     }
 }
 
-function summaryOf(classes: ClassSearch, runtimes: number, bundles: number): string {
+function summaryOf(classes: ClassSearch, search: MemorySearch, runtimes: number, bundles: number): string {
+    if (search.stopReason !== null) {
+        return `The scan stopped before it finished; ${runtimes} runtime${(runtimes === 1) ? "" : "s"} known, `
+            + `${bundles} new bundle${(bundles === 1) ? "" : "s"} found.`;
+    }
     if (classes.classes.length === 0) {
         return (classes.bases.length === 0)
             ? "No JSI runtime implementation was found in this process."
@@ -87,6 +121,7 @@ function detailOf(search: MemorySearch, classes: ClassSearch): string {
         (search.candidatesRejected !== 0)
             ? `${search.candidatesRejected} pointer${(search.candidatesRejected === 1) ? "" : "s"} to a known class not at the start of a live object, skipped`
             : null,
+        (search.stopReason !== null) ? `stopped early because ${search.stopReason}; Scan looks again` : null,
     ];
     return parts.filter(part => part !== null).join("; ");
 }

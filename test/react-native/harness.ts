@@ -19,6 +19,7 @@ const config: CustomInstrumentConfig = {
     settings: { captureTraffic: true, watchEveryModule: false, bytesPerCall: 2048, callsKept: 2000 },
 };
 const SETTLE_AFTER_DISPOSE_MS = 1500;
+const SLOT_ROUTE_TIME_LIMIT_MS = 60000;
 const pages = new Map<string, CustomInstrumentChildRow>();
 const tables = new Map<string, Map<string, Record<string, string>>>();
 const consoles = new Map<string, Reply[]>();
@@ -102,6 +103,10 @@ rpc.exports = {
         const offer = (lastOffer !== null) ? await lastOffer : null;
         return printable({ shown: shownPage, offer });
     },
+    async scanAndStop(): Promise<void> {
+        await handle.onAction!({ widget: "runtimes", action: "scan" } as CustomInstrumentAction, respond);
+        await handle.onAction!({ widget: "runtimes", action: "stop" } as CustomInstrumentAction, respond);
+    },
     scanStates(): boolean[] {
         return scanStates;
     },
@@ -112,8 +117,8 @@ rpc.exports = {
         const modules = Process.enumerateModules().filter(module => module.findExportByName("_ZTVN8facebook3jsi7RuntimeE") !== null
             || module.path === Process.mainModule.path);
         return printable(modules.map(module => {
-            const exported = findJsiBase(module, ["exports"], new MemorySearch());
-            const named = findJsiBase(module, ["type names"], new MemorySearch());
+            const exported = findJsiBase(module, ["exports"], new MemorySearch(SLOT_ROUTE_TIME_LIMIT_MS));
+            const named = findJsiBase(module, ["type names"], new MemorySearch(SLOT_ROUTE_TIME_LIMIT_MS));
             return {
                 module: module.name,
                 exports: exported?.slots ?? null,
