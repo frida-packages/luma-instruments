@@ -53,17 +53,18 @@ function baseFromExports(module: Module): JsiBase | null {
         return null;
     }
     const vtable = symbol.add(VTABLE_ADDRESS_POINT_OFFSET);
-    const [instrumentation, createValueFromJsonUtf8, pushScope] = anchors.map(anchor => slotHolding(vtable, anchor!));
+    const entries = slotEntries(vtable);
+    const [instrumentation, createValueFromJsonUtf8, pushScope] = anchors.map(anchor => slotHolding(entries, anchor!));
     const deletingDestructor = module.findExportByName(DELETING_DESTRUCTOR_SYMBOL);
     return {
         module,
         vtable,
         slots: {
-            evaluateJavaScript: firstPureSlot(slotEntries(vtable)),
+            evaluateJavaScript: firstPureSlot(entries),
             global: instrumentation - SLOTS_BEFORE_INSTRUMENTATION,
             utf8: createValueFromJsonUtf8 - SLOTS_BEFORE_CREATE_VALUE_FROM_JSON,
             call: pushScope - SLOTS_BEFORE_PUSH_SCOPE,
-            deletingDestructor: (deletingDestructor !== null) ? slotHolding(vtable, deletingDestructor) : null,
+            deletingDestructor: (deletingDestructor !== null) ? slotHolding(entries, deletingDestructor) : null,
         },
         route: "exports",
     };
@@ -96,10 +97,11 @@ export function structuralSlots(entries: NativePointer[]): JsiSlots {
 }
 
 export function slotEntries(vtable: NativePointer): NativePointer[] {
+    const code = Process.enumerateRanges("--x");
     const entries: NativePointer[] = [];
     for (let i = 0; i !== MAX_SLOTS; i++) {
         const entry = readPointer(vtable.add(i * Process.pointerSize))?.strip() ?? null;
-        if (entry === null || !isCode(entry)) {
+        if (entry === null || !isCode(code, entry)) {
             break;
         }
         entries.push(entry);
@@ -115,8 +117,8 @@ export function readableRangesOf(module: Module): MemoryRange[] {
     return module.enumerateRanges("r--").map(({ base, size }) => ({ base, size }));
 }
 
-function slotHolding(vtable: NativePointer, implementation: NativePointer): number {
-    return slotEntries(vtable).findIndex(entry => entry.equals(implementation.strip()));
+function slotHolding(entries: NativePointer[], implementation: NativePointer): number {
+    return entries.findIndex(entry => entry.equals(implementation.strip()));
 }
 
 function firstPureSlot(entries: NativePointer[]): number {
@@ -135,6 +137,6 @@ function mostFrequent(entries: NativePointer[]): NativePointer {
     return [...counts.values()].reduce((best, tally) => (tally.count > best.count) ? tally : best).entry;
 }
 
-function isCode(address: NativePointer): boolean {
-    return Process.findRangeByAddress(address)?.protection.includes("x") ?? false;
+function isCode(code: RangeDetails[], address: NativePointer): boolean {
+    return code.some(range => address.compare(range.base) >= 0 && address.compare(range.base.add(range.size)) < 0);
 }

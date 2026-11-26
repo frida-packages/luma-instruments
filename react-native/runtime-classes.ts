@@ -70,8 +70,9 @@ async function classesAmong(modules: Module[], bases: JsiBase[], search: MemoryS
         if (search.stopReason !== null) {
             break;
         }
-        const names = runtimeTypeNamesIn(module, search);
-        classes.push(...classesIn(module, names, baseFor(module, bases), search));
+        const ranges = readableRangesOf(module);
+        const names = runtimeTypeNamesIn(ranges, search);
+        classes.push(...classesIn(ranges, names, baseFor(module, bases), search));
         await yieldToEventLoop();
     }
     return classes;
@@ -83,8 +84,7 @@ function applicationModules(): Module[] {
         !prefixes.some(prefix => module.path.startsWith(prefix)) && !FRIDA_MODULE.test(module.name));
 }
 
-function runtimeTypeNamesIn(module: Module, search: MemorySearch): TypeName[] {
-    const ranges = readableRangesOf(module);
+function runtimeTypeNamesIn(ranges: MemoryRange[], search: MemorySearch): TypeName[] {
     return TYPE_NAME_SUFFIXES.flatMap(suffix => typeNamesEndingWith(ranges, suffix, search))
         .filter(name => engineOf(name.text) !== null);
 }
@@ -93,11 +93,10 @@ function baseFor(module: Module, bases: JsiBase[]): JsiBase | null {
     return bases.find(base => base.module.path === module.path) ?? bases[0] ?? null;
 }
 
-function classesIn(module: Module, names: TypeName[], base: JsiBase | null, search: MemorySearch): RuntimeClass[] {
+function classesIn(ranges: MemoryRange[], names: TypeName[], base: JsiBase | null, search: MemorySearch): RuntimeClass[] {
     if (base === null) {
         return [];
     }
-    const ranges = readableRangesOf(module);
     return names.flatMap(name => primaryVtablesOf(ranges, name, search).map(vtable => ({
         engine: engineOf(name.text)!,
         typeName: name.text,
