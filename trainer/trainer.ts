@@ -483,7 +483,7 @@ function typeList(types: ValueType[]): string {
 }
 
 function formatBytes(byteCount: number): string {
-    const units = ["bytes", "KiB", "MiB", "GiB", "TiB"];
+    const units = ["B", "KiB", "MiB", "GiB", "TiB"];
     let value = byteCount;
     let unit = 0;
     while (value >= 1024 && unit < units.length - 1) {
