@@ -333,7 +333,7 @@ belongs to the widget itself.
 
 | `kind` | `config` | Handle methods |
 | --- | --- | --- |
-| `counter` | `unit` (optional) | `setCounter({ value, unit?, delta? })` |
+| `counter` | `unit` (optional) | `setCounter({ value, unit?, delta?, fractionDigits? })` |
 | `histogram` | `maxBuckets` (100) | `setHistogram([{ label, count }])`, `incrementBucket(label, by?)` |
 | `graph` | `series: [{ id, name }]`, `maxPoints` (5000) | `push({ series, x, y })` |
 | `list` | `rowActions: [{ id, name }]` (none), `maxItems` (1000) | `upsertItem({ id, title, subtitle?, accessory? })`, `removeItem(id)` |
@@ -357,6 +357,9 @@ described there too.
   address of the first one as a `NativePointer`, a `"0x…"` or decimal string,
   or a number. A pointer or a string is the exact form: a number above 2^53
   has already lost precision before Luma sees it.
+- A counter's `fractionDigits`, 0 to 6, fixes how many digits it shows after
+  the point. Without it, Luma shows whole numbers until a value with a
+  fraction arrives, and one decimal from then on.
 - `appendValue` shows any JavaScript value as the REPL does. `appendConsole`
   with `kind: "input"` shows a line as if the user had typed it.
 
@@ -619,7 +622,7 @@ widget's id:
 
 | `kind` | `restored[id]` |
 | --- | --- |
-| `counter` | `{ counter: { value, unit?, delta? } \| null }` |
+| `counter` | `{ counter: { value, unit?, delta?, fractionDigits? } \| null }` |
 | `histogram` | `{ buckets: [{ label, count }] }` |
 | `graph` | `{ points: [{ series, x, y }] }` |
 | `list` | `{ items: [{ id, title, subtitle?, accessory? }] }` |
