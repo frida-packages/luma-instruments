@@ -67,9 +67,11 @@ blue, and elements with both kinds of pad green, as in GStreamer's own
 drawings. A ghost pad sits on its bin's border, joined by a dashed line to the
 proxy pad just inside. Request pads have a dashed outline and sometimes-pads a
 dotted one. Every link carries its media type and as many of its caps fields
-as fit beside it. Drag or scroll to pan, pinch to zoom, and press **f** to fit
-the whole graph; the camera stays where you put it while the same pipeline is
-refreshed. Text on the canvas is ASCII: any other character is drawn as `?`.
+as fit beside it, a long field wrapped after its name and at its commas, so
+that the graph grows taller rather than wider. Drag or scroll to pan, pinch to
+zoom, and press **f** to fit the whole graph; the camera stays where you put
+it while the same pipeline is refreshed. Text on the canvas is ASCII: any
+other character is drawn as `?`.
 
 Everything else is reached by clicking. A bin, an element, a pad or a link
 opens in a column beside the graph, and what it shows opens in the next:

@@ -79,7 +79,7 @@ PipelineLayout >> measureBin: aBin [
 	sinkSide := self sideOf: (self sinkPadsOf: aBin).
 	sourceSide := self sideOf: (self sourcePadsOf: aBin).
 	x := self leftOf: sinkSide gap: gaps first.
-	contentHeight := columns inject: 0 into: [ :tallest :each | tallest max: (self heightOfColumn: each) ].
+	contentHeight := (columns inject: 0 into: [ :tallest :each | tallest max: (self heightOfColumn: each) ]) max: (self labelRoomWithin: aBin).
 	columns doWithIndex: [ :column :index |
 		| columnWidth columnHeight y |
 		columnWidth := column inject: 0 into: [ :widest :each | widest max: (extents at: each key) x ].
@@ -157,11 +157,49 @@ PipelineLayout >> slotOf: aPad in: someColumns [
 { #category : 'measuring' }
 PipelineLayout >> labelWidthOf: aLink [
 	| lines |
-	lines := aLink labelLines.
+	lines := self wrappedLabelLinesOf: aLink.
 	lines ifEmpty: [ ^ 0 ].
 	^ (lines allButFirst
 		inject: (lettering widthOf: lines first size: self capsTypeSize)
 		into: [ :widest :each | widest max: (lettering widthOf: each size: self capsFieldSize) ]) min: self labelLimit
+]
+
+{ #category : 'measuring' }
+PipelineLayout >> wrappedLabelLinesOf: aLink [
+	| lines |
+	lines := aLink labelLines.
+	lines ifEmpty: [ ^ #() ].
+	^ { lines first } , (lines allButFirst flatCollect: [ :each | self wrappedField: each ])
+]
+
+{ #category : 'measuring' }
+PipelineLayout >> wrappedField: aLine [
+	| separator |
+	separator := aLine indexOfSubCollection: ': '.
+	(aLine size <= self wrapLength or: [ separator = 0 ]) ifTrue: [ ^ { aLine } ].
+	^ { aLine first: separator } , ((self packed: (self piecesOf: (aLine allButFirst: separator + 1))) collect: [ :each | '  ' , each ])
+]
+
+{ #category : 'measuring' }
+PipelineLayout >> piecesOf: aValue [
+	| pieces |
+	pieces := aValue splitOn: ', '.
+	^ (pieces allButLast collect: [ :each | each , ',' ]) , { pieces last }
+]
+
+{ #category : 'measuring' }
+PipelineLayout >> packed: somePieces [
+	| lines current |
+	lines := OrderedCollection new.
+	current := ''.
+	somePieces do: [ :each |
+		(current notEmpty and: [ current size + 1 + each size > self wrapLength ]) ifTrue: [
+			lines add: current.
+			current := '' ].
+		current := current isEmpty
+			ifTrue: [ each ]
+			ifFalse: [ current , ' ' , each ] ].
+	^ lines asArray , { current }
 ]
 
 { #category : 'measuring' }
@@ -191,6 +229,21 @@ PipelineLayout >> leftOf: aSide gap: aGap [
 { #category : 'measuring' }
 PipelineLayout >> heightOfColumn: aColumn [
 	^ (aColumn inject: 0 into: [ :sum :each | sum + (extents at: each key) y ]) + (self rowGap * (aColumn size - 1 max: 0))
+]
+
+{ #category : 'measuring' }
+PipelineLayout >> labelRoomWithin: aBin [
+	^ (linksByBin at: aBin key ifAbsent: [ #() ])
+		inject: 0
+		into: [ :tallest :each | tallest max: ((self labelHeightOf: each) + self padHeight) * 2 + 8 ]
+]
+
+{ #category : 'measuring' }
+PipelineLayout >> labelHeightOf: aLink [
+	| lines |
+	lines := self wrappedLabelLinesOf: aLink.
+	lines ifEmpty: [ ^ 0 ].
+	^ (lettering lineHeight: self capsTypeSize) + ((lines size - 1) * (lettering lineHeight: self capsFieldSize))
 ]
 
 { #category : 'measuring' }
@@ -371,13 +424,25 @@ PipelineLayout >> roomFor: aRoute below: aFloor before: aNextLink bottom: aBotto
 
 { #category : 'routing' }
 PipelineLayout >> labelLinesOf: aLink within: aHeight [
-	| lines room shown |
-	lines := aLink labelLines.
-	lines ifEmpty: [ ^ #() ].
+	| room shown |
+	aLink labelLines ifEmpty: [ ^ #() ].
 	room := aHeight - 4 - (lettering lineHeight: self capsTypeSize).
 	shown := 1 + ((room / (lettering lineHeight: self capsFieldSize)) floor max: 0).
-	^ (lines first: (shown min: lines size)) collectWithIndex: [ :each :index |
+	^ (self wholeFieldsOf: aLink within: shown) collectWithIndex: [ :each :index |
 		lettering truncated: each size: (self labelSizes at: (index min: 2)) width: self labelLimit ]
+]
+
+{ #category : 'routing' }
+PipelineLayout >> wholeFieldsOf: aLink within: aLineCount [
+	| lines kept |
+	lines := aLink labelLines.
+	kept := OrderedCollection with: lines first.
+	lines allButFirst do: [ :each |
+		| wrapped |
+		wrapped := self wrappedField: each.
+		kept size + wrapped size > aLineCount ifTrue: [ ^ kept asArray ].
+		kept addAll: wrapped ].
+	^ kept asArray
 ]
 
 { #category : 'indexing' }
@@ -476,6 +541,11 @@ PipelineLayout >> capsFieldSize [
 { #category : 'metrics' }
 PipelineLayout >> labelSizes [
 	^ { self capsTypeSize. self capsFieldSize }
+]
+
+{ #category : 'metrics' }
+PipelineLayout >> wrapLength [
+	^ 20
 ]
 
 { #category : 'metrics' }
