@@ -120,7 +120,7 @@ export class RuntimeSessions implements RendezvousObserver {
             recordBytes: this.#settings.bytesPerCall,
             recordsKept: this.#settings.callsKept,
         };
-        return this.#send(runtime, kitInstallation(options), true).then(() => {
+        return this.#send(runtime, kitInstallation(options), false).then(() => {
             runtime.kit = "ready";
             runtime.failure = null;
             this.#registry.changed(runtime);
@@ -175,7 +175,7 @@ export class RuntimeSessions implements RendezvousObserver {
     }
 
     #callPrepared(runtime: Runtime, method: KitMethod, args: () => unknown[]): Promise<KitReply> {
-        return this.#send(runtime, () => kitCall(KIT_KEY, method, args()), method !== "evaluate").then(reply => {
+        return this.#send(runtime, () => kitCall(KIT_KEY, method, args()), method === "evaluate").then(reply => {
             if (reply.kind === "missing") {
                 runtime.kit = "absent";
                 this.#registry.changed(runtime);
@@ -184,10 +184,12 @@ export class RuntimeSessions implements RendezvousObserver {
         });
     }
 
-    #send(runtime: Runtime, source: Errand["source"], errorsReject: boolean): Promise<KitReply> {
+    #send(runtime: Runtime, source: Errand["source"], asked: boolean): Promise<KitReply> {
+        const errorsReject = !asked;
         return new Promise((resolve, reject) => {
             const errand: Errand = {
                 source,
+                asked,
                 settle(evaluation: Evaluation) {
                     if (evaluation.kind === "refused") {
                         reject(new Error(evaluation.reason));

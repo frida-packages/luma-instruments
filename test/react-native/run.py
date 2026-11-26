@@ -101,6 +101,17 @@ def churn_scenario(host, bundle):
     finish(f"{Path(host).name} churn", check)
 
 
+def check_live_status(harness, page, server, when, check):
+    before = server.requests
+    time.sleep(1.5)
+    check.expect(server.requests > before, f"the app is alive and fetching {when}")
+    row = next(row for row in harness.rows("runtimes") if row["id"] == page)
+    badge = next(each for each in harness.pages() if each["id"] == page)["badge"]["text"]
+    check.expect("destroyed" not in row["status"] and badge != "destroyed",
+                 f"a live runtime is not called destroyed {when}: status {row['status']!r}, badge {badge!r}")
+    check.expect(row["status"] == badge, f"the table's status and the page's badge agree {when}: {row['status']!r} and {badge!r}")
+
+
 def app_scenario(app, architecture):
     server = TickServer()
     target = Target([app], None, 0)
@@ -161,6 +172,12 @@ def app_scenario(app, architecture):
             bundles = harness.rows("bundles")
             check.expect(any("Hermes bytecode" in row["format"] and row["loadedBy"] == f"#{page}" for row in bundles),
                          f"the bundle is listed as Hermes bytecode, loaded by runtime #{page}: {bundles}")
+            check_live_status(harness, page, server, "after its traffic", check)
+            harness.call("action", "runtimes", "scan", None, None)
+            harness.call("wait_for_scan")
+            time.sleep(2)
+            check_live_status(harness, page, server, "after a rescan", check)
+            check.expect(values(harness.input(page, "typeof spyAppTicks")) == ["number"], "the runtime still answers after a rescan")
             for line in harness.call("dispose"):
                 check.expect(line.endswith("restored"), f"code {line}")
             check_cleanup(harness, architecture, check)

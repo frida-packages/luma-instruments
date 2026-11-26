@@ -7,6 +7,7 @@ import type { Runtime, RuntimeRegistry } from "./runtimes.js";
 
 export interface Errand {
     source: string | (() => string);
+    asked: boolean;
     settle(evaluation: Evaluation): void;
     abandon(reason: string): void;
 }
@@ -70,6 +71,7 @@ export class Rendezvous {
         const pending = this.#errands.get(runtime) ?? [];
         pending.push(errand);
         this.#errands.set(runtime, pending);
+        this.#noteWaiting(runtime, [errand]);
         if (runtime.owner === null) {
             this.#presumeOwner(runtime);
         }
@@ -79,8 +81,8 @@ export class Rendezvous {
         this.#refreshListeners();
     }
 
-    pendingFor(runtime: Runtime): number {
-        return this.#errands.get(runtime)?.length ?? 0;
+    waitingFor(runtime: Runtime): number {
+        return askedAmong(this.#errands.get(runtime) ?? []);
     }
 
     recall(runtime: Runtime, reason: string): number {
@@ -90,6 +92,7 @@ export class Rendezvous {
             errand.abandon(reason);
         }
         this.#refreshListeners();
+        this.#noteWaiting(runtime, pending);
         return pending.length;
     }
 
@@ -180,7 +183,7 @@ export class Rendezvous {
 
     #listenersWanted(): boolean {
         return !this.#disposed && (Date.now() < this.#exploringUntil || this.#registry.all.some(runtime =>
-            this.pendingFor(runtime) !== 0 && (this.#unwakeable.has(runtime) || runtime.ownership !== "seen" || !this.#platform.wakes)));
+            this.#errands.has(runtime) && (this.#unwakeable.has(runtime) || runtime.ownership !== "seen" || !this.#platform.wakes)));
     }
 
     #attach(): void {
@@ -207,7 +210,7 @@ export class Rendezvous {
         } else if (runtime.owner !== thread) {
             return;
         }
-        if (this.pendingFor(runtime) === 0) {
+        if (!this.#errands.has(runtime)) {
             this.#refreshListeners();
         } else if (!this.#wakeOwner(runtime)) {
             this.#runErrands(runtime);
@@ -265,6 +268,7 @@ export class Rendezvous {
         } finally {
             this.#busy.delete(runtime);
         }
+        this.#noteWaiting(runtime, pending);
         if (this.#errands.has(runtime)) {
             this.#runErrands(runtime);
         }
@@ -285,4 +289,14 @@ export class Rendezvous {
         }
         errand.settle(evaluation);
     }
+
+    #noteWaiting(runtime: Runtime, errands: Errand[]): void {
+        if (askedAmong(errands) !== 0) {
+            this.#registry.changed(runtime);
+        }
+    }
+}
+
+function askedAmong(errands: Errand[]): number {
+    return errands.filter(errand => errand.asked).length;
 }

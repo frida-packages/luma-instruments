@@ -33,6 +33,7 @@ export class RuntimePages implements RuntimeObserver {
     readonly #pages: Pages;
     readonly #table: RuntimeTable;
     readonly #registry: RuntimeRegistry;
+    readonly #failuresTold = new Set<Runtime>();
     #rendezvous!: Rendezvous;
     #sessions!: RuntimeSessions;
     #rescanner!: Rescanner;
@@ -65,6 +66,10 @@ export class RuntimePages implements RuntimeObserver {
         if (runtime.presence === "closed") {
             page.widget("console").appendError(`${runtimeLabel(runtime)} was destroyed.`);
         }
+        if (runtime.kit === "failed" && !this.#failuresTold.has(runtime)) {
+            this.#failuresTold.add(runtime);
+            page.widget("console").appendError(`${runtimeLabel(runtime)} cannot evaluate: ${runtime.failure}`);
+        }
     }
 
     onSettled(runtime: Runtime, settlement: Settlement): void {
@@ -85,9 +90,7 @@ export class RuntimePages implements RuntimeObserver {
     }
 
     statusOf(runtime: Runtime): string {
-        const pending = this.#rendezvous.pendingFor(runtime);
-        const parts = [(pending !== 0) ? `${pending} waiting` : null, presenceLabel(runtime)];
-        return parts.filter(part => part !== null).join(", ");
+        return this.#badgeOf(runtime).text;
     }
 
     clear(runtime: Runtime): void {
@@ -145,7 +148,7 @@ export class RuntimePages implements RuntimeObserver {
         if (runtime.kit === "failed") {
             return { text: "cannot evaluate", tone: "failed" };
         }
-        const pending = this.#rendezvous.pendingFor(runtime);
+        const pending = this.#rendezvous.waitingFor(runtime);
         if (pending !== 0) {
             return { text: `${pending} waiting`, tone: "waiting" };
         }
@@ -177,8 +180,7 @@ export class RuntimePages implements RuntimeObserver {
     #list(current: Runtime, respond: Responder): void {
         for (const runtime of this.#registry.all) {
             const marker = (runtime === current) ? "●" : " ";
-            const status = this.statusOf(runtime);
-            respond.output(`${marker} ${describe(runtime)}${(status !== "") ? `, ${status}` : ""}`);
+            respond.output(`${marker} ${describe(runtime)}, ${this.statusOf(runtime)}`);
         }
     }
 
@@ -202,18 +204,6 @@ function describe(runtime: Runtime): string {
     return `${runtimeLabel(runtime)} (${runtime.runtimeClass.base.module.name}, ${runtime.address})`;
 }
 
-function presenceLabel(runtime: Runtime): string | null {
-    if (runtime.presence === "closed") {
-        return "destroyed";
-    }
-    if (runtime.kit === "failed") {
-        return `cannot evaluate: ${runtime.failure}`;
-    }
-    if (runtime.presence === "unseen") {
-        return (runtime.ownership === "presumed") ? "thread presumed from its name" : "not seen running yet";
-    }
-    return null;
-}
 
 function report(runtime: Runtime, reply: KitReply, respond: Responder): void {
     for (const line of reply.printed ?? []) {
