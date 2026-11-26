@@ -116,7 +116,10 @@ ModuleListView >> gtModulesFor: aView [
 		priority: 1;
 		items: [ modules ];
 		column: 'Name' text: [ :each | each at: 'name' ];
-		column: 'Size' text: [ :each | (each at: 'size') printString ]
+		column: 'Size' do: [ :column |
+			column
+				text: [ :each | (each at: 'size') printString ];
+				fitContent ]
 ]
 
 { #category : 'views' }
@@ -400,13 +403,26 @@ The builders a view can start from:
 | Builder | Shows | Messages it takes |
 | --- | --- | --- |
 | `aView list` | A list of items | `items:`, `itemText:`, `send:` |
-| `aView columnedList` | A table | `items:`, `column:text:`, `column:text:width:`, `column:icon:`, `send:` |
+| `aView columnedList` | A table | `items:`, `column:text:`, `column:text:width:`, `column:text:weight:`, `column:icon:`, `column:do:`, `send:` |
 | `aView tree` | Its top-level items, as a list | `items:`, `itemText:`, `send:`; `children:` is taken but not shown |
 | `aView text` | Text | `text:` |
 | `aView canvas` | A scene the view draws | `scene:` |
 | `aView explicit` | A chart | `stencil:` |
 | `aView mondrian` | A graph of nodes and edges | `painting:` |
 | `aView forward` | Another object's view | `object:`, `view:` |
+
+A table's columns share its width evenly unless a column says otherwise.
+`column:do:` hands the block the column, which takes `text:` or `icon:` and
+then how it is sized: `fitContent` makes it as wide as what it shows, for
+short things of one shape such as an address, a count or a kind; `weight:`
+gives it that share of what the fitted columns leave, 1 being every column's
+share when it says nothing; `width:` fixes it in points, as Glamorous Toolkit
+does. When the pane is too narrow for all of them, the columns give way by
+`priority:`, highest first and the rightmost of equals first: each shrinks to
+its `minimumCharacters:`, if it names one, and is then left out, until the
+rest fit. A column that names no priority gives way before those that do, and
+the column with the lowest priority is never left out. A cut cell
+shows what it holds in a tooltip. Declaring any of this needs Luma 4.0.0.
 
 Every builder takes `title:` and `priority:`. Longer lists, tables and trees
 can be filtered in the widget; double-clicking a row opens what `send:`
