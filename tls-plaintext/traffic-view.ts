@@ -136,8 +136,8 @@ function protocolSummary(connection: Connection): string {
 }
 
 function formattedByteCount(byteCount: number): string {
-    const { value, unit } = scaledByteCount(byteCount);
-    return `${value} ${unit}`;
+    const { value, unit, fractionDigits } = scaledByteCount(byteCount);
+    return `${value.toFixed(fractionDigits)} ${unit}`;
 }
 
 function requestSummary(connection: Connection): string {
@@ -165,12 +165,12 @@ function joinedBytes(run: PayloadRun): ArrayBuffer {
 
 const byteUnits = ["B", "KiB", "MiB", "GiB", "TiB"];
 
-function scaledByteCount(byteCount: number): { value: number; unit: string } {
+function scaledByteCount(byteCount: number): { value: number; unit: string; fractionDigits: number } {
     let value = byteCount;
     let unitIndex = 0;
     while (value >= 1024 && unitIndex < byteUnits.length - 1) {
         value /= 1024;
         unitIndex++;
     }
-    return { value: unitIndex === 0 ? value : Math.round(value * 10) / 10, unit: byteUnits[unitIndex] };
+    return { value: unitIndex === 0 ? value : Math.round(value * 10) / 10, unit: byteUnits[unitIndex], fractionDigits: (unitIndex === 0) ? 0 : 1 };
 }
