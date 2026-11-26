@@ -100,11 +100,15 @@ asks for another value.
 ## Locks
 
 `lock` sets a hardware watchpoint on the value in every thread of the
-process, including threads started later. When the game writes the value,
-the write is allowed to happen and the locked value is put back before the
-writing thread runs its next instruction. Nothing is rewritten on a timer.
-Each write costs the writing thread two traps; in the test game, 10,000
-writes to two locked values took about 180 ms.
+process, including threads started later. When the game is about to write the
+value, the writing thread traps before the store happens, and the instrument
+carries out the store itself, all of it but the locked bytes: a store that
+also covers bytes beside the value writes those, a store pair writes its
+other register, and a store that moves its base register, before or after the
+address, moves it. The locked bytes are never changed, so no other thread can
+see the game's new value, and nothing is rewritten on a timer. Each write
+costs the writing thread one trap; in the test game, 10,000 writes to two
+locked values took about 220 ms.
 
 Each write is also counted against the code that made it: **Code that writes
 locked values** shows the address of the instruction, its function or module
@@ -120,15 +124,22 @@ The processor has four watchpoints, so at most four values can be locked at
 once. `unlock`, `reset` and removing the instrument release them.
 
 Locking works on arm64 on Apple platforms. Elsewhere `lock` says that it is
-not available there: stepping past a trapped write differs between
+not available there: trapping and carrying out a write differs between
 processors and has only been worked out and tested there.
 
-Between a write and its undoing, another thread can read the game's new
-value. A value written with an exclusive load and store loop, which is how
-atomic operations are made for arm64 processors without single-instruction
-atomics, would trap on every retry and never be written; code built for
-Apple's processors normally uses the single instructions. This case has not
-been tried.
+Plain, unscaled-offset, release, register-offset, pre- and post-indexed
+stores of integer, floating-point and vector registers, and store pairs, are
+carried out this way. Any other write to a locked value, such as an atomic
+swap or add, a compare-and-swap, or a store with an extended register offset,
+is let happen and undone: the watchpoint is lifted, the thread steps past the
+instruction, the locked value is put back and the watchpoint set again.
+Between the write and its undoing, another thread can read the game's new
+value, and the steps depend on changes to the writing thread's own debug
+registers taking effect, which on macOS they occasionally do not: a write is
+then counted twice or not at all, and a stray step can stop the game. A value
+written with an exclusive load and store loop would trap on every retry and
+never be written; code built for Apple's processors normally uses the single
+instructions.
 
 Only one instrument in a process can use `Process.setExceptionHandler`, so
 locks do not mix with another instrument that installs its own handler.

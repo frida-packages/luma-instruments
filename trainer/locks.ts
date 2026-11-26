@@ -1,4 +1,5 @@
 import { addressNumber } from "./address-space.js";
+import { applyRegisterUpdate, emulationOf, type StoreEmulation } from "./store-emulation.js";
 import { sameValue, type ValueType } from "./value-types.js";
 
 const watchpointSlots = 4;
@@ -8,6 +9,7 @@ const watchedDoubleword = 8;
 const flushDelay = 100;
 const machineContextOffset = 48;
 const syndromeOffset = 8;
+const vectorStateOffset = 288;
 const exceptionClassShift = 26;
 const watchpointClasses = new Set([0x34, 0x35]);
 const breakpointClasses = new Set([0x30, 0x31]);
@@ -158,7 +160,7 @@ class WatchpointLocks {
         const threadId = Process.getCurrentThreadId();
         if (watchpointClasses.has(exceptionClass)) {
             const faultAddress = addressNumber(machineContext.readPointer());
-            return this.#onWatchpointHit(threadId, details.address, faultAddress);
+            return this.#onWatchpointHit(threadId, details, machineContext.add(vectorStateOffset), faultAddress);
         }
         if (breakpointClasses.has(exceptionClass)) {
             return this.#onStepped(threadId, details.address);
@@ -179,11 +181,60 @@ class WatchpointLocks {
         }
     }
 
-    #onWatchpointHit(threadId: ThreadId, code: NativePointer, faultAddress: number): boolean {
+    #onWatchpointHit(threadId: ThreadId, details: ExceptionDetails, vectors: NativePointer, faultAddress: number): boolean {
+        const context = details.context as Arm64CpuContext;
+        const emulation = emulationOf(details.address, context, vectors);
+        if (emulation !== null && this.#touchesLock(emulation)) {
+            this.#emulate(emulation, details.address, context);
+            return true;
+        }
         const lock = this.#lockNear(faultAddress);
         if (lock === null) {
             return this.#wasLocked(faultAddress);
         }
+        this.#stepPast(threadId, details.address, lock);
+        return true;
+    }
+
+    #touchesLock({ pieces }: StoreEmulation): boolean {
+        return pieces.some(({ address, bytes }) => {
+            const start = addressNumber(address);
+            return bytes.some((_, i) => this.#lockHolding(start + i) !== null);
+        });
+    }
+
+    #emulate(emulation: StoreEmulation, code: NativePointer, context: Arm64CpuContext): void {
+        const intended = new Map<Lock, Map<number, number>>();
+        for (const { address, bytes } of emulation.pieces) {
+            const start = addressNumber(address);
+            bytes.forEach((byte, i) => {
+                const lock = this.#lockHolding(start + i);
+                if (lock !== null) {
+                    const bytesForLock = intended.get(lock) ?? new Map<number, number>();
+                    bytesForLock.set(start + i, byte);
+                    intended.set(lock, bytesForLock);
+                } else {
+                    address.add(i).writeU8(byte);
+                }
+            });
+        }
+        for (const [lock, bytes] of intended) {
+            if ([...bytes].some(([at, byte]) => ptr(at).readU8() !== byte)) {
+                lock.undone++;
+            }
+            lock.log.note(code, lock);
+        }
+        if (emulation.writeBack !== null) {
+            applyRegisterUpdate(context, emulation.writeBack);
+        }
+        context.pc = code.add(arm64InstructionSize);
+    }
+
+    #lockHolding(address: number): Lock | null {
+        return this.active.find(lock => address >= lock.start && address < lock.start + lock.type.size) ?? null;
+    }
+
+    #stepPast(threadId: ThreadId, code: NativePointer, lock: Lock): void {
         const thread = this.#threads.get(threadId)!;
         thread.unsetHardwareWatchpoint(lock.slot);
         let step = this.#steps.get(threadId);
@@ -194,7 +245,6 @@ class WatchpointLocks {
             this.#steps.set(threadId, step);
         }
         step.slots.push(lock.slot);
-        return true;
     }
 
     #onStepped(threadId: ThreadId, address: NativePointer): boolean {
