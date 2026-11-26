@@ -130,7 +130,7 @@
         "config": {
           "maxEntries": 500,
           "prompt": ">",
-          "placeholder": "inspect 12, packages, channels, strings re, isolates, save App, help",
+          "placeholder": "inspect 12, packages, channels, strings re, libraries, save App, help",
           "runButtonLabel": "Run"
         },
         "actions": [{ "id": "clear", "name": "Clear" }],

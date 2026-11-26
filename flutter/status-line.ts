@@ -75,5 +75,5 @@ function trafficText(findings: Findings, totals: TrafficTotals): string {
     }
     const unshown = (totals.unshown !== 0) ? `, ${totals.unshown} only counted (over the messages shown per second)` : "";
     const engines = (totals.engines > 1) ? ` across ${totals.engines} engines` : "";
-    return `${totals.messages} channel messages${engines}${unshown}`;
+    return `${totals.messages} channel message${(totals.messages === 1) ? "" : "s"}${engines}${unshown}`;
 }

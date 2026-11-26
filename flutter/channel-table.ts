@@ -14,6 +14,7 @@ export class ChannelTable {
 
     constructor(widget: ChannelsWidget) {
         this.#widget = widget;
+        widget.clear();
     }
 
     show(channel: TrackedChannel): void {

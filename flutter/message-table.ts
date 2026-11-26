@@ -19,6 +19,7 @@ export class MessageTable {
     constructor(widget: MessageTableWidget, withChannel: boolean) {
         this.#widget = widget;
         this.#withChannel = withChannel;
+        widget.clear();
     }
 
     show(message: ChannelMessage): void {
