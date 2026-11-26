@@ -73,9 +73,9 @@ the module its code is in and how it was found, the address of its main
 `lua_State`, the thread last seen running it, and how many globals it has,
 with the first few that are not part of the standard library, which is
 usually what tells two interpreters apart. The last column says how many
-chunks are waiting for it, and whether it was closed, has not been seen
-running yet, or cannot run code. The table shows up to 6 rows and then
-scrolls.
+chunks are waiting for it, and whether it has been seen running, has not been
+seen running yet, was closed, or cannot run code. The table shows up to 6
+rows and then scrolls.
 
 Choose **Show** on a row to open that interpreter's page. **Scan**, in the
 table's header, does what `:scan` does; it is disabled while memory is being

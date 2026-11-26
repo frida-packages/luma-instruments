@@ -196,8 +196,7 @@ export class LuaConsoles implements InterpreterObserver {
             const census = interpreter.census;
             const globals = (census !== null) ? `, ${census.globals} globals` : "";
             const thread = (interpreter.thread !== null) ? `, thread ${interpreter.thread}` : "";
-            const status = this.statusOf(interpreter);
-            respond.output(`${marker} ${describe(interpreter)}${thread}${globals}${(status !== "") ? `, ${status}` : ""}`);
+            respond.output(`${marker} ${describe(interpreter)}${thread}${globals}, ${this.statusOf(interpreter)}`);
         }
     }
 
@@ -227,14 +226,14 @@ function describe(interpreter: Interpreter): string {
     return `${interpreter.label} (${interpreter.runtime.moduleName}, main state ${interpreter.main})`;
 }
 
-function presenceLabel(interpreter: Interpreter): string | null {
+function presenceLabel(interpreter: Interpreter): string {
     if (interpreter.presence === "closed") {
         return "closed";
     }
     if (interpreter.runtime.executor === null) {
         return "cannot run code";
     }
-    return (interpreter.presence === "unseen") ? "not seen running yet" : null;
+    return (interpreter.presence === "unseen") ? "not seen running yet" : "seen running";
 }
 
 function cannotRunReason(interpreter: Interpreter): string {
