@@ -1,8 +1,9 @@
 # GStreamer
 
 Finds the GStreamer pipelines a process is running, those made before Luma
-attached included, and draws the live graph of each on a page of its own: bins around
-their elements, pads on the elements, and the negotiated caps on every link.
+attached included, and draws the live graph of each on a page of its own:
+bins around their elements, pads on the elements, and the negotiated caps on
+every link.
 Each bin, element, pad and link in the drawing is an object: click one and it
 opens beside the graph, with its properties, its pads, what it is linked to,
 and the way on to each of those.
