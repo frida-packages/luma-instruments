@@ -77,7 +77,7 @@
       }
     ],
     "store": {
-      "summary": "See the GStreamer pipelines a process is running, those made before Luma attached included, each with its state and elements, and the live graph of each on a page of its own, where every element, pad and link opens with a click.",
+      "summary": "See the GStreamer pipelines a process is running, those made before Luma attached included, each with its state and a live graph where every element, pad and link opens with a click.",
       "category": "runtime",
       "access": { "kind": "free" }
     }

@@ -73,7 +73,7 @@
     ],
     "layout": { "column": [{ "widget": "services", "maxRows": 8 }, { "widget": "messages", "share": 1 }] },
     "store": {
-      "summary": "The XPC messages a process sends and receives, per service, on connections made before Luma attached as well as after: requests, replies and events as expandable values, with NSXPC selectors and optional sender backtraces.",
+      "summary": "The XPC messages a process sends and receives, per service, also on connections made before Luma attached: requests, replies and events as expandable values, with NSXPC selectors and backtraces.",
       "category": "ipc",
       "access": { "kind": "free" }
     }

@@ -99,7 +99,7 @@
       { "widget": "payload", "share": 45 }
     ] },
     "store": {
-      "summary": "See a process's TLS traffic in plaintext: every OpenSSL and BoringSSL connection, including BoringSSL linked statically into Flutter apps, with its host, protocol, ALPN and cipher, and the bytes it reads and writes.",
+      "summary": "See a process's TLS traffic in plaintext: every OpenSSL and BoringSSL connection, also BoringSSL linked statically as in Flutter, with its host, protocol, ALPN and cipher, and the bytes it carries.",
       "category": "networking",
       "access": { "kind": "free" }
     }

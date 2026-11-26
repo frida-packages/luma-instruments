@@ -193,7 +193,7 @@
       }
     ],
     "store": {
-      "summary": "Take apart an Electron app from its main process: versions, fuses and app.asar integrity, every window and web contents with its security preferences, live IPC with arguments and results, and a JavaScript console in the main process and in each page.",
+      "summary": "Take apart an Electron app from its main process: versions, fuses, app.asar, every web contents with its security preferences, live IPC, and a JavaScript console in the main process and each page.",
       "category": "runtime",
       "access": { "kind": "free" }
     }

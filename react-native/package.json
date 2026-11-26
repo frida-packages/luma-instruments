@@ -185,7 +185,7 @@
       }
     ],
     "store": {
-      "summary": "Find the JavaScript runtimes a React Native app runs (Hermes or JavaScriptCore, old architecture or new), evaluate JavaScript in any of them on its own thread, watch the calls between JavaScript and native, and export the bundle.",
+      "summary": "Find the JavaScript runtimes a React Native app runs (Hermes or JavaScriptCore, old architecture or new), evaluate JavaScript in any of them, watch the calls to and from native, and export the bundle.",
       "category": "runtime",
       "access": { "kind": "free" }
     }
