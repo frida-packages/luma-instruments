@@ -7,7 +7,7 @@
       "location" : "https://github.com/frida/frida-swift",
       "state" : {
         "branch" : "main",
-        "revision" : "1055d54f2fcd8c32a7cd7839e5cc9854b86c4f08"
+        "revision" : "7beddd0e9ade5d3ccb1578da29156504fcef311e"
       }
     },
     {
@@ -97,7 +97,7 @@
       "location" : "https://github.com/frida/SwiftyPharo",
       "state" : {
         "branch" : "main",
-        "revision" : "3ef6da182a55fea46b3f43ab0bfe88a425cc14d7"
+        "revision" : "f069ccd7ad33eafb99daded1d4c724d86659d1cf"
       }
     },
     {
@@ -106,7 +106,7 @@
       "location" : "https://github.com/radareorg/SwiftyR2",
       "state" : {
         "branch" : "main",
-        "revision" : "d7c423b2ca8fbfd39e938441ec7a127639149f0f"
+        "revision" : "61d858433b315ce25b3ab8429b917fb1266d13a9"
       }
     }
   ],
