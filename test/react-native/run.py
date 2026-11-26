@@ -136,13 +136,13 @@ def app_scenario(app, architecture):
             check.expect(any(kind == "error" for kind, _ in harness.input(page, "function (")), "a syntax error comes back as an error")
             time.sleep(3)
             rows = harness.rows("traffic")
-            modules = {row["module"] for row in rows}
+            modules = {row["call"].split(".")[0] for row in rows}
             print(f"    {len(rows)} traffic rows; modules {sorted(modules)[:20]}", flush=True)
-            check.expect(any(row["module"] == "Networking" and row["method"] == "sendRequest" and "127.0.0.1" in row["arguments"]
+            check.expect(any(row["call"] == "Networking.sendRequest" and "127.0.0.1" in row["arguments"]
                              for row in rows), "fetch shows as a Networking.sendRequest call with its URL")
-            check.expect(any(row["direction"] == "event → JS" or (row["direction"] == "native → JS" and row["module"] == "RCTDeviceEventEmitter")
+            check.expect(any(row["direction"] == "event → JS" or (row["direction"] == "native → JS" and row["call"].startswith("RCTDeviceEventEmitter."))
                              for row in rows), "events emitted to JavaScript are shown")
-            check.expect(any(row["module"] == "SourceCode" and row["method"] == "getConstants" and "scriptURL" in row["outcome"]
+            check.expect(any(row["call"] == "SourceCode.getConstants" and "scriptURL" in row["outcome"]
                              for row in rows), "a synchronous call shows its result")
             check.expect(any(row["outcome"].startswith(("resolved", "called back")) for row in rows),
                          "an asynchronous call shows its result")

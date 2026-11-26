@@ -16,6 +16,8 @@ export interface RuntimeStatus {
 
 const FLUSH_DELAY_MS = 100;
 
+const reactThreadPrefix = /^com\.facebook\.react\./;
+
 export class RuntimeTable implements RuntimeObserver {
     readonly #table: RuntimeTableWidget;
     readonly #changed = new Set<Runtime>();
@@ -73,7 +75,7 @@ export class RuntimeTable implements RuntimeObserver {
             architecture: architectureLabel(facts),
             build: buildLabel(facts),
             bundle: bundleLabel(facts),
-            thread: threadLabel(runtime),
+            thread: threadLabel(runtime).replace(reactThreadPrefix, ""),
             status: this.#status.statusOf(runtime),
         };
     }

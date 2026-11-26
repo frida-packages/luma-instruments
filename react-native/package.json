@@ -102,10 +102,9 @@
         "config": {
           "columns": [
             { "id": "time", "name": "Time", "alignment": "trailing" },
-            { "id": "runtime", "name": "Runtime", "alignment": "trailing" },
-            { "id": "direction", "name": "Direction", "alignment": "leading" },
-            { "id": "module", "name": "Module", "alignment": "leading" },
-            { "id": "method", "name": "Method", "alignment": "leading" },
+            { "id": "runtime", "name": "#", "alignment": "trailing" },
+            { "id": "direction", "name": "Way", "alignment": "leading" },
+            { "id": "call", "name": "Call", "alignment": "leading" },
             { "id": "arguments", "name": "Arguments", "alignment": "leading" },
             { "id": "outcome", "name": "Outcome", "alignment": "leading" },
             { "id": "ms", "name": "ms", "alignment": "trailing" }
@@ -149,15 +148,15 @@
     ],
     "layout": { "column": [
       "status",
+      { "widget": "runtimes", "maxRows": 4 },
       { "row": [
-        { "widget": "runtimes", "share": 60, "maxRows": 4 },
-        { "widget": "bundles", "share": 40, "maxRows": 4 }
-      ], "foldBelow": 640 },
+        { "widget": "traffic", "share": 70, "maxRows": 10 },
+        { "widget": "detail", "share": 30 }
+      ], "share": 65, "foldBelow": 900 },
       { "row": [
-        { "widget": "traffic", "share": 65, "maxRows": 10 },
-        { "widget": "detail", "share": 35 }
-      ], "share": 65, "foldBelow": 640 },
-      { "widget": "modules", "share": 35, "maxRows": 6 }
+        { "widget": "modules", "share": 55, "maxRows": 6 },
+        { "widget": "bundles", "share": 45, "maxRows": 6 }
+      ], "share": 35, "foldBelow": 900 }
     ] },
     "children": [
       {

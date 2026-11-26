@@ -41,7 +41,7 @@ export function buildLabel(facts: RuntimeFacts | null): string {
     if (facts === null) {
         return missing;
     }
-    const bundle = (facts.dev === null) ? null : (facts.dev ? "__DEV__ bundle" : "production bundle");
+    const bundle = (facts.dev === null) ? null : (facts.dev ? "__DEV__" : "production");
     const engine = facts.hermes?.["Build"];
     const debuggerPart = (facts.hermes?.["Debugger Enabled"] === true) ? "debugger" : null;
     const parts = [bundle, (typeof engine === "string") ? `${engine.toLowerCase()} engine` : null, debuggerPart];

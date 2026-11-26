@@ -61,8 +61,8 @@ runtime loaded it. **Export** offers it as a file, read straight from the file
 or from memory; a bundle larger than 64 MiB cannot be offered.
 
 **Traffic** has a row per call: when, in which runtime, its direction
-(JavaScript to native, native to JavaScript, or an event), the module, the
-method, its arguments, and its outcome when it has one: returned, resolved,
+(JavaScript to native, native to JavaScript, or an event), the call as
+`Module.method`, its arguments, and its outcome when it has one: returned, resolved,
 rejected, called back or threw, with how long it took. **Show** prints the
 call in full in the **Call** console beside it, as a value you can expand;
 `show 1:42` there does the same by row id, and `stats` counts what was seen.
@@ -72,8 +72,10 @@ call in full in the **Call** console beside it, as a value you can expand;
 Fabric component views, as their classes register them, with how many
 methods each exports and how many calls were seen.
 
-On a wide window the runtimes and bundles share a row, and so do the traffic
-and the call console; on a phone everything is one column.
+The runtimes take the page's full width, so that what tells them apart can be
+read. Below them the traffic shares a row with the call console, and the
+modules share the last row with the bundles; in a narrow window or on a phone
+everything is one column.
 
 ## The consoles
 
