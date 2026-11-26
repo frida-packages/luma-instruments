@@ -19,6 +19,7 @@ const GONE_PAGE_LINGER_MS = 60000;
 const TITLE_CHARS = 120;
 const SUBTITLE_CHARS = 200;
 const BADGE_CHARS = 32;
+const TITLE_SEPARATORS = [" - ", " – ", " — ", " | "];
 
 const helpLines = [
     "JavaScript typed here runs in this page's main world, as the page's own scripts do; promises are awaited.",
@@ -31,14 +32,16 @@ export class WebContentsView {
     readonly #table: ContentsWidget;
     readonly #pages: Pages;
     readonly #link: RuntimeLink;
+    readonly #appName: string;
     readonly #known = new Map<number, Known>();
     readonly #pageRemovals = new Map<number, ReturnType<typeof setTimeout>>();
     readonly #cspNoted = new Set<number>();
 
-    constructor(table: ContentsWidget, pages: Pages, link: RuntimeLink) {
+    constructor(table: ContentsWidget, pages: Pages, link: RuntimeLink, appName: string) {
         this.#table = table;
         this.#pages = pages;
         this.#link = link;
+        this.#appName = appName;
         table.clear();
     }
 
@@ -130,7 +133,7 @@ export class WebContentsView {
         known.snapshot = snapshot;
         this.#known.set(snapshot.id, known);
         const cells = cellsOf(snapshot, stateOf(known));
-        const row = rowOf(known);
+        const row = rowOf(known, this.#appName);
         const shown = JSON.stringify([cells, row]);
         if (shown !== known.shown) {
             known.shown = shown;
@@ -153,7 +156,7 @@ export class WebContentsView {
         this.#table.upsertRow({ id: String(id), cells: cellsOf(known.snapshot, stateOf(known)) });
         const page = this.pageOf(id);
         if (page !== null) {
-            page.update(rowOf(known));
+            page.update(rowOf(known, this.#appName));
             page.widget("console").appendError(`${this.label(id)} was destroyed. Its page goes away in a minute.`);
         }
         this.#pageRemovals.set(id, setTimeout(() => this.#forget(id), GONE_PAGE_LINGER_MS));
@@ -185,14 +188,20 @@ function cellsOf(snapshot: ContentsSnapshot, state: Badge) {
     };
 }
 
-function rowOf(known: Known): CustomInstrumentChildRow {
+function rowOf(known: Known, appName: string): CustomInstrumentChildRow {
     const { snapshot } = known;
     const facts = [`#${snapshot.id} ${snapshot.type}`, (snapshot.pid !== 0) ? `pid ${snapshot.pid}` : null, snapshot.url];
     return {
-        title: clip(titleOf(snapshot), TITLE_CHARS),
+        title: clip(withoutAppName(titleOf(snapshot), appName), TITLE_CHARS),
         subtitle: clip(facts.filter(fact => fact !== null).join(" · "), SUBTITLE_CHARS),
         badge: stateOf(known),
     };
+}
+
+function withoutAppName(title: string, appName: string): string {
+    const suffix = TITLE_SEPARATORS.map(separator => separator + appName.toLowerCase())
+        .find(candidate => title.toLowerCase().endsWith(candidate) && title.length > candidate.length);
+    return (suffix !== undefined) ? title.slice(0, title.length - suffix.length) : title;
 }
 
 function stateOf({ snapshot, destroyed }: Known): Badge {

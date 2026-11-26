@@ -32,10 +32,11 @@ export const instrument: CustomInstrument = {
         let capturing = true;
         let unreachable: string | null = "This process's JavaScript has not run since the instrument was added.";
         const link = new RuntimeLink({ onDrained, onLinkFailed });
-        const contents = new WebContentsView(ctx.widget("contents"), ctx.children("contents"), link);
+        const bundleName = bundle.appPath.slice(bundle.appPath.lastIndexOf("/") + 1);
+        const contents = new WebContentsView(ctx.widget("contents"), ctx.children("contents"), link, bundleName.replace(/\.app$/, ""));
         const ipc = new IpcLog(ctx.widget("ipc"), ctx.widget("message"), id => contents.label(id));
         const mainConsole = new MainConsole(ctx.widget("console"), link, files, () => unreachable);
-        status.note("process", `The ${role.label} of ${bundle.appPath.slice(bundle.appPath.lastIndexOf("/") + 1)}`, guidanceFor(role));
+        status.note("process", `The ${role.label} of ${bundleName}`, guidanceFor(role));
         if (!RuntimeLink.supported) {
             unreachable = "frida-electron-bridge cannot reach the JavaScript of this Electron build.";
             status.note("javascript", "This app's JavaScript is out of reach", unreachable);
