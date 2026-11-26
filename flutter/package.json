@@ -89,9 +89,8 @@
           "columns": [
             { "id": "channel", "name": "Channel", "alignment": "leading" },
             { "id": "kind", "name": "Kind", "alignment": "leading" },
-            { "id": "codec", "name": "Codec", "alignment": "leading" },
-            { "id": "toHost", "name": "Dart → host", "alignment": "trailing" },
-            { "id": "toDart", "name": "Host → Dart", "alignment": "trailing" },
+            { "id": "toHost", "name": "→ host", "alignment": "trailing" },
+            { "id": "toDart", "name": "→ Dart", "alignment": "trailing" },
             { "id": "bytes", "name": "Bytes", "alignment": "trailing" },
             { "id": "method", "name": "Last method", "alignment": "leading" },
             { "id": "active", "name": "Last active", "alignment": "trailing" }
@@ -140,7 +139,7 @@
     "layout": { "column": [
       "status",
       { "row": [{ "widget": "facts", "share": 60, "maxRows": 6 }, { "widget": "files", "share": 40, "maxRows": 6 }], "foldBelow": 760 },
-      { "row": [{ "widget": "channels", "share": 58, "maxRows": 6 }, { "widget": "console", "share": 42 }], "share": 40, "foldBelow": 1000 },
+      { "row": [{ "widget": "channels", "share": 66, "maxRows": 6 }, { "widget": "console", "share": 34 }], "share": 40, "foldBelow": 1000 },
       { "widget": "messages", "share": 60, "maxRows": 10 }
     ] },
     "children": [

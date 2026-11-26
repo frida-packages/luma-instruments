@@ -41,8 +41,7 @@ export class ChannelTable {
 function channelCells(channel: TrackedChannel) {
     return {
         channel: channelLabel(channel),
-        kind: (channel.kind === "unknown") ? MISSING : channel.kind,
-        codec: channel.codec ?? MISSING,
+        kind: [(channel.kind === "unknown") ? null : channel.kind, channel.codec].filter(part => part !== null).join(" · ") || MISSING,
         toHost: String(channel.toHost),
         toDart: String(channel.toDart),
         bytes: sizeText(channel.bytes),

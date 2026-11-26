@@ -243,7 +243,7 @@ declare interface CustomInstrumentWidgetMap {
     /** Files */
     files: CustomInstrumentTableWidget<"file" | "holds" | "size">;
     /** Channels */
-    channels: CustomInstrumentTableWidget<"channel" | "kind" | "codec" | "toHost" | "toDart" | "bytes" | "method" | "active">;
+    channels: CustomInstrumentTableWidget<"channel" | "kind" | "toHost" | "toDart" | "bytes" | "method" | "active">;
     /** Messages */
     messages: CustomInstrumentTableWidget<"number" | "time" | "direction" | "channel" | "kind" | "message" | "reply" | "size" | "latency"> & CustomInstrumentWidgetActions<"clear">;
     /** Console */
