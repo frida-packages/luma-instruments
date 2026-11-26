@@ -38,7 +38,7 @@ class MetalBackend implements GraphicsBackend {
     readonly #observer: GeometryObserver;
     readonly #classes: DriverClasses =
         classesConformingTo([BUFFER_PROTOCOL, ENCODER_PROTOCOL, PIPELINE_PROTOCOL], DRIVER_IMAGES);
-    readonly #describer = new MetalBufferDescriber();
+    readonly #describer = new MetalBufferDescriber(this.#classes[BUFFER_PROTOCOL]);
     #pipelines: PipelineWatch | null = null;
     #encoders: EncoderTap | null = null;
     #translationLayers: ModuleObserver | null = null;
@@ -75,13 +75,20 @@ class MetalBackend implements GraphicsBackend {
     }
 
     async findBuffers(): Promise<BufferSearch> {
-        const found = findMetalBuffers(this.#classes[BUFFER_PROTOCOL], this.#describer);
+        const scan = findMetalBuffers(this.#classes[BUFFER_PROTOCOL], this.#describer);
+        const found = scan.buffers;
         const buffers = found.filter(buffer => !TRANSLATION_LAYER_LABELS.test(buffer.label ?? ""));
         this.#observer.observeBuffers(buffers);
         const layered = (found.length !== buffers.length)
             ? `, leaving out ${found.length - buffers.length} that OpenGL keeps for itself`
             : "";
-        return { buffers: buffers.length, detail: `instances of ${this.#classes[BUFFER_PROTOCOL].length} driver buffer classes${layered}` };
+        const rejected = scan.candidates - scan.unchecked - found.length;
+        const checked = (rejected !== 0) ? `; ${rejected} of ${scan.candidates} pointers to those classes were not live buffers` : "";
+        const unchecked = (scan.unchecked !== 0) ? `; ${scan.unchecked} more were not looked at` : "";
+        return {
+            buffers: buffers.length,
+            detail: `instances of ${this.#classes[BUFFER_PROTOCOL].length} driver buffer classes${layered}${checked}${unchecked}`,
+        };
     }
 
     dispose(): void {
@@ -122,12 +129,12 @@ class MetalBackend implements GraphicsBackend {
     #streamsOf(slot: EncodedSlot): VertexStream[] {
         const buffer: GpuBuffer | null = (slot.bytesLength !== 0)
             ? new BytesBuffer(slot.bytes, slot.bytesLength, slot.bytesDigest)
-            : this.#describer.describeLive(slot.buffer);
+            : this.#describer.describe(slot.buffer);
         return (buffer !== null) ? [{ slot: slot.index, buffer, offset: slot.offset, stride: slot.stride }] : [];
     }
 
     #buffersOf(slot: EncodedSlot): GpuBuffer[] {
-        const buffer = (slot.bytesLength === 0) ? this.#describer.describeLive(slot.buffer) : null;
+        const buffer = (slot.bytesLength === 0) ? this.#describer.describe(slot.buffer) : null;
         return (buffer !== null) ? [buffer] : [];
     }
 
@@ -143,7 +150,7 @@ class MetalBackend implements GraphicsBackend {
     }
 
     #withIndices(call: DrawCall, draw: EncodedDraw): DrawCall | null {
-        const buffer = this.#describer.describeLive(draw.indexBuffer);
+        const buffer = this.#describer.describe(draw.indexBuffer);
         if (buffer === null) {
             return null;
         }
@@ -166,7 +173,7 @@ class MetalBackend implements GraphicsBackend {
     }
 
     #indirectArguments(draw: EncodedDraw): DataView | null {
-        const buffer = this.#describer.describeLive(draw.indirectBuffer);
+        const buffer = this.#describer.describe(draw.indirectBuffer);
         if (buffer === null || buffer.access !== "cpu-readable") {
             return null;
         }
