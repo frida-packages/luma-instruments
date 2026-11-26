@@ -48,7 +48,10 @@ PipelineLink >> gtSummaryFor: aView [
 		title: 'Summary';
 		priority: 2;
 		items: [ self summary ];
-		column: 'Property' text: [ :each | each key ];
+		column: 'Property' do: [ :column |
+			column
+				text: [ :each | each key ];
+				fitContent ];
 		column: 'Value' text: [ :each | each value displayString ];
 		send: [ :each | each value ]
 ]

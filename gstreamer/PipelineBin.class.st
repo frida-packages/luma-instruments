@@ -25,10 +25,25 @@ PipelineBin >> gtChildrenFor: aView [
 		title: 'Children';
 		priority: 2;
 		items: [ children ];
-		column: 'Name' text: [ :each | each name ];
-		column: 'Type' text: [ :each | each type ];
-		column: 'State' text: [ :each | each stateText ];
-		column: 'Pads' text: [ :each | each pads size printString ]
+		column: 'Name' do: [ :column |
+			column
+				text: [ :each | each name ];
+				priority: 1;
+				minimumCharacters: 12 ];
+		column: 'Type' do: [ :column |
+			column
+				text: [ :each | each type ];
+				priority: 2 ];
+		column: 'State' do: [ :column |
+			column
+				text: [ :each | each stateText ];
+				fitContent;
+				priority: 3 ];
+		column: 'Pads' do: [ :column |
+			column
+				text: [ :each | each pads size printString ];
+				fitContent;
+				priority: 4 ]
 ]
 
 { #category : 'accessing' }

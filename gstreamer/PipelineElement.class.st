@@ -63,7 +63,10 @@ PipelineElement >> gtSummaryFor: aView [
 		title: 'Summary';
 		priority: 1;
 		items: [ self summary ];
-		column: 'Property' text: [ :each | each key ];
+		column: 'Property' do: [ :column |
+			column
+				text: [ :each | each key ];
+				fitContent ];
 		column: 'Value' text: [ :each | each value displayString ];
 		send: [ :each | each value ]
 ]
@@ -75,11 +78,31 @@ PipelineElement >> gtPadsFor: aView [
 		title: 'Pads';
 		priority: 3;
 		items: [ pads ];
-		column: 'Pad' text: [ :each | each name ];
-		column: 'Direction' text: [ :each | each direction ];
-		column: 'Kind' text: [ :each | each kind ];
-		column: 'Flags' text: [ :each | each flagText ];
-		column: 'Peer' text: [ :each | each peerText ]
+		column: 'Pad' do: [ :column |
+			column
+				text: [ :each | each name ];
+				fitContent;
+				priority: 1 ];
+		column: 'Direction' do: [ :column |
+			column
+				text: [ :each | each direction ];
+				fitContent;
+				priority: 3 ];
+		column: 'Kind' do: [ :column |
+			column
+				text: [ :each | each kind ];
+				fitContent;
+				priority: 4 ];
+		column: 'Flags' do: [ :column |
+			column
+				text: [ :each | each flagText ];
+				fitContent;
+				priority: 5 ];
+		column: 'Peer' do: [ :column |
+			column
+				text: [ :each | each peerText ];
+				priority: 2;
+				minimumCharacters: 18 ]
 ]
 
 { #category : 'views' }
@@ -89,9 +112,20 @@ PipelineElement >> gtPeersFor: aView [
 		title: 'Peers';
 		priority: 4;
 		items: [ self linkedPads ];
-		column: 'Through' text: [ :each | each peer name ];
-		column: 'Peer' text: [ :each | each fullName ];
-		column: 'Media type' text: [ :each | each link mediaType ];
+		column: 'Through' do: [ :column |
+			column
+				text: [ :each | each peer name ];
+				fitContent;
+				priority: 2 ];
+		column: 'Peer' do: [ :column |
+			column
+				text: [ :each | each fullName ];
+				priority: 1;
+				minimumCharacters: 12 ];
+		column: 'Media type' do: [ :column |
+			column
+				text: [ :each | each link mediaType ];
+				priority: 3 ];
 		send: [ :each | each element ]
 ]
 
@@ -102,7 +136,10 @@ PipelineElement >> gtPropertiesFor: aView [
 		title: 'Properties';
 		priority: 5;
 		items: [ properties ];
-		column: 'Property' text: [ :each | each key ];
+		column: 'Property' do: [ :column |
+			column
+				text: [ :each | each key ];
+				fitContent ];
 		column: 'Value' text: [ :each | each value ]
 ]
 

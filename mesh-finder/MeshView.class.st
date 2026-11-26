@@ -92,7 +92,10 @@ MeshView >> gtDetailsFor: aView [
 		title: 'Details';
 		priority: 2;
 		items: [ self details ];
-		column: 'Property' text: [ :each | each key ];
+		column: 'Property' do: [ :column |
+			column
+				text: [ :each | each key ];
+				fitContent ];
 		column: 'Value' text: [ :each | each value ]
 ]
 

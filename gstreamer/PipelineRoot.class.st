@@ -23,11 +23,29 @@ PipelineRoot >> gtElementsFor: aView [
 		title: 'Elements';
 		priority: 6;
 		items: [ descendants ];
-		column: 'Name' text: [ :each | each name ];
-		column: 'Type' text: [ :each | each type ];
-		column: 'State' text: [ :each | each stateText ];
-		column: 'Bin' text: [ :each | each binPath ];
-		column: 'Pads' text: [ :each | each pads size printString ]
+		column: 'Name' do: [ :column |
+			column
+				text: [ :each | each name ];
+				priority: 1;
+				minimumCharacters: 12 ];
+		column: 'Type' do: [ :column |
+			column
+				text: [ :each | each type ];
+				priority: 2 ];
+		column: 'State' do: [ :column |
+			column
+				text: [ :each | each stateText ];
+				fitContent;
+				priority: 3 ];
+		column: 'Bin' do: [ :column |
+			column
+				text: [ :each | each binPath ];
+				priority: 4 ];
+		column: 'Pads' do: [ :column |
+			column
+				text: [ :each | each pads size printString ];
+				fitContent;
+				priority: 5 ]
 ]
 
 { #category : 'views' }
@@ -37,9 +55,18 @@ PipelineRoot >> gtLinksFor: aView [
 		title: 'Links';
 		priority: 7;
 		items: [ links ];
-		column: 'From' text: [ :each | each from fullName ];
-		column: 'To' text: [ :each | each to fullName ];
-		column: 'Media type' text: [ :each | each mediaType ]
+		column: 'From' do: [ :column |
+			column
+				text: [ :each | each from fullName ];
+				priority: 1 ];
+		column: 'To' do: [ :column |
+			column
+				text: [ :each | each to fullName ];
+				priority: 2 ];
+		column: 'Media type' do: [ :column |
+			column
+				text: [ :each | each mediaType ];
+				priority: 3 ]
 ]
 
 { #category : 'views' }
