@@ -28,6 +28,10 @@ A scan reads memory only as copies the kernel makes, so memory the app lets
 go of while the scan runs is skipped instead of touched. That matters in apps
 with a crash reporter of their own, such as Microsoft Office's: such a
 reporter sees the fault before Frida can catch it, and hangs or ends the app.
+A pointer to a runtime's vtable counts as a runtime only when it starts a
+live heap block, and each time the instrument is about to evaluate in a
+runtime it checks again that the runtime is still there; one that is not is
+badged destroyed.
 
 A runtime is used only on its own thread. That thread is learned the first
 time it calls into its runtime, while the instrument watches for a few

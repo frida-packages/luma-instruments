@@ -2,7 +2,7 @@ import type { Evaluation, JsiEvaluator } from "./jsi-evaluator.js";
 import { type JsiSlots, slotFunction } from "./jsi-vtables.js";
 import { javaScriptThreadNames, type Platform } from "./platforms.js";
 import type { RuntimeClass } from "./runtime-classes.js";
-import { pointerKey } from "./runtime-instances.js";
+import { holdsInstance, pointerKey } from "./runtime-instances.js";
 import type { Runtime, RuntimeRegistry } from "./runtimes.js";
 
 export interface Errand {
@@ -128,6 +128,10 @@ export class Rendezvous {
         if (runtime === undefined || runtime.presence === "closed") {
             return;
         }
+        this.#close(runtime);
+    }
+
+    #close(runtime: Runtime): void {
         this.#registry.close(runtime);
         this.recall(runtime, `${runtime.runtimeClass.engine} runtime #${runtime.number} was destroyed.`);
         this.#observer.onRuntimeClosed(runtime);
@@ -246,6 +250,10 @@ export class Rendezvous {
     #runErrands(runtime: Runtime): void {
         const pending = this.#errands.get(runtime);
         if (pending === undefined || this.#busy.has(runtime)) {
+            return;
+        }
+        if (!holdsInstance(runtime.address, runtime.runtimeClass.vtable)) {
+            this.#close(runtime);
             return;
         }
         this.#errands.delete(runtime);

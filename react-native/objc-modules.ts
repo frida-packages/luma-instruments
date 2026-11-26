@@ -1,7 +1,7 @@
-import type { MemorySearch } from "./memory-search.js";
+import { type MemorySearch, readPointer } from "./memory-search.js";
 import { type ObjCRuntime, objCRuntime } from "./objc-runtime.js";
 import type { BridgeTable, ModuleKind, NativeModuleInfo } from "./platforms.js";
-import { searchHeap } from "./runtime-instances.js";
+import { holdsObjectAt, searchHeap } from "./runtime-instances.js";
 
 interface RegistryMarkers {
     bridgeModule: NativePointer;
@@ -15,6 +15,11 @@ interface ModuleClass {
     info: NativeModuleInfo;
 }
 
+interface Holder {
+    object: NativePointer;
+    cls: NativePointer;
+}
+
 const EXPORTED_METHOD_PREFIX = "__rct_export__";
 const COMPONENT_VIEW_SUFFIX = "ComponentView";
 const STRIPPED_NAME_PREFIXES = ["RCT", "RK"];
@@ -23,7 +28,7 @@ const MODULE_HOLDER_CLASSES = ["RCTTurboModuleManager", "RCTCxxBridge"];
 export class ObjCModuleRegistry {
     readonly #objc: ObjCRuntime | null = objCRuntime();
     #classes: ModuleClass[] = [];
-    #holders: NativePointer[] = [];
+    #holders: Holder[] = [];
 
     async list(search: MemorySearch): Promise<NativeModuleInfo[]> {
         const objc = this.#objc;
@@ -50,11 +55,11 @@ export class ObjCModuleRegistry {
         if (objc === null) {
             return loaded;
         }
-        for (const holder of this.#holders) {
-            const turbo = objc.nameOf(objc.classOf(holder)) === "RCTTurboModuleManager";
+        for (const holder of this.#holders.filter(candidate => isLive(objc, candidate))) {
+            const turbo = objc.nameOf(holder.cls) === "RCTTurboModuleManager";
             for (const { cls, info } of this.#classes.filter(({ info }) => info.kind !== "Fabric component")) {
                 const argument = turbo ? Memory.allocUtf8String(info.name) : cls;
-                if (objc.sendForBoolean(holder, "moduleIsInitialized:", argument)) {
+                if (objc.sendForBoolean(holder.object, "moduleIsInitialized:", argument)) {
                     loaded.add(info.name);
                 }
             }
@@ -69,8 +74,8 @@ export class ObjCModuleRegistry {
         }
         const bridgeClass = objc.getClass("RCTCxxBridge");
         const moduleLists = this.#holders
-            .filter(holder => objc.classOf(holder).equals(bridgeClass))
-            .map(bridge => objc.instanceVariable(bridge, bridgeClass, "_moduleDataByID"))
+            .filter(holder => holder.cls.equals(bridgeClass) && isLive(objc, holder))
+            .map(bridge => objc.instanceVariable(bridge.object, bridgeClass, "_moduleDataByID"))
             .filter(modules => modules !== null && !modules.isNull());
         return (moduleLists.length !== 0) ? tableOf(objc, moduleLists[0]!) : null;
     }
@@ -157,11 +162,27 @@ function strippedName(name: string): string {
     return (prefix !== undefined) ? name.slice(prefix.length) : name;
 }
 
-async function instancesOf(objc: ObjCRuntime, classes: NativePointer[], search: MemorySearch): Promise<NativePointer[]> {
+async function instancesOf(objc: ObjCRuntime, classes: NativePointer[], search: MemorySearch): Promise<Holder[]> {
     if (classes.length === 0) {
         return [];
     }
-    return (await searchHeap(search, classes, objc.isaClassMask))
-        .filter(({ value }) => value.and(objc.isaMagicMask).equals(objc.isaMagicValue))
-        .map(({ address }) => address);
+    const holders: Holder[] = [];
+    for (const { address, value } of await searchHeap(search, classes, objc.isaClassMask)) {
+        if (!value.and(objc.isaMagicMask).equals(objc.isaMagicValue)) {
+            continue;
+        }
+        const holder = { object: address, cls: value.and(objc.isaClassMask) };
+        if (isLive(objc, holder)) {
+            holders.push(holder);
+        } else {
+            search.candidatesRejected++;
+        }
+    }
+    return holders;
+}
+
+function isLive(objc: ObjCRuntime, holder: Holder): boolean {
+    const isa = readPointer(holder.object);
+    return isa !== null && isa.and(objc.isaClassMask).equals(holder.cls) && isa.and(objc.isaMagicMask).equals(objc.isaMagicValue)
+        && holdsObjectAt(holder.object);
 }

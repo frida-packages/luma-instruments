@@ -1,4 +1,4 @@
-import { appleMemory, type MemorySearch, type PointerMatch } from "./memory-search.js";
+import { appleMemory, type MemorySearch, type PointerMatch, readPointer } from "./memory-search.js";
 
 export interface Instance {
     address: NativePointer;
@@ -14,7 +14,11 @@ export async function findInstances(vtables: NativePointer[], search: MemorySear
     }
     const instances: Instance[] = [];
     for (const match of await searchHeap(search, vtables, POINTER_MASK)) {
-        instances.push({ address: match.address, vtable: vtableMatching(vtables, match.value) });
+        if (holdsObjectAt(match.address)) {
+            instances.push({ address: match.address, vtable: vtableMatching(vtables, match.value) });
+        } else {
+            search.candidatesRejected++;
+        }
     }
     return instances;
 }
@@ -28,6 +32,14 @@ export async function searchHeap(search: MemorySearch, values: NativePointer[], 
         await yieldToEventLoop();
     }
     return matches;
+}
+
+export function holdsInstance(address: NativePointer, vtable: NativePointer): boolean {
+    return holdsObjectAt(address) && (readPointer(address)?.and(POINTER_MASK).equals(vtable.and(POINTER_MASK)) ?? false);
+}
+
+export function holdsObjectAt(address: NativePointer): boolean {
+    return appleMemory?.startsBlock(address) ?? true;
 }
 
 export function pointerKey(address: NativePointer): string {

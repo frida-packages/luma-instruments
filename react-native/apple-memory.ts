@@ -10,6 +10,7 @@ export class AppleMemory {
         ["uint", "pointer", "size_t", "pointer", "pointer"]);
     readonly #regionRecurse = new NativeFunction(Module.getGlobalExportByName("mach_vm_region_recurse"), "int",
         ["uint", "pointer", "pointer", "pointer", "pointer", "pointer"]);
+    readonly #mallocSize = new NativeFunction(Module.getGlobalExportByName("malloc_size"), "size_t", ["pointer"]);
     readonly #copied = Memory.alloc(8);
 
     copy(destination: NativePointer, source: NativePointer, size: number): boolean {
@@ -38,5 +39,9 @@ export class AppleMemory {
             }
             address.writePointer(region.base.add(region.size));
         }
+    }
+
+    startsBlock(address: NativePointer): boolean {
+        return !this.#mallocSize(address).equals(0);
     }
 }

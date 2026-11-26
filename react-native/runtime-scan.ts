@@ -84,6 +84,9 @@ function detailOf(search: MemorySearch, classes: ClassSearch): string {
         `${formattedMiB(search.bytesSearched)} searched in ${Date.now() - search.startedAt} ms`,
         `${classes.modulesSearched} modules looked at`,
         (search.bytesUnreadable !== 0) ? `${formattedMiB(search.bytesUnreadable)} could no longer be read and was skipped` : null,
+        (search.candidatesRejected !== 0)
+            ? `${search.candidatesRejected} pointer${(search.candidatesRejected === 1) ? "" : "s"} to a known class not at the start of a live object, skipped`
+            : null,
     ];
     return parts.filter(part => part !== null).join("; ");
 }

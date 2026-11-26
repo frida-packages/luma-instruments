@@ -5,7 +5,6 @@ export interface ObjCRuntime {
     conformsToProtocol(cls: NativePointer, protocol: NativePointer): boolean;
     superclassOf(cls: NativePointer): NativePointer;
     nameOf(cls: NativePointer): string;
-    classOf(cls: NativePointer): NativePointer;
     classMethodNames(cls: NativePointer): string[];
     respondsToClassMethod(cls: NativePointer, selector: string): boolean;
     instanceVariable(object: NativePointer, cls: NativePointer, name: string): NativePointer | null;
@@ -73,7 +72,6 @@ function loadRuntime(): ObjCRuntime {
         conformsToProtocol: (cls, protocol) => conformsToProtocol(cls, protocol) !== 0,
         superclassOf: cls => superclassOf(cls),
         nameOf: cls => nameOf(cls).readUtf8String()!,
-        classOf: cls => classOf(cls),
         classMethodNames(cls) {
             const count = Memory.alloc(4);
             const methods = copyMethodList(classOf(cls), count);

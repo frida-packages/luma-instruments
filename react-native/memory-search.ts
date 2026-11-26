@@ -25,6 +25,7 @@ export class MemorySearch {
     readonly startedAt = Date.now();
     bytesSearched = 0;
     bytesUnreadable = 0;
+    candidatesRejected = 0;
 
     findPointers(range: MemoryRange, values: NativePointer[], mask: NativePointer): PointerMatch[] {
         return this.#search(range, 0, copy => Memory.findPointers(copy, values, { mask }));
