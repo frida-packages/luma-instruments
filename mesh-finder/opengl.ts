@@ -11,7 +11,8 @@ import type {
     VertexStream,
 } from "./graphics-backend.js";
 import { GLTap, type GLDraw, type GLTapPlatform, type GLUpload } from "./gl-tap.js";
-import { positionAttribute } from "./vertex-attributes.js";
+import { GLTextures, type GLProfile } from "./gl-textures.js";
+import { positionAttribute, texcoordAttribute } from "./vertex-attributes.js";
 import { attributeFormat, type ComponentType, type AttributeFormat } from "./vertex-format.js";
 
 export type GLFlavor = "desktop" | "es";
@@ -45,6 +46,7 @@ interface PendingSearch {
     giveUp: ReturnType<typeof setTimeout>;
 }
 
+const GL_VERSION = 0x1f02;
 const GL_ARRAY_BUFFER = 0x8892;
 const GL_ARRAY_BUFFER_BINDING = 0x8894;
 const GL_BUFFER_SIZE = 0x8764;
@@ -77,8 +79,9 @@ export class GLBackend implements GraphicsBackend {
     readonly #observer: GeometryObserver;
     readonly #gl: GLFunctions;
     readonly #tap: GLTap;
+    readonly #textures: GLTextures;
     readonly #shadows = new Map<string, Shadow>();
-    readonly #flavors = new Map<string, GLFlavor>();
+    readonly #profiles = new Map<string, GLProfile>();
     readonly #pendingSearches: PendingSearch[] = [];
     #shadowFlush: ReturnType<typeof setTimeout> | null = null;
 
@@ -91,7 +94,10 @@ export class GLBackend implements GraphicsBackend {
             frame: shareGroup => this.#onFrame(shareGroup),
             upload: upload => this.#onUpload(upload),
             deleted: (shareGroup, buffer) => this.#shadows.delete(shadowKey(shareGroup, buffer)),
+            textureUpload: upload => this.#textures.onUpload(upload, this.#profileOf(upload.shareGroup)),
+            textureDeleted: (shareGroup, texture) => this.#textures.onDeleted(shareGroup, texture),
         });
+        this.#textures = new GLTextures(platform, this.#tap);
         platform.watchLibraries(() => this.#tap.hookEntryPoints());
     }
 
@@ -147,14 +153,16 @@ export class GLBackend implements GraphicsBackend {
         if (indexFormat !== undefined && indexBuffer === null) {
             return null;
         }
+        const profile = this.#profileOf(draw.shareGroup);
+        const names = this.#gl.attributeNames(draw.program);
         return {
-            api: apiNames[this.#flavorOf(draw.shareGroup)],
+            api: profile.api,
             topology,
             streams,
             bystanders: [],
-            position: positionLayoutOf(attributes, this.#gl.attributeNames(draw.program)),
-            texcoord: null,
-            textures: [],
+            position: layoutOf(positionAttribute(attributes, names), names),
+            texcoord: layoutOf(texcoordAttribute(attributes, names), names),
+            textures: this.#textures.bindingsOf(draw.shareGroup, draw.program, profile),
             indices: (indexFormat !== undefined)
                 ? { buffer: indexBuffer!, offset: draw.indices, format: indexFormat, count: draw.count }
                 : null,
@@ -247,13 +255,19 @@ export class GLBackend implements GraphicsBackend {
     }
 
     #flavorOf(shareGroup: NativePointer): GLFlavor {
+        return this.#profileOf(shareGroup).flavor;
+    }
+
+    #profileOf(shareGroup: NativePointer): GLProfile {
         const key = shareGroup.toString();
-        let flavor = this.#flavors.get(key);
-        if (flavor === undefined) {
-            flavor = this.#platform.flavorOfCurrentContext();
-            this.#flavors.set(key, flavor);
+        let profile = this.#profiles.get(key);
+        if (profile === undefined) {
+            const flavor = this.#platform.flavorOfCurrentContext();
+            const [major, minor] = this.#gl.version();
+            profile = { api: apiNames[flavor], flavor, major, minor };
+            this.#profiles.set(key, profile);
         }
-        return flavor;
+        return profile;
     }
 }
 
@@ -315,6 +329,7 @@ class GLFunctions {
     readonly #getActiveAttrib: NativeFunction<void, [number, number, number, NativePointerValue, NativePointerValue,
         NativePointerValue, NativePointerValue]>;
     readonly #getAttribLocation: NativeFunction<number, [number, NativePointerValue]>;
+    readonly #getString: NativeFunction<NativePointer, [number]>;
     readonly #scratch = Memory.alloc(LONGEST_ATTRIBUTE_NAME + 32);
 
     constructor(platform: GLPlatform) {
@@ -338,6 +353,7 @@ class GLFunctions {
         this.#getActiveAttrib = new NativeFunction(entry("glGetActiveAttrib"), "void",
             ["uint32", "uint32", "int", "pointer", "pointer", "pointer", "pointer"]);
         this.#getAttribLocation = new NativeFunction(entry("glGetAttribLocation"), "int", ["uint32", "pointer"]);
+        this.#getString = new NativeFunction(entry("glGetString"), "pointer", ["uint32"]);
     }
 
     enabledAttributes(): Attribute[] {
@@ -367,6 +383,11 @@ class GLFunctions {
             const size = this.#bufferParameter(GL_BUFFER_SIZE);
             return (size > 0 && this.#bufferParameter(GL_BUFFER_MAPPED) === 0) ? size : null;
         });
+    }
+
+    version(): number[] {
+        const [, major, minor] = /(\d+)\.(\d+)/.exec(this.#getString(GL_VERSION).readUtf8String()!)!;
+        return [Number(major), Number(minor)];
     }
 
     attributeNames(program: number): Map<number, string> {
@@ -436,8 +457,7 @@ function shadowKey(shareGroup: NativePointer, buffer: number): string {
     return `${shareGroup}:${buffer}`;
 }
 
-function positionLayoutOf(attributes: Attribute[], names: Map<number, string>): AttributeLayout | null {
-    const chosen = positionAttribute(attributes, names);
+function layoutOf(chosen: Attribute | undefined, names: Map<number, string>): AttributeLayout | null {
     if (chosen === undefined) {
         return null;
     }

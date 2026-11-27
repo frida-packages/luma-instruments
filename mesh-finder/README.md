@@ -157,6 +157,25 @@ uploaded.
 Live buffers are found by asking OpenGL which buffer names exist, on the next
 frame the process draws.
 
+UVs are the enabled attribute whose name says so, such as `a_uv` or
+`aTexCoord`. Textures are the 2D ones the program samples: each active
+`sampler2D` uniform gives its name, such as `u_albedo`, and its texture unit,
+and the texture bound to that unit is read on the thread that draws. With
+desktop OpenGL, its size and internal format are asked of OpenGL, and it is
+read with `glGetTexImage`, or with `glGetCompressedTexImage` when it is
+compressed, so textures uploaded before the instrument was added are read too.
+OpenGL ES has neither. There, a texture that can be rendered to, such as
+`GL_RGBA8`, is read through a framebuffer of Mesh Finder's own with
+`glReadPixels`, as 8-bit RGBA whatever its format. Compressed textures, such as
+ETC2 and ASTC, are copied as they are uploaded, with `glCompressedTexImage2D`
+or with `glTexStorage2D` and `glCompressedTexSubImage2D`; one uploaded before
+the instrument was added has no contents to show. The size and format of an
+OpenGL ES texture are learned as it is uploaded, or asked of OpenGL from
+OpenGL ES 3.1 on. A texture specified again with `glTexImage2D`,
+`glTexStorage2D` or `glCompressedTexImage2D` counts as a new texture, and
+so does one bound in its place, so the draws that use it are looked at again.
+Whatever Mesh Finder binds to read a texture is bound back as it was.
+
 On Linux, a game may call OpenGL through `libGL`, `libOpenGL` or `libGLESv2`,
 or through pointers it got from `eglGetProcAddress` or `glXGetProcAddressARB`,
 as loaders such as glad do, and these are different functions that each lead
@@ -330,6 +349,14 @@ of them are meshes took about 20 s.
 - OpenGL client-side arrays and the fixed-function `glVertexPointer`, which
   older games use instead of buffer objects, and OpenGL draws issued through
   `CGLMacro.h` rather than the exported functions.
+- OpenGL textures other than 2D ones, such as cube maps, arrays, 3D and
+  external textures, and textures in integer, depth or stencil formats.
+  OpenGL ES textures that cannot be rendered to, such as float ones, have no
+  contents to show, nor do compressed OpenGL ES textures uploaded before the
+  instrument was added or from a pixel unpack buffer. Textures specified anew
+  through direct state access, such as `glTextureStorage2D`, are not seen to
+  change. Only the first 16 samplers of a program are watched for a new
+  texture being bound.
 - The meshes Apple's OpenGL implementation draws through Metal on its own
   behalf are left out on purpose, so a game is not listed twice.
 - The contents of Vulkan buffers bound to memory before the instrument was
