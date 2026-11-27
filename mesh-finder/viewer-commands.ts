@@ -4,6 +4,7 @@ import type { MeshCatalog } from "./mesh-catalog.js";
 import type { MeshDisplay } from "./mesh-display.js";
 import { learnedFrom, meshTitle } from "./mesh-table.js";
 import { offerObj } from "./obj-export.js";
+import { offerPng } from "./texture-export.js";
 
 export interface Reply {
     output(text: string): void;
@@ -15,7 +16,8 @@ const LISTED_MESHES = 50;
 
 const help = [
     "show <n>  shows mesh #n",
-    "obj <n>   offers mesh #n as a Wavefront OBJ file to save",
+    "obj <n>   offers mesh #n as a Wavefront OBJ file to save, in a ZIP with its MTL and PNG textures when it has any",
+    "png <n>   offers the base color texture of mesh #n as a PNG file to save; png <n> <slot> the one in that slot",
     "list      lists the meshes found so far",
     "scan      looks for buffers again, such as after a new level has loaded",
 ].join("\n");
@@ -36,13 +38,16 @@ export class ViewerCommands {
     }
 
     run(text: string, reply: Reply): void {
-        const [verb, argument] = text.trim().replace(/^>\s*/, "").split(/\s+/);
+        const [verb, argument, detail] = text.trim().replace(/^>\s*/, "").split(/\s+/);
         switch (verb) {
             case "show":
                 this.#withMesh(argument, reply, mesh => this.#show(mesh, reply));
                 break;
             case "obj":
                 this.#withMesh(argument, reply, mesh => offerObj(mesh, reply));
+                break;
+            case "png":
+                this.#withMesh(argument, reply, mesh => offerPng(mesh, (detail !== undefined) ? Number(detail) : null, reply));
                 break;
             case "list":
                 reply.output(this.#listing());

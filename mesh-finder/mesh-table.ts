@@ -1,3 +1,4 @@
+import { baseColorTexture, type MeshTexture } from "./material.js";
 import { describeLayout, type Bounds, type Mesh } from "./mesh.js";
 import type { CatalogListener } from "./mesh-catalog.js";
 import type { Settings } from "./settings.js";
@@ -84,6 +85,7 @@ function cellsOf(mesh: Mesh) {
         layout: layoutCell(mesh),
         learned: learnedFrom(mesh),
         buffers: buffersCell(mesh),
+        textures: texturesCell(mesh),
     };
 }
 
@@ -123,6 +125,20 @@ export function whyUnreadable(mesh: Mesh): string {
 function buffersCell(mesh: Mesh): string {
     const vertices = `vertices ${mesh.vertexBuffer.address}+${mesh.vertexBuffer.offset}`;
     return (mesh.indexBuffer !== null) ? `${vertices}, indices ${mesh.indexBuffer.address}+${mesh.indexBuffer.offset}` : vertices;
+}
+
+function texturesCell(mesh: Mesh): string {
+    if (mesh.textures.length === 0) {
+        return missing;
+    }
+    const shown = baseColorTexture(mesh.textures) ?? mesh.textures[0];
+    const others = (mesh.textures.length > 1) ? `, +${mesh.textures.length - 1}` : "";
+    return `${textureText(shown)} ${shown.texture.format ?? shown.texture.formatName}${others}`;
+}
+
+export function textureText({ slot, name, texture }: MeshTexture): string {
+    const called = (name !== null) ? `"${name}"` : `slot ${slot}`;
+    return `${called} ${texture.width} × ${texture.height}`;
 }
 
 export function compact(value: number): string {

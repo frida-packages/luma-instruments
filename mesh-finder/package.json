@@ -51,6 +51,7 @@
             { "id": "size", "name": "Size", "alignment": "leading" },
             { "id": "layout", "name": "Layout", "alignment": "leading" },
             { "id": "learned", "name": "Learned from", "alignment": "leading" },
+            { "id": "textures", "name": "Textures", "alignment": "leading" },
             { "id": "buffers", "name": "Buffers", "alignment": "leading" }
           ],
           "rowActions": [],
@@ -75,7 +76,7 @@
         "config": {
           "maxEntries": 500,
           "prompt": ">",
-          "placeholder": "show 3, obj 3, scan, help",
+          "placeholder": "show 3, obj 3, png 3, scan, help",
           "runButtonLabel": "Run"
         },
         "actions": [{ "id": "clear", "name": "Clear" }],
@@ -95,7 +96,7 @@
       ]
     },
     "store": {
-      "summary": "Find the 3D meshes a game or app holds in its Direct3D 11, Metal, Vulkan and OpenGL buffers, with exact layouts learned from its draw calls, and export any of them as OBJ.",
+      "summary": "Find the 3D meshes a game or app holds in its Direct3D 11, Metal, Vulkan and OpenGL buffers, with exact layouts learned from its draw calls, and export any of them as OBJ, with the textures they are drawn with.",
       "category": "ui",
       "access": { "kind": "free" }
     }
