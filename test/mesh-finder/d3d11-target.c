@@ -19,18 +19,14 @@ enum {
     BC1_HEIGHT = 8,
 };
 
-typedef struct {
-    uint32_t width, height;
-    const char *format;
-    const uint8_t (*corners)[4];
-} ExpectedTexture;
-
 static const uint8_t albedo_fill[4] = { 128, 128, 128, 255 };
-static const uint8_t albedo_corners[4][4] = { { 255, 0, 0, 255 }, { 0, 255, 0, 255 }, { 0, 0, 255, 255 }, { 255, 255, 0, 255 } };
+static const TextureExpectation albedo_expectation = { ALBEDO_WIDTH, ALBEDO_HEIGHT, "rgba8unorm",
+    { { 255, 0, 0, 255 }, { 0, 255, 0, 255 }, { 0, 0, 255, 255 }, { 255, 255, 0, 255 } } };
 static const uint8_t normals_fill[4] = { 128, 128, 255, 255 };
 static const uint16_t bc1_fill = 0x8410;
 static const uint16_t bc1_corners[4] = { 0xf800, 0x07e0, 0x001f, 0xffff };
-static const uint8_t bc1_decoded_corners[4][4] = { { 255, 0, 0, 255 }, { 0, 255, 0, 255 }, { 0, 0, 255, 255 }, { 255, 255, 255, 255 } };
+static const TextureExpectation bc1_expectation = { BC1_WIDTH, BC1_HEIGHT, "bc1",
+    { { 255, 0, 0, 255 }, { 0, 255, 0, 255 }, { 0, 0, 255, 255 }, { 255, 255, 255, 255 } } };
 static const GUID debug_object_name = { 0x429b8c22, 0x9188, 0x4b0c, { 0x87, 0x42, 0xac, 0xb0, 0xbf, 0x85, 0xc2, 0x00 } };
 
 static const char shader_source[] =
@@ -118,7 +114,6 @@ static double milliseconds_since(LARGE_INTEGER start);
 static ID3DBlob *compile(const char *entry, const char *profile);
 static ID3D11Buffer *mapped_buffer(Scene *scene, UINT bind, const void *data, UINT length);
 static uint16_t *half_positions(const Mesh *mesh);
-static void expect_textured(const Mesh *mesh, const char *how, uint32_t triangle_count, const ExpectedTexture *texture);
 static void expect_absent(const Mesh *mesh, const char *how, uint32_t triangle_count);
 static uint8_t *rgba_texels(uint32_t width, uint32_t height, const uint8_t fill[4], const uint8_t (*corners)[4]);
 static ID3D11ShaderResourceView *texture_view(Scene *scene, DXGI_FORMAT format, UINT width, UINT height, const void *texels, UINT pitch,
@@ -311,12 +306,12 @@ static void upload_meshes(Scene *scene)
     free(pyramid);
     free(hidden_indices);
 
-    ExpectedTexture cube_texture = { ALBEDO_WIDTH, ALBEDO_HEIGHT, "rgba8unorm", albedo_corners };
-    ExpectedTexture sphere_texture = { BC1_WIDTH, BC1_HEIGHT, "bc1", bc1_decoded_corners };
-    expect_textured(&scene->cube, "immutable, interleaved position, normal and uv; 16-bit indices; DrawIndexed; "
-        "an RGBA8 albedo and a normal map", 12, &cube_texture);
-    expect_textured(&scene->sphere, "UpdateSubresource; positions alone at an offset, normals and uvs in a second stream; "
-        "32-bit indices at an offset; a BC1 albedo", scene->sphere.index_count / 3, &sphere_texture);
+    expect(&scene->cube, "immutable, interleaved position, normal and uv; 16-bit indices; DrawIndexed; "
+        "an RGBA8 albedo and a normal map", 12, CONTENTS_CPU_VISIBLE);
+    expect_texture(&scene->cube, &albedo_expectation);
+    expect(&scene->sphere, "UpdateSubresource; positions alone at an offset, normals and uvs in a second stream; "
+        "32-bit indices at an offset; a BC1 albedo", scene->sphere.index_count / 3, CONTENTS_CPU_VISIBLE);
+    expect_texture(&scene->sphere, &bc1_expectation);
     expect(&scene->torus, "dynamic, filled with Map; base vertex; DrawIndexedInstancedIndirect", scene->torus.index_count / 3,
         CONTENTS_CPU_VISIBLE);
     expect(&scene->ribbon, "triangle strip, Draw", scene->ribbon.vertex_count - 2, CONTENTS_CPU_VISIBLE);
@@ -329,7 +324,7 @@ static void upload_meshes(Scene *scene)
 
 static void make_textures(Scene *scene)
 {
-    uint8_t *albedo = rgba_texels(ALBEDO_WIDTH, ALBEDO_HEIGHT, albedo_fill, albedo_corners);
+    uint8_t *albedo = rgba_texels(ALBEDO_WIDTH, ALBEDO_HEIGHT, albedo_fill, albedo_expectation.corners);
     scene->cube_albedo = texture_view(scene, DXGI_FORMAT_R8G8B8A8_UNORM, ALBEDO_WIDTH, ALBEDO_HEIGHT, albedo, ALBEDO_WIDTH * 4,
         "cube albedo");
     uint8_t *normals = rgba_texels(NORMALS_SIZE, NORMALS_SIZE, normals_fill, NULL);
@@ -405,23 +400,6 @@ static uint16_t *half_positions(const Mesh *mesh)
         packed[i * 4 + 3] = half_of(1.0f);
     }
     return packed;
-}
-
-static void expect_textured(const Mesh *mesh, const char *how, uint32_t triangle_count, const ExpectedTexture *texture)
-{
-    expect(mesh, how, triangle_count, CONTENTS_CPU_VISIBLE);
-    uint32_t first = (mesh->index_count != 0) ? UINT32_MAX : 0;
-    for (uint32_t i = 0; i != mesh->index_count; i++) {
-        first = (mesh->indices[i] < first) ? mesh->indices[i] : first;
-    }
-    const float *a = mesh->vertices[first].uv, *b = mesh->vertices[first + 1].uv, *c = mesh->vertices[first + 2].uv;
-    const uint8_t (*k)[4] = texture->corners;
-    size_t used = strlen(mesh_finder_expectations) - 1;
-    snprintf(mesh_finder_expectations + used, sizeof(mesh_finder_expectations) - used,
-        ",\"texture\":{\"width\":%u,\"height\":%u,\"format\":\"%s\",\"corners\":[[%u,%u,%u,%u],[%u,%u,%u,%u],[%u,%u,%u,%u],[%u,%u,%u,%u]]},"
-        "\"texcoords\":[[%g,%g],[%g,%g],[%g,%g]]}",
-        texture->width, texture->height, texture->format, k[0][0], k[0][1], k[0][2], k[0][3], k[1][0], k[1][1], k[1][2], k[1][3],
-        k[2][0], k[2][1], k[2][2], k[2][3], k[3][0], k[3][1], k[3][2], k[3][3], a[0], a[1], b[0], b[1], c[0], c[1]);
 }
 
 static void expect_absent(const Mesh *mesh, const char *how, uint32_t triangle_count)

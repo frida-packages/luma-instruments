@@ -41,9 +41,11 @@ enum {
     ALBEDO_SLOT = 0, NORMAL_MAP_SLOT = 1,
 };
 
-static const uint8_t cubeAlbedoCorners[4][4] = { { 255, 0, 0, 255 }, { 0, 255, 0, 255 }, { 0, 0, 255, 255 }, { 255, 255, 255, 128 } };
+static const TextureExpectation cubeAlbedoExpectation = { CUBE_ALBEDO_WIDTH, CUBE_ALBEDO_HEIGHT, "bgra8unorm",
+    { { 255, 0, 0, 255 }, { 0, 255, 0, 255 }, { 0, 0, 255, 255 }, { 255, 255, 255, 128 } } };
 static const uint16_t ribbonAlbedoCorners565[4] = { 0xf800, 0x07e0, 0x001f, 0xffe0 };
-static const uint8_t ribbonAlbedoCorners[4][4] = { { 255, 0, 0, 255 }, { 0, 255, 0, 255 }, { 0, 0, 255, 255 }, { 255, 255, 0, 255 } };
+static const TextureExpectation ribbonAlbedoExpectation = { RIBBON_ALBEDO_WIDTH, RIBBON_ALBEDO_HEIGHT, "bc1",
+    { { 255, 0, 0, 255 }, { 0, 255, 0, 255 }, { 0, 0, 255, 255 }, { 255, 255, 0, 255 } } };
 
 @interface Scene : NSObject
 @property (nonatomic, strong) id<MTLDevice> device;
@@ -80,7 +82,6 @@ static uint16_t *batched_indices16(const Mesh *first, const Mesh *second);
 static uint16_t *half_positions(const Mesh *mesh);
 static uint16_t half_of(float value);
 static void expect_absent(const Mesh *mesh, const char *how, uint32_t triangle_count);
-static void expect_texture(const Mesh *mesh, uint32_t width, uint32_t height, const char *format, const uint8_t corners[4][4]);
 static double elapsedMilliseconds(uint64_t start);
 
 int main(int argc, char **argv)
@@ -330,11 +331,11 @@ int main(int argc, char **argv)
     free(halfIndices);
 
     expect(&_cube, "interleaved position, normal and uv; 16-bit indices; vertex descriptor; BGRA8 sRGB albedo and a normal map", 12, 1);
-    expect_texture(&_cube, CUBE_ALBEDO_WIDTH, CUBE_ALBEDO_HEIGHT, "bgra8unorm", cubeAlbedoCorners);
+    expect_texture(&_cube, &cubeAlbedoExpectation);
     expect(&_sphere, "positions alone in their own buffer at an offset; 32-bit indices; vertex descriptor", _sphere.index_count / 3, 1);
     expect(&_torus, "vertex pulling with no vertex descriptor; 16-bit indices", _torus.index_count / 3, 1);
     expect(&_ribbon, "triangle strip, not indexed; BC1 albedo", _ribbon.vertex_count - 2, 1);
-    expect_texture(&_ribbon, RIBBON_ALBEDO_WIDTH, RIBBON_ALBEDO_HEIGHT, "bc1", ribbonAlbedoCorners);
+    expect_texture(&_ribbon, &ribbonAlbedoExpectation);
     expect(&_octahedron, "triangle list, not indexed, 16-byte stride", 8, 1);
     expect(&_pyramid, "setVertexBytes, not indexed", 6, 1);
     expect(&_privateCube, "private storage", 12, 0);
@@ -355,7 +356,7 @@ int main(int argc, char **argv)
             int corner = (x == CUBE_ALBEDO_WIDTH - 1) + 2 * (y == CUBE_ALBEDO_HEIGHT - 1);
             BOOL isCorner = (x == 0 || x == CUBE_ALBEDO_WIDTH - 1) && (y == 0 || y == CUBE_ALBEDO_HEIGHT - 1);
             const uint8_t gray[4] = { 128, 128, 128, 255 };
-            const uint8_t *rgba = isCorner ? cubeAlbedoCorners[corner] : gray;
+            const uint8_t *rgba = isCorner ? cubeAlbedoExpectation.corners[corner] : gray;
             uint8_t bgra[4] = { rgba[2], rgba[1], rgba[0], rgba[3] };
             memcpy(cubeTexels[y][x], bgra, 4);
         }
@@ -586,26 +587,6 @@ static uint16_t half_of(float value)
 static void expect_absent(const Mesh *mesh, const char *how, uint32_t triangle_count)
 {
     record_expectation(mesh, how, triangle_count, CONTENTS_CPU_VISIBLE, PRESENCE_ABSENT);
-}
-
-static void expect_texture(const Mesh *mesh, uint32_t width, uint32_t height, const char *format, const uint8_t corners[4][4])
-{
-    uint32_t first = 0;
-    if (mesh->index_count != 0) {
-        first = UINT32_MAX;
-        for (uint32_t i = 0; i != mesh->index_count; i++) {
-            first = (mesh->indices[i] < first) ? mesh->indices[i] : first;
-        }
-    }
-    const float *a = mesh->vertices[first].uv, *b = mesh->vertices[first + 1].uv, *c = mesh->vertices[first + 2].uv;
-    size_t closing = strlen(mesh_finder_expectations) - 1;
-    snprintf(mesh_finder_expectations + closing, sizeof(mesh_finder_expectations) - closing,
-        ",\"texture\":{\"width\":%u,\"height\":%u,\"format\":\"%s\",\"corners\":[[%u,%u,%u,%u],[%u,%u,%u,%u],[%u,%u,%u,%u],[%u,%u,%u,%u]]},"
-        "\"texcoords\":[[%g,%g],[%g,%g],[%g,%g]]}",
-        width, height, format,
-        corners[0][0], corners[0][1], corners[0][2], corners[0][3], corners[1][0], corners[1][1], corners[1][2], corners[1][3],
-        corners[2][0], corners[2][1], corners[2][2], corners[2][3], corners[3][0], corners[3][1], corners[3][2], corners[3][3],
-        a[0], a[1], b[0], b[1], c[0], c[1]);
 }
 
 static double elapsedMilliseconds(uint64_t start)
