@@ -3,7 +3,7 @@
   "displayName": "Certificates",
   "version": "1.1.1",
   "main": "main.ts",
-  "engines": { "luma": ">=4.0.0" },
+  "engines": { "luma": ">=4.1.0" },
   "luma": {
     "icon": { "kind": "file", "value": "icon.png" },
     "compatibility": { "platforms": ["windows", "darwin", "linux"] },
@@ -43,7 +43,8 @@
             { "id": "sha256", "name": "SHA-256", "alignment": "leading" },
             { "id": "found", "name": "Found by", "alignment": "leading" }
           ],
-          "rowActions": [{ "id": "inspect", "name": "Inspect" }],
+          "rowActions": [],
+          "rowSelection": { "id": "inspect", "name": "Inspect" },
           "maxRows": 5000
         },
         "actions": [{ "id": "rescan", "name": "Rescan" }],

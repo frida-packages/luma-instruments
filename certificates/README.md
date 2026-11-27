@@ -47,12 +47,12 @@ ways, or in several copies, is one row.
   found, such as `SecCertificate ×2, DER ×5`. **Rescan**, in its header,
   scans again: certificates no longer found are dropped, and the others keep
   their rows. It is disabled while a scan is under way.
-- **Inspect** on a row shows the certificate in **Details** as a value you
-  can expand: subject, issuer, serial number, validity, signature algorithm,
-  key, subject alternative names, basic constraints, key usage, extended key
-  usage, both fingerprints, every place it was found, its PEM, and its DER.
-  It also puts the DER in the **DER** view, at the address it was found,
-  when it was found whole in memory.
+- Selecting a row shows its certificate in **Details** as a value you can
+  expand: subject, issuer, serial number, validity, signature algorithm, key,
+  subject alternative names, basic constraints, key usage, extended key usage,
+  both fingerprints, every place it was found, its PEM, and its DER. It also
+  puts the DER in the **DER** view, at the address it was found, when it was
+  found whole in memory.
 - **Details** takes a name, host name or fingerprint prefix and shows the
   certificates that match. After each scan it gets a summary: how many
   certificates each strategy found, how many candidates the pointer search
