@@ -4,7 +4,7 @@ An instrument is a folder. Its TypeScript runs inside the target process, as
 part of the Frida agent Luma injects; its `package.json` tells Luma what the
 instrument is called, where it can run, what settings it has and what widgets
 it shows; its `README.md` is its description in the store. This document
-describes all of that as Luma 4.0.0 reads it. Widgets that run Smalltalk
+describes all of that as Luma 4.1.0 reads it. Widgets that run Smalltalk
 inside Luma are described in [views.md](views.md).
 
 ## Contents
@@ -336,8 +336,8 @@ belongs to the widget itself.
 | `counter` | `unit` (optional) | `setCounter({ value, unit?, delta?, fractionDigits? })` |
 | `histogram` | `maxBuckets` (100) | `setHistogram([{ label, count }])`, `incrementBucket(label, by?)` |
 | `graph` | `series: [{ id, name }]`, `maxPoints` (5000) | `push({ series, x, y })` |
-| `list` | `rowActions: [{ id, name }]` (none), `maxItems` (1000) | `upsertItem({ id, title, subtitle?, accessory? })`, `removeItem(id)` |
-| `table` | `columns: [{ id, name, alignment }]`, `rowActions: [{ id, name }]` (none), `maxRows` (1000) | `upsertRow({ id, cells })`, `removeRow(id)` |
+| `list` | `rowActions: [{ id, name }]` (none), `rowActivation: { id, name }` (none), `rowSelection: { id, name }` (none), `maxItems` (1000) | `upsertItem({ id, title, subtitle?, accessory? })`, `removeItem(id)` |
+| `table` | `columns: [{ id, name, alignment }]`, `rowActions: [{ id, name }]` (none), `rowActivation: { id, name }` (none), `rowSelection: { id, name }` (none), `maxRows` (1000) | `upsertRow({ id, cells })`, `removeRow(id)` |
 | `hex` | `maxBytes` (16384) | `setHex({ bytes, baseAddress? })` |
 | `console` | `maxEntries` (1000), `prompt`, `placeholder`, `runButtonLabel` (the last three optional) | `appendOutput(text)`, `appendError(text)`, `appendValue(value)`, `appendImage({ bytes, mediaType, width, height, text? })`, `appendConsole({ id?, kind, text })` |
 | `view` | `class`, `height` (360) | See [views.md](views.md). |
@@ -433,11 +433,35 @@ are declared. Choosing one calls the handle's `onAction` with the widget's id
 and the action's id, and no `item` key at all.
 
 A list or table can also declare `rowActions` in its `config`, with the same
-shape. Luma shows them on each row, and choosing one calls `onAction` with the
-row's id as `item` as well.
+shape. Luma shows them on the row under the pointer and on the selected one,
+and choosing one calls `onAction` with the row's id as `item` as well.
 
-An action's id is unique within its widget, across `actions` and `rowActions`
-together; Luma refuses a repeated one as
+A list or table can also name the action that opening a row runs, as
+`rowActivation`, `{ id, name }`, in its `config`. A row is opened by
+double-clicking it, or by selecting it and pressing Return. That action has no
+button of its own; its name is the first item of the row's context menu. It
+reaches `onAction` the way a row action does, so a row's main action, such as
+opening a page for what the row stands for, belongs here rather than among
+`rowActions`.
+
+`rowSelection`, of the same shape, names the action that selecting a row runs,
+once the selection has stayed on that row for a moment, so that holding an
+arrow key runs it only for the row where it stops. It suits showing a row in a
+view or console beside the table, so that arrowing through the rows previews
+each in turn. Selecting a row again, rows arriving or the filter changing do
+not run it. Opening something new belongs to `rowActivation` instead, as the
+two are meant to do different things:
+
+```json
+"config": {
+  "columns": [{ "id": "mesh", "name": "Mesh", "alignment": "leading" }],
+  "rowActions": [{ "id": "obj", "name": "Export OBJ" }],
+  "rowSelection": { "id": "show", "name": "Show" }
+}
+```
+
+An action's id is unique within its widget, across `actions`, `rowActions`,
+`rowActivation` and `rowSelection` together; Luma refuses a repeated one as
 `luma.widgets[1].config.rowActions[0].id: "clear" is already the id of another
 action of this widget`. In a lab, both kinds are enabled only for the
 session's host and for owners of the lab, and they run in the host's agent.
@@ -658,10 +682,12 @@ taken the release. Publishing needs a store account that may publish; the
 item's id is the publisher's handle and the package `name`, such as
 `<handle>/open-counter`.
 
-An instrument with any widget or setting is refused unless it declares
-`"engines": { "luma": ">=4.0.0" }`, since Luma 3.0.0 cannot read the form this
-document describes, and one with `.st` files but neither is refused unless it
-declares at least `">=3.0.0"`. Luma writes or raises that line when an edit in
+An instrument with a `rowActivation` or `rowSelection` is refused unless it
+declares `"engines": { "luma": ">=4.1.0" }`, since Luma 4.0.0 refuses the key. One with
+any other widget or setting is refused unless it declares at least
+`">=4.0.0"`, since Luma 3.0.0 cannot read the form this document describes,
+and one with `.st` files but neither is refused unless it declares at least
+`">=3.0.0"`. Luma writes or raises that line when an edit in
 its own editor brings the instrument to need it, and never lowers it; an edit
 made on disk is taken as it is, and a folder linked with less than it needs
 still links and runs, but cannot be published until it says so. Luma shows an
