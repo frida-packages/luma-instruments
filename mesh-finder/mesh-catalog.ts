@@ -17,9 +17,13 @@ export class MeshCatalog {
         this.#listener = listener;
     }
 
-    wants(identity: string, rank: number): boolean {
+    wants(identity: string, rank: number, textureIds: string[]): boolean {
         const existing = this.#byIdentity.get(identity);
-        return existing === undefined || rankOf(existing) < rank;
+        if (existing === undefined) {
+            return true;
+        }
+        const existingRank = rankOf(existing);
+        return existingRank < rank || (existingRank === rank && !sameTextures(existing, textureIds));
     }
 
     admit(candidate: UnnumberedMesh): Mesh | null {
@@ -89,7 +93,19 @@ export class MeshCatalog {
 
 function supersedes(candidate: UnnumberedMesh, existing: Mesh): boolean {
     const [rank, existingRank] = [rankOf(candidate), rankOf(existing)];
-    return rank > existingRank || (rank === existingRank && candidate.contents !== "cpu-visible");
+    if (rank !== existingRank) {
+        return rank > existingRank;
+    }
+    return candidate.contents !== "cpu-visible"
+        || (!sameTextures(existing, candidate.textures.map(use => use.texture.id)) && readableTextures(candidate) >= readableTextures(existing));
+}
+
+function sameTextures(mesh: UnnumberedMesh, textureIds: string[]): boolean {
+    return mesh.textures.length === textureIds.length && mesh.textures.every((use, i) => use.texture.id === textureIds[i]);
+}
+
+function readableTextures(mesh: UnnumberedMesh): number {
+    return mesh.textures.filter(use => use.texture.contents === "cpu-visible").length;
 }
 
 export function rankOf(mesh: Pick<UnnumberedMesh, "evidence" | "layout" | "contents">): number {

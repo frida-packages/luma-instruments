@@ -99,7 +99,8 @@ export class MeshFinder implements GeometryObserver {
             return;
         }
         const positions = (draw.position !== null) ? declaredPositions(draw, draw.position) : this.#guessedPositions(draw, span);
-        if (positions === null || !this.#catalog.wants(identityOf(draw, positions.stream, span), rankOf(drawnWith(positions.layout)))) {
+        const textureIds = draw.textures.map(binding => binding.texture.id);
+        if (positions === null || !this.#catalog.wants(identityOf(draw, positions.stream, span), rankOf(drawnWith(positions.layout)), textureIds)) {
             return;
         }
         if (positions.stream.buffer.access !== "cpu-readable" || (draw.indices !== null && indexBytes === null)) {
