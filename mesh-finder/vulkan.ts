@@ -16,10 +16,12 @@ import {
     pipelineEntryPointNames,
     PipelineLayouts,
     positionLayoutOf,
+    texcoordLayoutOf,
     type PipelineDescription,
     type VertexInputInfo,
 } from "./vulkan-pipelines.js";
 import { tapEntryPointNames, VulkanTap, type RecordedDraw } from "./vulkan-tap.js";
+import { SUBRESOURCE_LAYOUT, VulkanTextures } from "./vulkan-textures.js";
 
 export const vulkan: GraphicsBackendFactory = {
     api: "Vulkan",
@@ -38,6 +40,7 @@ interface Hooks {
     tap: VulkanTap;
     pipelines: PipelineLayouts;
     contents: VulkanContents;
+    textures: VulkanTextures;
 }
 
 const topologies = new Map<number, Topology>([[0, "point-list"], [3, "triangle-list"], [4, "triangle-strip"], [5, "triangle-fan"]]);
@@ -96,12 +99,13 @@ class VulkanBackend implements GraphicsBackend {
     }
 
     #start(): Hooks | null {
-        const drivers = findVulkanDrivers([...tapEntryPointNames, ...pipelineEntryPointNames, MEMORY_REQUIREMENTS]);
+        const drivers = findVulkanDrivers([...tapEntryPointNames, ...pipelineEntryPointNames, MEMORY_REQUIREMENTS, SUBRESOURCE_LAYOUT]);
         if (drivers.length === 0) {
             return null;
         }
         let tap: VulkanTap | null = null;
         const contents = new VulkanContents(() => tap!, drivers, buffers => this.#observer.observeBuffers(buffers));
+        const textures = new VulkanTextures(() => tap!, drivers, contents);
         const pipelines = new PipelineLayouts(drivers, (pipeline, description) => this.#learned(pipeline, description));
         tap = new VulkanTap(drivers, {
             newDraw: draw => this.#onDraw(draw),
@@ -110,11 +114,12 @@ class VulkanBackend implements GraphicsBackend {
             copied: (source, destination, sourceOffset, destinationOffset, size) =>
                 contents.copied(source, destination, sourceOffset, destinationOffset, size),
             updated: (destination, offset, size, data) => contents.updated(destination, offset, size, data),
+            imageCopied: copy => textures.imageCopied(copy),
             unmapping: (memory, mapped, offset, size) => contents.unmapping(memory, mapped, offset, size),
-            named: (buffer, name) => contents.named(buffer, name),
-            forgotten: (kind, handle) => contents.forgotten(kind, handle),
+            named: (kind, handle, name) => (kind === "image") ? textures.named(handle, name) : contents.named(handle, name),
+            forgotten: (kind, handle) => (kind === "image") ? textures.forgotten(handle) : contents.forgotten(kind, handle),
         });
-        return { drivers, tap, pipelines, contents };
+        return { drivers, tap, pipelines, contents, textures };
     }
 
     #learned(pipeline: UInt64, description: PipelineDescription): void {
@@ -143,7 +148,9 @@ class VulkanBackend implements GraphicsBackend {
             return [];
         }
         const input = this.#declaredInputOf(draw, description);
-        const position = (input !== null) ? positionLayoutOf(input.info, description?.names ?? null, input.origin) : null;
+        const names = description?.names ?? null;
+        const position = (input !== null) ? positionLayoutOf(input.info, names, input.origin) : null;
+        const texcoord = (input !== null) ? texcoordLayoutOf(input.info, names, input.origin) : null;
         const streams: VertexStream[] = draw.bindings.map(binding => ({
             slot: binding.index,
             buffer: hooks.contents.bufferOf(binding.buffer, draw.commandBuffer),
@@ -159,8 +166,8 @@ class VulkanBackend implements GraphicsBackend {
             streams,
             bystanders: [],
             position,
-            texcoord: null,
-            textures: [],
+            texcoord,
+            textures: hooks.textures.bindingsOf(draw, description?.sampledImages ?? null),
             indices: null,
             firstVertex: 0,
             vertexCount: 0,

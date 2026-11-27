@@ -26,6 +26,8 @@ const wantedExtensions = {
         "VK_KHR_copy_commands2",
         "VK_KHR_synchronization2",
         "VK_KHR_bind_memory2",
+        "VK_KHR_descriptor_update_template",
+        "VK_KHR_maintenance6",
         "VK_KHR_timeline_semaphore",
         "VK_KHR_dynamic_rendering",
     ],

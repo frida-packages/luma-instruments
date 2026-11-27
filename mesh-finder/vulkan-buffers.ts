@@ -4,7 +4,7 @@ import type { VulkanDriver } from "./vulkan-driver.js";
 import { MemoryRequirements } from "./vulkan-memory-requirements.pat";
 import type { BufferFacts, KnownMapping, ObjectKind, VulkanTap } from "./vulkan-tap.js";
 
-interface MemoryShadow {
+export interface MemoryShadow {
     offset: number;
     bytes: ArrayBuffer;
 }
@@ -107,7 +107,7 @@ export class VulkanContents {
         this.#labels.set(buffer.toString(), name);
     }
 
-    forgotten(kind: ObjectKind, handle: UInt64): void {
+    forgotten(kind: Exclude<ObjectKind, "image">, handle: UInt64): void {
         const key = handle.toString();
         if (kind === "buffer") {
             this.#shadowBytes -= this.#bufferShadows.get(key)?.size ?? 0;
@@ -120,6 +120,10 @@ export class VulkanContents {
             this.#memoryShadows.delete(key);
             this.#changedMemories.delete(key);
         }
+    }
+
+    memoryShadowOf(memory: UInt64): MemoryShadow | null {
+        return this.#memoryShadows.get(memory.toString()) ?? null;
     }
 
     readableBuffers(): VulkanBuffer[] {

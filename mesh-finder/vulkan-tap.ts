@@ -1,6 +1,7 @@
 import * as tapFacts from "./vulkan-buffer-facts.pat";
 import type { VulkanDriver } from "./vulkan-driver.js";
 import { Draw } from "./vulkan-draw.pat";
+import * as imageFacts from "./vulkan-image-facts.pat";
 
 export interface RecordedDraw {
     commandBuffer: NativePointer;
@@ -21,6 +22,12 @@ export interface RecordedDraw {
     drawCount: number;
     indirectStride: number;
     bindings: RecordedBinding[];
+    descriptorSets: BoundDescriptorSet[];
+}
+
+export interface BoundDescriptorSet {
+    index: number;
+    set: UInt64;
 }
 
 export interface RecordedBinding {
@@ -41,6 +48,37 @@ export interface BufferFacts {
     mappedSize: number | null;
 }
 
+export interface ImageFacts {
+    order: number;
+    width: number;
+    height: number;
+    format: number;
+    tiling: ImageTiling;
+    memory: UInt64;
+    memoryOffset: number;
+    backing: MemoryBacking;
+    mapped: NativePointer;
+    mappedOffset: number;
+    mappedSize: number | null;
+}
+
+export interface ViewFacts {
+    image: UInt64;
+    format: number;
+}
+
+export interface RecordedImageCopy {
+    source: UInt64;
+    image: UInt64;
+    bufferOffset: number;
+    rowLength: number;
+    imageHeight: number;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+}
+
 export interface KnownMapping {
     mapped: NativePointer;
     mappedSize: number | null;
@@ -51,8 +89,9 @@ export interface VulkanTapEvents {
     vertexInput(id: UInt64, bindings: NativePointer, bindingCount: number, attributes: NativePointer, attributeCount: number): void;
     copied(source: UInt64, destination: UInt64, sourceOffset: number, destinationOffset: number, size: number): void;
     updated(destination: UInt64, offset: number, size: number, data: NativePointer): void;
+    imageCopied(copy: RecordedImageCopy): void;
     unmapping(memory: UInt64, mapped: NativePointer, offset: number, size: number): void;
-    named(buffer: UInt64, name: string): void;
+    named(kind: NamedKind, handle: UInt64, name: string): void;
     forgotten(kind: ObjectKind, handle: UInt64): void;
 }
 
@@ -62,16 +101,23 @@ export type DrawElements = "indexed" | "vertices";
 
 export type MemoryBacking = "tracked" | "untracked";
 
-export type ObjectKind = "buffer" | "memory";
+export type ObjectKind = "buffer" | "memory" | "image";
+
+export type NamedKind = Exclude<ObjectKind, "memory">;
+
+export type ImageTiling = "optimal" | "linear";
 
 export type DrawWatch = "observed" | "ignored";
 
 type TapCall =
     | "begin" | "bindPipeline" | "bindVertexBuffers" | "bindVertexBuffers2" | "bindIndexBuffer" | "bindIndexBuffer2"
-    | "setVertexInput" | "setPrimitiveTopology" | "draw" | "drawIndexed" | "drawIndirect" | "drawIndexedIndirect" | "drawMulti"
-    | "drawMultiIndexed" | "copyBuffer" | "copyBuffer2" | "updateBuffer" | "queueSubmit" | "queueSubmit2" | "createBuffer"
-    | "destroyBuffer" | "allocateMemory" | "freeMemory" | "bindBufferMemory" | "bindBufferMemory2" | "mapMemory" | "mapMemory2"
-    | "unmapMemory" | "unmapMemory2" | "nameObject" | "deviceActivity";
+    | "bindDescriptorSets" | "bindDescriptorSets2" | "setVertexInput" | "setPrimitiveTopology" | "draw" | "drawIndexed"
+    | "drawIndirect" | "drawIndexedIndirect" | "drawMulti" | "drawMultiIndexed" | "copyBuffer" | "copyBuffer2" | "copyBufferToImage"
+    | "copyBufferToImage2" | "updateBuffer" | "queueSubmit" | "queueSubmit2" | "createBuffer" | "destroyBuffer" | "allocateMemory"
+    | "freeMemory" | "bindBufferMemory" | "bindBufferMemory2" | "createImage" | "destroyImage" | "bindImageMemory"
+    | "bindImageMemory2" | "createImageView" | "destroyImageView" | "updateDescriptorSets" | "createDescriptorUpdateTemplate"
+    | "destroyDescriptorUpdateTemplate" | "updateDescriptorSetWithTemplate" | "mapMemory" | "mapMemory2" | "unmapMemory"
+    | "unmapMemory2" | "nameObject" | "deviceActivity";
 
 const tapCalls: [TapCall, string[]][] = [
     ["begin", ["vkBeginCommandBuffer"]],
@@ -80,6 +126,8 @@ const tapCalls: [TapCall, string[]][] = [
     ["bindVertexBuffers2", ["vkCmdBindVertexBuffers2", "vkCmdBindVertexBuffers2EXT"]],
     ["bindIndexBuffer", ["vkCmdBindIndexBuffer"]],
     ["bindIndexBuffer2", ["vkCmdBindIndexBuffer2", "vkCmdBindIndexBuffer2KHR"]],
+    ["bindDescriptorSets", ["vkCmdBindDescriptorSets"]],
+    ["bindDescriptorSets2", ["vkCmdBindDescriptorSets2", "vkCmdBindDescriptorSets2KHR"]],
     ["setVertexInput", ["vkCmdSetVertexInputEXT"]],
     ["setPrimitiveTopology", ["vkCmdSetPrimitiveTopology", "vkCmdSetPrimitiveTopologyEXT"]],
     ["draw", ["vkCmdDraw"]],
@@ -90,6 +138,8 @@ const tapCalls: [TapCall, string[]][] = [
     ["drawMultiIndexed", ["vkCmdDrawMultiIndexedEXT"]],
     ["copyBuffer", ["vkCmdCopyBuffer"]],
     ["copyBuffer2", ["vkCmdCopyBuffer2", "vkCmdCopyBuffer2KHR"]],
+    ["copyBufferToImage", ["vkCmdCopyBufferToImage"]],
+    ["copyBufferToImage2", ["vkCmdCopyBufferToImage2", "vkCmdCopyBufferToImage2KHR"]],
     ["updateBuffer", ["vkCmdUpdateBuffer"]],
     ["queueSubmit", ["vkQueueSubmit"]],
     ["queueSubmit2", ["vkQueueSubmit2", "vkQueueSubmit2KHR"]],
@@ -99,6 +149,16 @@ const tapCalls: [TapCall, string[]][] = [
     ["freeMemory", ["vkFreeMemory"]],
     ["bindBufferMemory", ["vkBindBufferMemory"]],
     ["bindBufferMemory2", ["vkBindBufferMemory2", "vkBindBufferMemory2KHR"]],
+    ["createImage", ["vkCreateImage"]],
+    ["destroyImage", ["vkDestroyImage"]],
+    ["bindImageMemory", ["vkBindImageMemory"]],
+    ["bindImageMemory2", ["vkBindImageMemory2", "vkBindImageMemory2KHR"]],
+    ["createImageView", ["vkCreateImageView"]],
+    ["destroyImageView", ["vkDestroyImageView"]],
+    ["updateDescriptorSets", ["vkUpdateDescriptorSets"]],
+    ["createDescriptorUpdateTemplate", ["vkCreateDescriptorUpdateTemplate", "vkCreateDescriptorUpdateTemplateKHR"]],
+    ["destroyDescriptorUpdateTemplate", ["vkDestroyDescriptorUpdateTemplate", "vkDestroyDescriptorUpdateTemplateKHR"]],
+    ["updateDescriptorSetWithTemplate", ["vkUpdateDescriptorSetWithTemplate", "vkUpdateDescriptorSetWithTemplateKHR"]],
     ["mapMemory", ["vkMapMemory"]],
     ["mapMemory2", ["vkMapMemory2", "vkMapMemory2KHR"]],
     ["unmapMemory", ["vkUnmapMemory"]],
@@ -107,7 +167,8 @@ const tapCalls: [TapCall, string[]][] = [
     ["deviceActivity", ["vkWaitForFences", "vkResetFences", "vkWaitSemaphores", "vkWaitSemaphoresKHR"]],
 ];
 
-const callsWithResults = new Set<TapCall>(["createBuffer", "allocateMemory", "mapMemory", "mapMemory2"]);
+const callsWithResults = new Set<TapCall>(["createBuffer", "allocateMemory", "createImage", "createImageView",
+    "createDescriptorUpdateTemplate", "mapMemory", "mapMemory2"]);
 
 export const tapEntryPointNames = tapCalls.flatMap(([, names]) => names);
 
@@ -115,7 +176,10 @@ const UNSET = uint64("0xffffffffffffffff");
 const ALL_BINDINGS = 0xffffffff;
 const LARGEST_BUFFER_COUNT = 65536;
 const LARGEST_MAPPING_COUNT = 16384;
-const objectKinds = new Map<number, ObjectKind>([[8, "memory"], [9, "buffer"]]);
+const SET_BINDING_COUNT = 32;
+const LINEAR_TILING = 1;
+const objectKinds = new Map<number, ObjectKind>([[8, "memory"], [9, "buffer"], [10, "image"]]);
+const objectTypes: Record<NamedKind, number> = { buffer: 9, image: 10 };
 const drawWatches: Record<DrawWatch, number> = { ignored: 0, observed: 1 };
 
 const declarations = `
@@ -124,12 +188,20 @@ const declarations = `
 #include <string.h>
 
 #define BINDING_COUNT 32
+#define SET_COUNT 8
+#define SET_BINDING_COUNT 32
 #define RECORDING_CAPACITY 256
 #define COPY_CAPACITY 32
+#define IMAGE_COPY_CAPACITY 16
 #define SEEN_CAPACITY 65536
 #define PIPELINE_CAPACITY 4096
 #define BUFFER_CAPACITY 65536
 #define MEMORY_CAPACITY 16384
+#define IMAGE_CAPACITY 65536
+#define VIEW_CAPACITY 65536
+#define DESCRIPTOR_SET_CAPACITY 32768
+#define TEMPLATE_CAPACITY 4096
+#define TEMPLATE_IMAGE_CAPACITY 8
 #define DEVICE_CAPACITY 16
 
 typedef struct
@@ -150,6 +222,19 @@ typedef struct
 
 typedef struct
 {
+  guint64 source;
+  guint64 image;
+  guint64 buffer_offset;
+  guint64 row_length;
+  guint64 image_height;
+  guint64 x;
+  guint64 y;
+  guint64 width;
+  guint64 height;
+} ImageCopy;
+
+typedef struct
+{
   gpointer command_buffer;
   guint64 driver;
   guint64 begun;
@@ -162,8 +247,12 @@ typedef struct
   guint64 index_type;
   guint32 bound;
   guint32 copy_count;
+  guint32 bound_sets;
+  guint32 image_copy_count;
   Binding bindings[BINDING_COUNT];
+  guint64 descriptor_sets[SET_COUNT];
   Copy copies[COPY_CAPACITY];
+  ImageCopy image_copies[IMAGE_COPY_CAPACITY];
 } Recording;
 
 typedef struct
@@ -189,6 +278,45 @@ typedef struct
 
 typedef struct
 {
+  guint64 handle;
+  guint64 order;
+  guint64 width;
+  guint64 height;
+  guint64 format;
+  guint64 tiling;
+  guint64 memory;
+  guint64 memory_offset;
+  guint64 flags;
+} ImageEntry;
+
+typedef struct
+{
+  guint64 handle;
+  guint64 image;
+  guint64 format;
+} ViewEntry;
+
+typedef struct
+{
+  guint64 handle;
+  guint64 views[SET_BINDING_COUNT];
+} DescriptorSetEntry;
+
+typedef struct
+{
+  guint64 binding;
+  guint64 offset;
+} TemplateImage;
+
+typedef struct
+{
+  guint64 handle;
+  guint64 count;
+  TemplateImage images[TEMPLATE_IMAGE_CAPACITY];
+} TemplateEntry;
+
+typedef struct
+{
   gpointer key;
   gpointer device;
   guint64 driver;
@@ -206,6 +334,10 @@ typedef struct
   guint seen_count;
   guint buffer_count;
   guint memory_count;
+  guint image_count;
+  guint view_count;
+  guint set_count;
+  guint template_count;
   Recording recordings[RECORDING_CAPACITY];
   guint64 seen[SEEN_CAPACITY];
   guint64 pipelines[PIPELINE_CAPACITY];
@@ -213,6 +345,10 @@ typedef struct
   guint32 pipeline_generations[PIPELINE_CAPACITY];
   BufferEntry buffers[BUFFER_CAPACITY];
   MemoryEntry memories[MEMORY_CAPACITY];
+  ImageEntry images[IMAGE_CAPACITY];
+  ViewEntry views[VIEW_CAPACITY];
+  DescriptorSetEntry sets[DESCRIPTOR_SET_CAPACITY];
+  TemplateEntry templates[TEMPLATE_CAPACITY];
   DeviceEntry devices[DEVICE_CAPACITY];
 } Tap;
 `;
@@ -230,14 +366,22 @@ const source = `${declarations}
 #define WHOLE_SIZE 0xffffffffffffffffull
 #define SUCCESS 0
 #define GRAPHICS_BIND_POINT 0
+#define FRAGMENT_STAGE 0x10
 #define MEMORY_OBJECT 8
 #define BUFFER_OBJECT 9
+#define IMAGE_OBJECT 10
 #define GEOMETRY_USAGE (0x1 | 0x40 | 0x80)
+#define LINEAR_TILING 1
+#define COMBINED_IMAGE_SAMPLER 1
+#define SAMPLED_IMAGE 2
+#define DESCRIPTOR_SET_TEMPLATE 0
 #define LARGEST_SHADOWED_MAPPING (64 * 1048576)
 #define HOLDS_GEOMETRY 1
 #define KNOWN_TO_SCRIPT 2
+#define HOLDS_TEXELS 4
 #define TAG_DRAW 0x6472617700000000ull
 #define TAG_COPY 0x636f707900000000ull
+#define TAG_IMAGE_COPY 0x696d677900000000ull
 #define TAG_UPDATE 0x7570647400000000ull
 #define TAG_VERTEX_INPUT 0x76696e7000000000ull
 
@@ -249,6 +393,18 @@ const source = `${declarations}
 #define FIND_MEMORY(handle) ((MemoryEntry *) entry_find (tap.memories, sizeof (MemoryEntry), MEMORY_CAPACITY, handle))
 #define INSERT_MEMORY(handle) \\
     ((MemoryEntry *) entry_insert (tap.memories, sizeof (MemoryEntry), MEMORY_CAPACITY, &tap.memory_count, handle))
+#define FIND_IMAGE(handle) ((ImageEntry *) entry_find (tap.images, sizeof (ImageEntry), IMAGE_CAPACITY, handle))
+#define INSERT_IMAGE(handle) \\
+    ((ImageEntry *) entry_insert (tap.images, sizeof (ImageEntry), IMAGE_CAPACITY, &tap.image_count, handle))
+#define FIND_VIEW(handle) ((ViewEntry *) entry_find (tap.views, sizeof (ViewEntry), VIEW_CAPACITY, handle))
+#define INSERT_VIEW(handle) ((ViewEntry *) entry_insert (tap.views, sizeof (ViewEntry), VIEW_CAPACITY, &tap.view_count, handle))
+#define FIND_SET(handle) \\
+    ((DescriptorSetEntry *) entry_find (tap.sets, sizeof (DescriptorSetEntry), DESCRIPTOR_SET_CAPACITY, handle))
+#define INSERT_SET(handle) \\
+    ((DescriptorSetEntry *) entry_insert (tap.sets, sizeof (DescriptorSetEntry), DESCRIPTOR_SET_CAPACITY, &tap.set_count, handle))
+#define FIND_TEMPLATE(handle) ((TemplateEntry *) entry_find (tap.templates, sizeof (TemplateEntry), TEMPLATE_CAPACITY, handle))
+#define INSERT_TEMPLATE(handle) \\
+    ((TemplateEntry *) entry_insert (tap.templates, sizeof (TemplateEntry), TEMPLATE_CAPACITY, &tap.template_count, handle))
 
 enum { DRAWS_IGNORED, DRAWS_OBSERVED };
 enum { VERTICES, INDEXED };
@@ -265,6 +421,8 @@ enum
   BIND_VERTEX_BUFFERS2,
   BIND_INDEX_BUFFER,
   BIND_INDEX_BUFFER2,
+  BIND_DESCRIPTOR_SETS,
+  BIND_DESCRIPTOR_SETS2,
   SET_VERTEX_INPUT,
   SET_PRIMITIVE_TOPOLOGY,
   DRAW,
@@ -275,6 +433,8 @@ enum
   DRAW_MULTI_INDEXED,
   COPY_BUFFER,
   COPY_BUFFER2,
+  COPY_BUFFER_TO_IMAGE,
+  COPY_BUFFER_TO_IMAGE2,
   UPDATE_BUFFER,
   QUEUE_SUBMIT,
   QUEUE_SUBMIT2,
@@ -284,6 +444,16 @@ enum
   FREE_MEMORY,
   BIND_BUFFER_MEMORY,
   BIND_BUFFER_MEMORY2,
+  CREATE_IMAGE,
+  DESTROY_IMAGE,
+  BIND_IMAGE_MEMORY,
+  BIND_IMAGE_MEMORY2,
+  CREATE_IMAGE_VIEW,
+  DESTROY_IMAGE_VIEW,
+  UPDATE_DESCRIPTOR_SETS,
+  CREATE_DESCRIPTOR_UPDATE_TEMPLATE,
+  DESTROY_DESCRIPTOR_UPDATE_TEMPLATE,
+  UPDATE_DESCRIPTOR_SET_WITH_TEMPLATE,
   MAP_MEMORY,
   MAP_MEMORY2,
   UNMAP_MEMORY,
@@ -311,6 +481,8 @@ typedef struct
   guint64 indirect_offset;
   guint64 draw_count;
   guint64 indirect_stride;
+  guint64 bound_sets;
+  guint64 descriptor_sets[SET_COUNT];
   guint64 bound;
   Binding bindings[BINDING_COUNT];
 } Draw;
@@ -329,6 +501,27 @@ typedef struct
 
 typedef struct
 {
+  guint64 order;
+  guint64 width;
+  guint64 height;
+  guint64 format;
+  guint64 tiling;
+  guint64 memory;
+  guint64 memory_offset;
+  guint64 backing;
+  gpointer mapped;
+  guint64 mapped_offset;
+  guint64 mapped_size;
+} ImageFacts;
+
+typedef struct
+{
+  guint64 image;
+  guint64 format;
+} ViewFacts;
+
+typedef struct
+{
   gpointer mapped;
   guint64 mapped_size;
 } Mapping;
@@ -336,6 +529,7 @@ typedef struct
 typedef struct
 {
   gpointer out;
+  gconstpointer info;
   guint64 size;
   guint64 usage;
   guint64 memory;
@@ -344,7 +538,25 @@ typedef struct
 
 typedef struct { gint32 type; gconstpointer next; guint32 flags; guint64 size; guint32 usage; } BufferCreateInfo;
 typedef struct { gint32 type; gconstpointer next; guint64 size; guint32 type_index; } MemoryAllocateInfo;
-typedef struct { gint32 type; gconstpointer next; guint64 buffer; guint64 memory; guint64 offset; } BindBufferMemoryInfo;
+typedef struct { gint32 type; gconstpointer next; guint64 object; guint64 memory; guint64 offset; } BindMemoryInfo;
+typedef struct { gint32 type; gconstpointer next; guint32 flags; guint32 image_type; guint32 format; guint32 width; guint32 height;
+    guint32 depth; guint32 mip_levels; guint32 array_layers; guint32 samples; guint32 tiling; } ImageCreateInfo;
+typedef struct { gint32 type; gconstpointer next; guint32 flags; guint64 image; guint32 view_type; guint32 format; } ImageViewCreateInfo;
+typedef struct { guint64 sampler; guint64 view; guint32 layout; } DescriptorImageInfo;
+typedef struct { gint32 type; gconstpointer next; guint64 set; guint32 binding; guint32 element; guint32 count; guint32 descriptor_type;
+    const DescriptorImageInfo * images; gconstpointer buffers; gconstpointer texel_views; } WriteDescriptorSet;
+typedef struct { gint32 type; gconstpointer next; guint64 source; guint32 source_binding; guint32 source_element; guint64 destination;
+    guint32 destination_binding; guint32 destination_element; guint32 count; } CopyDescriptorSet;
+typedef struct { guint32 binding; guint32 element; guint32 count; guint32 descriptor_type; gsize offset; gsize stride; } TemplateEntryInfo;
+typedef struct { gint32 type; gconstpointer next; guint32 flags; guint32 entry_count; const TemplateEntryInfo * entries;
+    guint32 template_type; } TemplateCreateInfo;
+typedef struct { gint32 type; gconstpointer next; guint32 stage_flags; guint64 layout; guint32 first_set; guint32 count;
+    const guint64 * sets; } BindDescriptorSetsInfo;
+typedef struct { guint64 buffer_offset; guint32 row_length; guint32 image_height; guint32 aspect; guint32 mip_level; guint32 base_layer;
+    guint32 layer_count; gint32 x; gint32 y; gint32 z; guint32 width; guint32 height; guint32 depth; } BufferImageCopy;
+typedef struct { gint32 type; gconstpointer next; BufferImageCopy region; } BufferImageCopy2;
+typedef struct { gint32 type; gconstpointer next; guint64 source; guint64 image; guint32 layout; guint32 count;
+    const BufferImageCopy2 * regions; } CopyBufferToImageInfo2;
 typedef struct { gint32 type; gconstpointer next; guint32 flags; guint64 memory; guint64 offset; guint64 size; } MemoryMapInfo;
 typedef struct { gint32 type; gconstpointer next; guint32 flags; guint64 memory; } MemoryUnmapInfo;
 typedef struct { gint32 type; gconstpointer next; guint32 object_type; guint64 handle; const gchar * name; } ObjectNameInfo;
@@ -371,21 +583,28 @@ extern void deliver_vertex_input (guint64 id, const VertexBinding2 * bindings, g
     guint32 attribute_count);
 extern void deliver_copied (guint64 source, guint64 destination, guint64 source_offset, guint64 destination_offset, guint64 size);
 extern void deliver_updated (guint64 destination, guint64 offset, guint64 size, gconstpointer data);
+extern void deliver_image_copied (const ImageCopy * copy);
 extern void deliver_unmapping (guint64 memory, gpointer mapped, guint64 offset, guint64 size);
-extern void deliver_named (guint64 buffer, const gchar * name);
+extern void deliver_named (guint64 kind, guint64 handle, const gchar * name);
 extern void deliver_forgotten (guint64 kind, guint64 handle);
 
 static void on_recording_call (GumInvocationContext * ic, guint call, guint driver);
 static void on_submission (GumInvocationContext * ic, guint call);
 static void on_object_call (GumInvocationContext * ic, guint call, guint driver);
+static void create_image (guint64 handle, const ImageCreateInfo * info);
+static void create_view (guint64 handle, const ImageViewCreateInfo * info);
+static void create_template (guint64 handle, const TemplateCreateInfo * info);
 static void map_memory (guint64 memory, gpointer mapped, guint64 offset, guint64 size);
+static gboolean mark_known_locked (guint64 object_type, guint64 handle);
 static void bind_vertex_buffer (Recording * recording, guint64 index, guint64 buffer, guint64 offset, guint64 stride);
+static void bind_descriptor_sets (Recording * recording, guint32 first, guint32 count, const guint64 * sets);
 static void set_vertex_input (Recording * recording, guint32 binding_count, const VertexBinding2 * bindings, guint32 attribute_count,
     const VertexAttribute2 * attributes);
 static void draw_direct (Recording * recording, guint64 elements, guint64 count, guint64 first, gint64 vertex_offset);
 static void draw_indirect (Recording * recording, guint64 elements, guint64 buffer, guint64 offset, guint64 count, guint64 stride);
 static void note_copy (Recording * recording, guint64 source, guint64 destination, guint64 source_offset, guint64 destination_offset,
     guint64 size);
+static void note_image_copy (Recording * recording, guint64 source, guint64 image, const BufferImageCopy * region);
 static void submitted (gpointer command_buffer);
 static Recording * recording_of (gpointer command_buffer, guint driver, RecordingLookup lookup);
 static void reset_recording (Recording * recording);
@@ -394,6 +613,13 @@ static void note_device (gpointer device, guint driver);
 static void destroy_buffer (guint64 buffer);
 static void free_memory (guint64 memory);
 static void bind_buffer_memory (guint64 buffer, guint64 memory, guint64 offset);
+static void destroy_image (guint64 image);
+static void bind_image_memory (guint64 image, guint64 memory, guint64 offset);
+static void destroy_view (guint64 view);
+static void update_descriptor_sets (guint32 write_count, const WriteDescriptorSet * writes, guint32 copy_count,
+    const CopyDescriptorSet * copies);
+static void destroy_template (guint64 handle);
+static void update_with_template (guint64 set, guint64 handle, gconstpointer data);
 static void unmap_memory (guint64 memory);
 static void name_object (const ObjectNameInfo * info);
 static void record_draw (Recording * recording, Draw * draw);
@@ -402,14 +628,17 @@ static void on_vertex_input (guint64 id, const VertexBinding2 * bindings, guint3
     guint32 attribute_count);
 static void on_copied (guint64 source, guint64 destination, guint64 source_offset, guint64 destination_offset, guint64 size);
 static void on_updated (guint64 destination, guint64 offset, guint64 size, gconstpointer data);
+static void on_image_copied (const ImageCopy * copy);
 static void on_unmapping (guint64 memory, gpointer mapped, guint64 offset, guint64 size);
-static void on_named (guint64 buffer, const gchar * name);
+static void on_named (guint64 kind, guint64 handle, const gchar * name);
 static void on_forgotten (guint64 kind, guint64 handle);
 static void enter_js (void);
 static void leave_js (void);
 static gboolean remember (guint64 key);
 static void entry_remove (gpointer table, gsize entry_size, guint capacity, guint * count, guint64 * entry);
 static gboolean holds_geometry (guint64 usage);
+static void set_descriptor (guint64 set, guint32 binding, guint64 view);
+static gboolean is_image_descriptor (guint32 descriptor_type);
 static guint claim_pipeline (guint64 pipeline);
 static guint find_pipeline (guint64 pipeline);
 static gpointer entry_find (gpointer table, gsize entry_size, guint capacity, guint64 handle);
@@ -475,6 +704,15 @@ void on_leave (GumInvocationContext * ic)
         memory->size = pending->size;
       g_mutex_unlock (&tap.lock);
       return;
+    case CREATE_IMAGE:
+      create_image (*(guint64 *) pending->out, pending->info);
+      return;
+    case CREATE_IMAGE_VIEW:
+      create_view (*(guint64 *) pending->out, pending->info);
+      return;
+    case CREATE_DESCRIPTOR_UPDATE_TEMPLATE:
+      create_template (*(guint64 *) pending->out, pending->info);
+      return;
     case MAP_MEMORY:
     case MAP_MEMORY2:
       map_memory (pending->memory, *(gpointer *) pending->out, pending->offset, pending->size);
@@ -511,13 +749,73 @@ guint8 describe_buffer (guint64 handle, BufferFacts * facts)
   return found;
 }
 
-void mark_buffer_known (guint64 handle)
+guint8 describe_image (guint64 handle, ImageFacts * facts)
 {
-  BufferEntry * entry;
+  ImageEntry * entry;
+  MemoryEntry * backing;
+  gboolean found;
+
+  memset (facts, 0, sizeof (ImageFacts));
   g_mutex_lock (&tap.lock);
-  entry = INSERT_BUFFER (handle);
-  if (entry != NULL)
-    entry->flags |= KNOWN_TO_SCRIPT;
+  entry = FIND_IMAGE (handle);
+  found = entry != NULL;
+  if (found)
+  {
+    facts->order = entry->order;
+    facts->width = entry->width;
+    facts->height = entry->height;
+    facts->format = entry->format;
+    facts->tiling = entry->tiling;
+    facts->memory = entry->memory;
+    facts->memory_offset = entry->memory_offset;
+    backing = (entry->memory != 0) ? FIND_MEMORY (entry->memory) : NULL;
+    if (backing != NULL)
+    {
+      facts->backing = BACKING_TRACKED;
+      facts->mapped = backing->mapped;
+      facts->mapped_offset = backing->mapped_offset;
+      facts->mapped_size = backing->mapped_size;
+    }
+  }
+  g_mutex_unlock (&tap.lock);
+  return found;
+}
+
+guint8 describe_view (guint64 handle, ViewFacts * facts)
+{
+  ViewEntry * entry;
+  gboolean found;
+
+  g_mutex_lock (&tap.lock);
+  entry = FIND_VIEW (handle);
+  found = entry != NULL;
+  if (found)
+  {
+    facts->image = entry->image;
+    facts->format = entry->format;
+  }
+  g_mutex_unlock (&tap.lock);
+  return found;
+}
+
+guint8 describe_descriptor_set (guint64 handle, guint64 * views)
+{
+  DescriptorSetEntry * entry;
+  gboolean found;
+
+  g_mutex_lock (&tap.lock);
+  entry = FIND_SET (handle);
+  found = entry != NULL;
+  if (found)
+    memcpy (views, entry->views, sizeof (entry->views));
+  g_mutex_unlock (&tap.lock);
+  return found;
+}
+
+void mark_known (guint64 object_type, guint64 handle)
+{
+  g_mutex_lock (&tap.lock);
+  mark_known_locked (object_type, handle);
   g_mutex_unlock (&tap.lock);
 }
 
@@ -646,6 +944,17 @@ static void on_recording_call (GumInvocationContext * ic, guint call, guint driv
       recording->index_offset = ARG (2);
       recording->index_type = ARG (4) & 0xffffffff;
       return;
+    case BIND_DESCRIPTOR_SETS:
+      if (ARG (1) == GRAPHICS_BIND_POINT)
+        bind_descriptor_sets (recording, ARG (3) & 0xffffffff, ARG (4) & 0xffffffff, POINTER_ARG (5));
+      return;
+    case BIND_DESCRIPTOR_SETS2:
+    {
+      const BindDescriptorSetsInfo * info = POINTER_ARG (1);
+      if ((info->stage_flags & FRAGMENT_STAGE) != 0)
+        bind_descriptor_sets (recording, info->first_set, info->count, info->sets);
+      return;
+    }
     case SET_VERTEX_INPUT:
       set_vertex_input (recording, ARG (1) & 0xffffffff, POINTER_ARG (2), ARG (3) & 0xffffffff, POINTER_ARG (4));
       return;
@@ -709,6 +1018,21 @@ static void on_recording_call (GumInvocationContext * ic, guint call, guint driv
       for (i = 0; i != info->count; i++)
         note_copy (recording, info->source, info->destination, info->regions[i].source_offset, info->regions[i].destination_offset,
             info->regions[i].size);
+      return;
+    }
+    case COPY_BUFFER_TO_IMAGE:
+    {
+      const BufferImageCopy * regions = POINTER_ARG (5);
+      count = ARG (4) & 0xffffffff;
+      for (i = 0; i != count; i++)
+        note_image_copy (recording, ARG (1), ARG (2), &regions[i]);
+      return;
+    }
+    case COPY_BUFFER_TO_IMAGE2:
+    {
+      const CopyBufferToImageInfo2 * info = POINTER_ARG (1);
+      for (i = 0; i != info->count; i++)
+        note_image_copy (recording, info->source, info->image, &info->regions[i].region);
       return;
     }
     case UPDATE_BUFFER:
@@ -775,13 +1099,52 @@ static void on_object_call (GumInvocationContext * ic, guint call, guint driver)
       return;
     case BIND_BUFFER_MEMORY2:
     {
-      const BindBufferMemoryInfo * infos = POINTER_ARG (2);
+      const BindMemoryInfo * infos = POINTER_ARG (2);
       note_device (POINTER_ARG (0), driver);
       count = ARG (1) & 0xffffffff;
       for (i = 0; i != count; i++)
-        bind_buffer_memory (infos[i].buffer, infos[i].memory, infos[i].offset);
+        bind_buffer_memory (infos[i].object, infos[i].memory, infos[i].offset);
       return;
     }
+    case CREATE_IMAGE:
+    case CREATE_IMAGE_VIEW:
+    case CREATE_DESCRIPTOR_UPDATE_TEMPLATE:
+      note_device (POINTER_ARG (0), driver);
+      pending = GUM_IC_GET_INVOCATION_DATA (ic, Pending);
+      pending->info = POINTER_ARG (1);
+      pending->out = POINTER_ARG (3);
+      return;
+    case DESTROY_IMAGE:
+      if (ARG (1) != 0)
+        destroy_image (ARG (1));
+      return;
+    case BIND_IMAGE_MEMORY:
+      note_device (POINTER_ARG (0), driver);
+      bind_image_memory (ARG (1), ARG (2), ARG (3));
+      return;
+    case BIND_IMAGE_MEMORY2:
+    {
+      const BindMemoryInfo * infos = POINTER_ARG (2);
+      note_device (POINTER_ARG (0), driver);
+      count = ARG (1) & 0xffffffff;
+      for (i = 0; i != count; i++)
+        bind_image_memory (infos[i].object, infos[i].memory, infos[i].offset);
+      return;
+    }
+    case DESTROY_IMAGE_VIEW:
+      if (ARG (1) != 0)
+        destroy_view (ARG (1));
+      return;
+    case UPDATE_DESCRIPTOR_SETS:
+      update_descriptor_sets (ARG (1) & 0xffffffff, POINTER_ARG (2), ARG (3) & 0xffffffff, POINTER_ARG (4));
+      return;
+    case DESTROY_DESCRIPTOR_UPDATE_TEMPLATE:
+      if (ARG (1) != 0)
+        destroy_template (ARG (1));
+      return;
+    case UPDATE_DESCRIPTOR_SET_WITH_TEMPLATE:
+      update_with_template (ARG (1), ARG (2), POINTER_ARG (3));
+      return;
     case MAP_MEMORY:
       note_device (POINTER_ARG (0), driver);
       pending = GUM_IC_GET_INVOCATION_DATA (ic, Pending);
@@ -816,6 +1179,59 @@ static void on_object_call (GumInvocationContext * ic, guint call, guint driver)
   }
 }
 
+static void create_image (guint64 handle, const ImageCreateInfo * info)
+{
+  ImageEntry * image;
+  g_mutex_lock (&tap.lock);
+  image = INSERT_IMAGE (handle);
+  if (image != NULL)
+  {
+    image->order = ++tap.next_order;
+    image->width = info->width;
+    image->height = info->height;
+    image->format = info->format;
+    image->tiling = info->tiling;
+  }
+  g_mutex_unlock (&tap.lock);
+}
+
+static void create_view (guint64 handle, const ImageViewCreateInfo * info)
+{
+  ViewEntry * view;
+  g_mutex_lock (&tap.lock);
+  view = INSERT_VIEW (handle);
+  if (view != NULL)
+  {
+    view->image = info->image;
+    view->format = info->format;
+  }
+  g_mutex_unlock (&tap.lock);
+}
+
+static void create_template (guint64 handle, const TemplateCreateInfo * info)
+{
+  TemplateEntry * entry;
+  guint32 i;
+  if (info->template_type != DESCRIPTOR_SET_TEMPLATE)
+    return;
+  g_mutex_lock (&tap.lock);
+  entry = INSERT_TEMPLATE (handle);
+  if (entry != NULL)
+  {
+    entry->count = 0;
+    for (i = 0; i != info->entry_count && entry->count != TEMPLATE_IMAGE_CAPACITY; i++)
+    {
+      const TemplateEntryInfo * update = &info->entries[i];
+      if (update->element != 0 || update->binding >= SET_BINDING_COUNT || !is_image_descriptor (update->descriptor_type))
+        continue;
+      entry->images[entry->count].binding = update->binding;
+      entry->images[entry->count].offset = update->offset;
+      entry->count++;
+    }
+  }
+  g_mutex_unlock (&tap.lock);
+}
+
 static void map_memory (guint64 memory, gpointer mapped, guint64 offset, guint64 size)
 {
   MemoryEntry * entry;
@@ -828,6 +1244,23 @@ static void map_memory (guint64 memory, gpointer mapped, guint64 offset, guint64
     entry->mapped_size = (size == WHOLE_SIZE && entry->size != 0) ? entry->size - offset : size;
   }
   g_mutex_unlock (&tap.lock);
+}
+
+static gboolean mark_known_locked (guint64 object_type, guint64 handle)
+{
+  BufferEntry * buffer;
+  ImageEntry * image;
+  if (object_type == BUFFER_OBJECT)
+  {
+    buffer = INSERT_BUFFER (handle);
+    if (buffer != NULL)
+      buffer->flags |= KNOWN_TO_SCRIPT;
+    return buffer != NULL;
+  }
+  image = INSERT_IMAGE (handle);
+  if (image != NULL)
+    image->flags |= KNOWN_TO_SCRIPT;
+  return image != NULL;
 }
 
 static void bind_vertex_buffer (Recording * recording, guint64 index, guint64 buffer, guint64 offset, guint64 stride)
@@ -843,6 +1276,19 @@ static void bind_vertex_buffer (Recording * recording, guint64 index, guint64 bu
     recording->bound |= 1u << index;
   else
     recording->bound &= ~(1u << index);
+}
+
+static void bind_descriptor_sets (Recording * recording, guint32 first, guint32 count, const guint64 * sets)
+{
+  guint32 i;
+  for (i = 0; i != count && first + i < SET_COUNT; i++)
+  {
+    recording->descriptor_sets[first + i] = sets[i];
+    if (sets[i] != 0)
+      recording->bound_sets |= 1u << (first + i);
+    else
+      recording->bound_sets &= ~(1u << (first + i));
+  }
 }
 
 static void set_vertex_input (Recording * recording, guint32 binding_count, const VertexBinding2 * bindings, guint32 attribute_count,
@@ -899,6 +1345,23 @@ static void note_copy (Recording * recording, guint64 source, guint64 destinatio
   copy->size = size;
 }
 
+static void note_image_copy (Recording * recording, guint64 source, guint64 image, const BufferImageCopy * region)
+{
+  ImageCopy * copy;
+  if (region->mip_level != 0 || region->base_layer != 0 || region->z != 0 || recording->image_copy_count == IMAGE_COPY_CAPACITY)
+    return;
+  copy = &recording->image_copies[recording->image_copy_count++];
+  copy->source = source;
+  copy->image = image;
+  copy->buffer_offset = region->buffer_offset;
+  copy->row_length = region->row_length;
+  copy->image_height = region->image_height;
+  copy->x = region->x;
+  copy->y = region->y;
+  copy->width = region->width;
+  copy->height = region->height;
+}
+
 static void submitted (gpointer command_buffer)
 {
   Recording * recording = recording_of (command_buffer, 0, EXISTING_RECORDING);
@@ -912,6 +1375,13 @@ static void submitted (gpointer command_buffer)
         copy->size);
     if (remember_locked (key))
       on_copied (copy->source, copy->destination, copy->source_offset, copy->destination_offset, copy->size);
+  }
+  for (i = 0; i != recording->image_copy_count; i++)
+  {
+    const ImageCopy * copy = &recording->image_copies[i];
+    guint64 key = mix (mix (mix (mix (mix (TAG_IMAGE_COPY, copy->source), copy->image), copy->buffer_offset), copy->x), copy->y);
+    if (remember_locked (mix (mix (mix (key, copy->width), copy->height), copy->row_length)))
+      on_image_copied (copy);
   }
 }
 
@@ -963,6 +1433,8 @@ static void reset_recording (Recording * recording)
   recording->index_type = 0;
   recording->bound = 0;
   recording->copy_count = 0;
+  recording->bound_sets = 0;
+  recording->image_copy_count = 0;
 }
 
 static gboolean remember_locked (guint64 key)
@@ -1048,6 +1520,97 @@ static void bind_buffer_memory (guint64 buffer, guint64 memory, guint64 offset)
   g_mutex_unlock (&tap.lock);
 }
 
+static void destroy_image (guint64 image)
+{
+  ImageEntry * entry;
+  gboolean known = FALSE;
+  g_mutex_lock (&tap.lock);
+  entry = FIND_IMAGE (image);
+  if (entry != NULL)
+  {
+    known = (entry->flags & KNOWN_TO_SCRIPT) != 0;
+    entry_remove (tap.images, sizeof (ImageEntry), IMAGE_CAPACITY, &tap.image_count, &entry->handle);
+  }
+  g_mutex_unlock (&tap.lock);
+  if (known)
+    on_forgotten (IMAGE_OBJECT, image);
+}
+
+static void bind_image_memory (guint64 image, guint64 memory, guint64 offset)
+{
+  ImageEntry * entry;
+  MemoryEntry * backing;
+  g_mutex_lock (&tap.lock);
+  entry = INSERT_IMAGE (image);
+  if (entry != NULL)
+  {
+    entry->memory = memory;
+    entry->memory_offset = offset;
+    backing = FIND_MEMORY (memory);
+    if (backing != NULL && entry->tiling == LINEAR_TILING)
+      backing->flags |= HOLDS_TEXELS;
+  }
+  g_mutex_unlock (&tap.lock);
+}
+
+static void destroy_view (guint64 view)
+{
+  ViewEntry * entry;
+  g_mutex_lock (&tap.lock);
+  entry = FIND_VIEW (view);
+  if (entry != NULL)
+    entry_remove (tap.views, sizeof (ViewEntry), VIEW_CAPACITY, &tap.view_count, &entry->handle);
+  g_mutex_unlock (&tap.lock);
+}
+
+static void update_descriptor_sets (guint32 write_count, const WriteDescriptorSet * writes, guint32 copy_count,
+    const CopyDescriptorSet * copies)
+{
+  guint32 i;
+  g_mutex_lock (&tap.lock);
+  for (i = 0; i != write_count; i++)
+  {
+    const WriteDescriptorSet * write = &writes[i];
+    if (write->element == 0 && write->binding < SET_BINDING_COUNT)
+      set_descriptor (write->set, write->binding, is_image_descriptor (write->descriptor_type) ? write->images[0].view : 0);
+  }
+  for (i = 0; i != copy_count; i++)
+  {
+    const CopyDescriptorSet * copy = &copies[i];
+    const DescriptorSetEntry * source;
+    if (copy->source_element != 0 || copy->destination_element != 0 || copy->source_binding >= SET_BINDING_COUNT
+        || copy->destination_binding >= SET_BINDING_COUNT)
+      continue;
+    source = FIND_SET (copy->source);
+    set_descriptor (copy->destination, copy->destination_binding, (source != NULL) ? source->views[copy->source_binding] : 0);
+  }
+  g_mutex_unlock (&tap.lock);
+}
+
+static void destroy_template (guint64 handle)
+{
+  TemplateEntry * entry;
+  g_mutex_lock (&tap.lock);
+  entry = FIND_TEMPLATE (handle);
+  if (entry != NULL)
+    entry_remove (tap.templates, sizeof (TemplateEntry), TEMPLATE_CAPACITY, &tap.template_count, &entry->handle);
+  g_mutex_unlock (&tap.lock);
+}
+
+static void update_with_template (guint64 set, guint64 handle, gconstpointer data)
+{
+  const TemplateEntry * entry;
+  guint64 i;
+  g_mutex_lock (&tap.lock);
+  entry = FIND_TEMPLATE (handle);
+  for (i = 0; entry != NULL && i != entry->count; i++)
+  {
+    const DescriptorImageInfo * image = (const DescriptorImageInfo *) ((const guint8 *) data + entry->images[i].offset);
+    set_descriptor (set, entry->images[i].binding, image->view);
+  }
+  g_mutex_unlock (&tap.lock);
+}
+
 static void unmap_memory (guint64 memory)
 {
   MemoryEntry * entry;
@@ -1062,7 +1625,7 @@ static void unmap_memory (guint64 memory)
     mapped = entry->mapped;
     offset = entry->mapped_offset;
     size = entry->mapped_size;
-    shadowed = (entry->flags & HOLDS_GEOMETRY) != 0 && size <= LARGEST_SHADOWED_MAPPING;
+    shadowed = (entry->flags & (HOLDS_GEOMETRY | HOLDS_TEXELS)) != 0 && size <= LARGEST_SHADOWED_MAPPING;
     if (shadowed)
       entry->flags |= KNOWN_TO_SCRIPT;
     entry->mapped = NULL;
@@ -1074,16 +1637,14 @@ static void unmap_memory (guint64 memory)
 
 static void name_object (const ObjectNameInfo * info)
 {
-  BufferEntry * entry;
-  if (info->object_type != BUFFER_OBJECT || info->name == NULL)
+  gboolean known;
+  if ((info->object_type != BUFFER_OBJECT && info->object_type != IMAGE_OBJECT) || info->name == NULL)
     return;
   g_mutex_lock (&tap.lock);
-  entry = INSERT_BUFFER (info->handle);
-  if (entry != NULL)
-    entry->flags |= KNOWN_TO_SCRIPT;
+  known = mark_known_locked (info->object_type, info->handle);
   g_mutex_unlock (&tap.lock);
-  if (entry != NULL)
-    on_named (info->handle, info->name);
+  if (known)
+    on_named (info->object_type, info->handle, info->name);
 }
 
 static void record_draw (Recording * recording, Draw * draw)
@@ -1131,6 +1692,8 @@ static void record_draw (Recording * recording, Draw * draw)
   draw->index_type = recording->index_type;
   draw->bound = recording->bound;
   memcpy (draw->bindings, recording->bindings, sizeof (recording->bindings));
+  draw->bound_sets = recording->bound_sets;
+  memcpy (draw->descriptor_sets, recording->descriptor_sets, sizeof (recording->descriptor_sets));
   on_new_draw (draw);
 }
 
@@ -1163,6 +1726,13 @@ static void on_updated (guint64 destination, guint64 offset, guint64 size, gcons
   leave_js ();
 }
 
+static void on_image_copied (const ImageCopy * copy)
+{
+  enter_js ();
+  deliver_image_copied (copy);
+  leave_js ();
+}
+
 static void on_unmapping (guint64 memory, gpointer mapped, guint64 offset, guint64 size)
 {
   enter_js ();
@@ -1170,10 +1740,10 @@ static void on_unmapping (guint64 memory, gpointer mapped, guint64 offset, guint
   leave_js ();
 }
 
-static void on_named (guint64 buffer, const gchar * name)
+static void on_named (guint64 kind, guint64 handle, const gchar * name)
 {
   enter_js ();
-  deliver_named (buffer, name);
+  deliver_named (kind, handle, name);
   leave_js ();
 }
 
@@ -1248,6 +1818,18 @@ static void entry_remove (gpointer table, gsize entry_size, guint capacity, guin
 static gboolean holds_geometry (guint64 usage)
 {
   return usage == 0 || (usage & GEOMETRY_USAGE) != 0;
+}
+
+static void set_descriptor (guint64 set, guint32 binding, guint64 view)
+{
+  DescriptorSetEntry * entry = (view != 0) ? INSERT_SET (set) : FIND_SET (set);
+  if (entry != NULL)
+    entry->views[binding] = view;
+}
+
+static gboolean is_image_descriptor (guint32 descriptor_type)
+{
+  return descriptor_type == COMBINED_IMAGE_SAMPLER || descriptor_type == SAMPLED_IMAGE;
 }
 
 static guint claim_pipeline (guint64 pipeline)
@@ -1336,7 +1918,10 @@ export class VulkanTap {
     readonly #tap: CModule;
     readonly #listeners: InvocationListener[] = [];
     readonly #describe: NativeFunction<number, [number | UInt64, NativePointerValue]>;
-    readonly #markKnown: NativeFunction<void, [number | UInt64]>;
+    readonly #describeImage: NativeFunction<number, [number | UInt64, NativePointerValue]>;
+    readonly #describeView: NativeFunction<number, [number | UInt64, NativePointerValue]>;
+    readonly #describeSet: NativeFunction<number, [number | UInt64, NativePointerValue]>;
+    readonly #markKnown: NativeFunction<void, [number, number | UInt64]>;
     readonly #listBuffers: NativeFunction<number, [number | UInt64, NativePointerValue, number]>;
     readonly #listMappings: NativeFunction<number, [NativePointerValue, number]>;
     readonly #deviceFor: NativeFunction<NativePointer, [NativePointerValue, NativePointerValue]>;
@@ -1345,6 +1930,9 @@ export class VulkanTap {
     readonly #renew: NativeFunction<void, [number | UInt64, number]>;
     readonly #waitUntilIdle: NativeFunction<void, []>;
     readonly #facts = tapFacts.BufferFacts.at(Memory.alloc(tapFacts.BufferFacts.size));
+    readonly #imageFacts = imageFacts.ImageFacts.at(Memory.alloc(imageFacts.ImageFacts.size));
+    readonly #viewFacts = imageFacts.ViewFacts.at(Memory.alloc(imageFacts.ViewFacts.size));
+    readonly #setViews = Memory.alloc(SET_BINDING_COUNT * 8);
     readonly #driverOut = Memory.alloc(8);
 
     constructor(drivers: VulkanDriver[], events: VulkanTapEvents) {
@@ -1360,24 +1948,31 @@ export class VulkanTap {
             "void", ["uint64", "uint64", "uint64", "uint64", "uint64"]),
             new NativeCallback((destination, offset, size, data) => events.updated(destination, offset.toNumber(), size.toNumber(), data),
                 "void", ["uint64", "uint64", "uint64", "pointer"]),
+            new NativeCallback(copy => events.imageCopied(recordedImageCopyOf(imageFacts.ImageCopy.at(copy))), "void", ["pointer"]),
             new NativeCallback((memory, mapped, offset, size) => events.unmapping(memory, mapped, offset.toNumber(), size.toNumber()),
                 "void", ["uint64", "pointer", "uint64", "uint64"]),
-            new NativeCallback((buffer, name) => events.named(buffer, name.readUtf8String()!), "void", ["uint64", "pointer"]),
+            new NativeCallback((kind, handle, name) =>
+                events.named(objectKinds.get(kind.toNumber()) as NamedKind, handle, name.readUtf8String()!), "void",
+            ["uint64", "uint64", "pointer"]),
             new NativeCallback((kind, handle) => events.forgotten(objectKinds.get(kind.toNumber())!, handle), "void", ["uint64", "uint64"]),
         ];
-        const [onNewDraw, onVertexInput, onCopied, onUpdated, onUnmapping, onNamed, onForgotten] = this.#callbacks;
+        const [onNewDraw, onVertexInput, onCopied, onUpdated, onImageCopied, onUnmapping, onNamed, onForgotten] = this.#callbacks;
         this.#tap = new CModule(source, {
             tap: this.#state,
             deliver_new_draw: onNewDraw,
             deliver_vertex_input: onVertexInput,
             deliver_copied: onCopied,
             deliver_updated: onUpdated,
+            deliver_image_copied: onImageCopied,
             deliver_unmapping: onUnmapping,
             deliver_named: onNamed,
             deliver_forgotten: onForgotten,
         });
         this.#describe = new NativeFunction(this.#tap.describe_buffer, "uint8", ["uint64", "pointer"]);
-        this.#markKnown = new NativeFunction(this.#tap.mark_buffer_known, "void", ["uint64"]);
+        this.#describeImage = new NativeFunction(this.#tap.describe_image, "uint8", ["uint64", "pointer"]);
+        this.#describeView = new NativeFunction(this.#tap.describe_view, "uint8", ["uint64", "pointer"]);
+        this.#describeSet = new NativeFunction(this.#tap.describe_descriptor_set, "uint8", ["uint64", "pointer"]);
+        this.#markKnown = new NativeFunction(this.#tap.mark_known, "void", ["uint64", "uint64"]);
         this.#listBuffers = new NativeFunction(this.#tap.list_buffers, "uint", ["uint64", "pointer", "uint"]);
         this.#listMappings = new NativeFunction(this.#tap.list_mappings, "uint", ["pointer", "uint"]);
         this.#deviceFor = new NativeFunction(this.#tap.device_for, "pointer", ["pointer", "pointer"]);
@@ -1406,8 +2001,49 @@ export class VulkanTap {
         };
     }
 
+    describeImage(handle: UInt64): ImageFacts | null {
+        const facts = this.#imageFacts;
+        if (this.#describeImage(handle, facts.$address) === 0) {
+            return null;
+        }
+        const { mappedSize } = facts;
+        return {
+            order: facts.order.toNumber(),
+            width: facts.width.toNumber(),
+            height: facts.height.toNumber(),
+            format: facts.format.toNumber(),
+            tiling: (facts.tiling.toNumber() === LINEAR_TILING) ? "linear" : "optimal",
+            memory: facts.memory,
+            memoryOffset: facts.memoryOffset.toNumber(),
+            backing: (facts.backing.toNumber() !== 0) ? "tracked" : "untracked",
+            mapped: facts.mapped,
+            mappedOffset: facts.mappedOffset.toNumber(),
+            mappedSize: mappedSize.equals(UNSET) ? null : mappedSize.toNumber(),
+        };
+    }
+
+    describeView(handle: UInt64): ViewFacts | null {
+        const facts = this.#viewFacts;
+        if (this.#describeView(handle, facts.$address) === 0) {
+            return null;
+        }
+        return { image: facts.image, format: facts.format.toNumber() };
+    }
+
+    describeDescriptorSet(handle: UInt64): UInt64[] | null {
+        const views = this.#setViews;
+        if (this.#describeSet(handle, views) === 0) {
+            return null;
+        }
+        return Array.from({ length: SET_BINDING_COUNT }, (_, binding) => views.add(binding * 8).readU64());
+    }
+
     rememberBuffer(handle: UInt64): void {
-        this.#markKnown(handle);
+        this.#markKnown(objectTypes.buffer, handle);
+    }
+
+    rememberImage(handle: UInt64): void {
+        this.#markKnown(objectTypes.image, handle);
     }
 
     buffers(boundTo: UInt64 | 0 = 0): UInt64[] {
@@ -1486,6 +2122,8 @@ function recordedDrawOf(draw: Draw): RecordedDraw {
             stride: stride.equals(UNSET) ? null : stride.toNumber(),
         });
     });
+    const boundSets = draw.boundSets.toNumber();
+    const descriptorSets = draw.descriptorSets.flatMap((set, index) => ((boundSets & (1 << index)) !== 0) ? [{ index, set }] : []);
     return {
         commandBuffer: draw.commandBuffer,
         driver: draw.driver.toNumber(),
@@ -1505,5 +2143,20 @@ function recordedDrawOf(draw: Draw): RecordedDraw {
         drawCount: draw.drawCount.toNumber(),
         indirectStride: draw.indirectStride.toNumber(),
         bindings,
+        descriptorSets,
+    };
+}
+
+function recordedImageCopyOf(copy: imageFacts.ImageCopy): RecordedImageCopy {
+    return {
+        source: copy.source,
+        image: copy.image,
+        bufferOffset: copy.bufferOffset.toNumber(),
+        rowLength: copy.rowLength.toNumber(),
+        imageHeight: copy.imageHeight.toNumber(),
+        x: copy.x.toNumber(),
+        y: copy.y.toNumber(),
+        width: copy.width.toNumber(),
+        height: copy.height.toNumber(),
     };
 }

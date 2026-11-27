@@ -22,6 +22,8 @@ struct Draw {
     u64 indirectOffset;
     u64 drawCount;
     u64 indirectStride;
+    u64 boundSets;
+    u64 descriptorSets[8];
     u64 bound;
     Binding bindings[32];
 };

@@ -219,6 +219,22 @@ copied when their command buffer is submitted, as is data written with
 `vkCmdUpdateBuffer`. So a level loaded after the instrument was added comes
 out whole, staged into device-local memory or not.
 
+UVs are found as positions are, from the pipeline's vertex input and the
+names its vertex shader gives its inputs, such as `inUV` or `a_texcoord`. The
+fragment shader of a pipeline made after the instrument was added tells
+which textures it samples: the SPIR-V gives each its descriptor set, its
+binding and its name, such as `albedo`. The descriptor sets bound for the
+draw, with `vkCmdBindDescriptorSets` or `vkCmdBindDescriptorSets2`, tell
+which image view each binding holds, as written with `vkUpdateDescriptorSets`
+or `vkUpdateDescriptorSetWithTemplate`, and the view tells which image. An
+image, like a buffer, is a handle: its size and format are known from
+`vkCreateImage`, and its contents from what Mesh Finder sees. Copies into it
+with `vkCmdCopyBufferToImage` and `vkCmdCopyBufferToImage2`, from buffers
+whose contents were seen, are copied when their command buffer is submitted.
+A linear image in memory mapped after the instrument was added is read where
+it is mapped, or as it was when it was unmapped. Only the first mip level and
+array layer is kept.
+
 What was set up before the instrument was added is mostly out of reach.
 Meshes drawn from buffers bound to memory before then are listed with their
 triangle count, and their vertex count when they are not indexed, but have no
@@ -360,7 +376,13 @@ of them are meshes took about 20 s.
 - The meshes Apple's OpenGL implementation draws through Metal on its own
   behalf are left out on purpose, so a game is not listed twice.
 - The contents of Vulkan buffers bound to memory before the instrument was
-  added, except where that memory is still mapped. Vulkan indirect draws
+  added, except where that memory is still mapped. Vulkan textures sampled
+  by a pipeline made before then, or bound through push descriptors,
+  descriptor buffers, a binding above 31 or a set past the eighth; of an
+  array of textures, only the first. Textures whose descriptors were written
+  before then are listed with no contents, as are those filled before then,
+  by rendering, by blits or copies from other images, or in the command
+  buffer that first draws with them. Vulkan indirect draws
   whose counts come from a buffer, mesh shaders, device-generated commands,
   and Vulkan in 32-bit processes.
 
