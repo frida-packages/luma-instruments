@@ -14,6 +14,7 @@ Instruments for [Luma](https://luma.frida.re), published in its store.
 | [Flutter](flutter) | Runtime | A Flutter app's engine, Dart version and snapshot, the files that hold its Dart, and its platform-channel messages, decoded |
 | [Electron](electron) | Runtime | An Electron app's versions, fuses and app.asar, its web contents with their security preferences, live IPC, and a JavaScript console in the main process and each page |
 | [React Native](react-native) | Runtime | A React Native app's Hermes and JavaScriptCore runtimes with a JavaScript console into each, the calls between JavaScript and native, its native modules, and its bundles |
+| [Unity](unity) | Runtime | A Unity game's scenes as GameObject trees with each component's fields, a dump.cs of its IL2CPP types, method tracing with decoded arguments, and a JavaScript console with Il2Cpp in scope |
 
 Each folder is one instrument: TypeScript sources beside a `package.json`
 whose `luma` object carries its icon, compatibility, settings, widgets and

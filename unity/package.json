@@ -1,0 +1,183 @@
+{
+  "name": "unity",
+  "displayName": "Unity",
+  "version": "1.0.0",
+  "main": "main.ts",
+  "engines": { "luma": ">=4.0.0" },
+  "dependencies": { "frida-il2cpp-bridge": "0.14.0" },
+  "luma": {
+    "icon": { "kind": "symbolic", "value": "puzzle" },
+    "compatibility": { "platforms": ["windows", "darwin", "linux"] },
+    "settings": [
+      {
+        "id": "traceMethods",
+        "name": "Trace methods matching (Namespace.Class::Method)",
+        "schema": { "kind": "regex", "default": "" },
+        "optional": true,
+        "enabledByDefault": false
+      },
+      {
+        "id": "mostTraced",
+        "name": "Most methods traced",
+        "schema": { "kind": "uint", "default": 256, "min": 1, "max": 4096 },
+        "optional": false,
+        "enabledByDefault": true
+      },
+      {
+        "id": "callsPerSecond",
+        "name": "Most calls recorded per second",
+        "schema": { "kind": "uint", "default": 100, "min": 1, "max": 10000 },
+        "optional": false,
+        "enabledByDefault": true
+      },
+      {
+        "id": "charsPerValue",
+        "name": "Characters shown per value",
+        "schema": { "kind": "uint", "default": 160, "min": 16, "max": 4096 },
+        "optional": false,
+        "enabledByDefault": true
+      }
+    ],
+    "widgets": [
+      {
+        "id": "status",
+        "kind": "list",
+        "config": { "rowActions": [], "maxItems": 4 },
+        "persistence": "none"
+      },
+      {
+        "id": "facts",
+        "name": "Game",
+        "kind": "table",
+        "config": {
+          "columns": [
+            { "id": "fact", "name": "Fact", "alignment": "leading" },
+            { "id": "value", "name": "Value", "alignment": "leading" }
+          ],
+          "rowActions": [],
+          "maxRows": 16
+        },
+        "persistence": "none"
+      },
+      {
+        "id": "scenes",
+        "name": "Scenes",
+        "kind": "table",
+        "config": {
+          "columns": [
+            { "id": "name", "name": "Scene", "alignment": "leading" },
+            { "id": "buildIndex", "name": "Build index", "alignment": "trailing" },
+            { "id": "roots", "name": "Roots", "alignment": "trailing" },
+            { "id": "objects", "name": "Objects", "alignment": "trailing" },
+            { "id": "state", "name": "State", "alignment": "leading" }
+          ],
+          "rowActions": [{ "id": "show", "name": "Show" }],
+          "maxRows": 64
+        },
+        "persistence": "none"
+      },
+      {
+        "id": "assemblies",
+        "name": "Assemblies",
+        "kind": "table",
+        "config": {
+          "columns": [
+            { "id": "name", "name": "Assembly", "alignment": "leading" },
+            { "id": "classes", "name": "Classes", "alignment": "trailing" }
+          ],
+          "rowActions": [{ "id": "save", "name": "Save .cs" }],
+          "maxRows": 1000
+        },
+        "actions": [{ "id": "dump", "name": "Save dump.cs" }],
+        "persistence": "none"
+      },
+      {
+        "id": "calls",
+        "name": "Calls",
+        "kind": "table",
+        "config": {
+          "columns": [
+            { "id": "seq", "name": "#", "alignment": "trailing" },
+            { "id": "time", "name": "Time", "alignment": "leading" },
+            { "id": "thread", "name": "Thread", "alignment": "trailing" },
+            { "id": "method", "name": "Method", "alignment": "leading" },
+            { "id": "args", "name": "Arguments", "alignment": "leading" },
+            { "id": "result", "name": "Result", "alignment": "leading" }
+          ],
+          "rowActions": [],
+          "maxRows": 1000
+        },
+        "actions": [
+          { "id": "pause", "name": "Pause" },
+          { "id": "resume", "name": "Resume" },
+          { "id": "clear", "name": "Clear" }
+        ],
+        "persistence": "none"
+      },
+      {
+        "id": "hits",
+        "name": "Calls per method",
+        "kind": "histogram",
+        "config": { "maxBuckets": 100 },
+        "persistence": "none"
+      },
+      {
+        "id": "console",
+        "name": "JavaScript",
+        "kind": "console",
+        "config": {
+          "maxEntries": 1000,
+          "prompt": ">",
+          "placeholder": "JavaScript to run with Il2Cpp in scope, or :help",
+          "runButtonLabel": "Run"
+        },
+        "actions": [{ "id": "clear", "name": "Clear" }],
+        "persistence": "none"
+      }
+    ],
+    "layout": {
+      "column": [
+        "status",
+        {
+          "row": [
+            { "widget": "facts", "share": 40, "maxRows": 8 },
+            { "widget": "scenes", "share": 60, "maxRows": 8 }
+          ],
+          "foldBelow": 900
+        },
+        { "widget": "assemblies", "maxRows": 6 },
+        {
+          "row": [
+            { "widget": "calls", "share": 62, "maxRows": 10 },
+            { "widget": "hits", "share": 38 }
+          ],
+          "share": 55,
+          "foldBelow": 900
+        },
+        { "widget": "console", "share": 45 }
+      ]
+    },
+    "children": [
+      {
+        "id": "scene",
+        "name": "Scenes",
+        "icon": { "kind": "symbolic", "value": "branch" },
+        "widgets": [
+          {
+            "id": "hierarchy",
+            "kind": "view",
+            "config": { "class": "SceneView", "height": 420 },
+            "actions": [{ "id": "refresh", "name": "Refresh" }],
+            "persistence": "none"
+          }
+        ],
+        "layout": { "column": [{ "widget": "hierarchy", "share": 1 }] }
+      }
+    ],
+    "store": {
+      "summary": "Look inside a Unity game built with IL2CPP: its scenes as live GameObject trees with each component's fields, a dump.cs of every type, method tracing, and a JavaScript console with Il2Cpp in scope.",
+      "category": "runtime",
+      "access": { "kind": "free" }
+    }
+  }
+}
