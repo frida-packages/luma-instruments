@@ -83,6 +83,60 @@ The Metal and OpenGL targets take a number of times to draw their scene each
 frame, and print their frame times every two seconds; `/tmp/metal-target 300`
 draws 3300 meshes a frame, for measuring what the hooks cost.
 
+## Texture decoders and the PNG encoder
+
+`texture-check.ts` needs no target either: it checks
+`mesh-finder/texture-kernels.ts` in Frida's system session, against this
+Mac's GPU. `texture-reference.m` uploads a texture's bytes to Metal in a
+given pixel format, samples every texel with nearest filtering in a compute
+kernel, writes them to an RGBA8 texture and prints it. `run.py --textures`
+makes up a texture for every `TextureFormat`, decodes it with
+`decodeTexture()` and with the GPU, and passes only if the two agree byte for
+byte. Plain formats, BC1-5 and ETC2/EAC get random bytes; BC6H and BC7
+random blocks spread over every mode, reserved ones included; ASTC legal
+block modes, partition counts and LDR endpoint modes with random bits
+elsewhere, void-extent blocks, legal and not, and fully random blocks, which
+take in reserved block modes, HDR endpoint modes and other illegal encodings.
+The sizes are not multiples of the block size, so partial blocks at the right
+and bottom edges are covered. Metal has no `rgb8unorm`, `bgrx8unorm` or
+`argb4444`: they are uploaded as `RGBA8Unorm` with an opaque byte added,
+`BGRA8Unorm`, and `ABGR4Unorm` with the channels swizzled back. The kernel
+maps what it samples the way `decodeTexture()` does: snorm as (v + 1) / 2,
+one channel as (r, r, r, 1), two as (r, g, 0, 1) and `a8unorm` as (1, 1, 1,
+a); the RGBA8 target clamps floats to [0, 1].
+
+It then encodes noise, one colour, a gradient, stripes and a single pixel
+with `encodePng()`, and checks with Python's `zlib` that each decodes back to
+its pixels, chunk CRCs included, and that the compressible ones take at most
+a quarter of their size. It checks `crc32()` and `fitForView()` on known
+values, and last prints how long decoding a 2048x2048 BC7 texture and
+encoding 2048x2048 PNGs take.
+
+Where Apple's GPU differs from the specifications, the decoders follow the
+GPU:
+
+- BC1-3 colour: the interpolated colours are (43a + 21b + 32) / 64 and
+  (21a + 43b + 32) / 64 of the 8-bit endpoints, and (a + b + 1) / 2 in
+  three-colour mode, not thirds and halves.
+- BC3-5 interpolate in 64ths, with the weights of BC7 (and 13, 26, 38 and 51
+  in the six-value mode). BC3 alpha is then rounded to 8 bits; BC4 and BC5
+  are not, and the GPU rounds the float.
+- BC4 and BC5 snorm interpolate -128 as -128, not -127, and clamp the result
+  to -1.
+- ASTC decodes to 12 bits, the top 12 of the 16-bit UNORM the specification
+  gives, and those to 8.
+- An HDR endpoint mode in an ASTC LDR texture gives the error colour, magenta,
+  to the texels of its partition only; the other partitions decode. An HDR
+  void-extent block is all magenta.
+
+BC6H, BC7, ETC2 and EAC follow their specifications and match as they are.
+From the repository root, building outside it:
+
+```sh
+clang -fobjc-arc -framework Foundation -framework Metal -o /tmp/texture-reference test/mesh-finder/texture-reference.m
+python3 test/mesh-finder/run.py --textures /tmp/texture-reference
+```
+
 ## Vulkan, on Linux
 
 `vulkan-target.c` draws the same six meshes with Vulkan, offscreen, with no
