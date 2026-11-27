@@ -57,7 +57,18 @@ read when the immediate context runs. An input layout created after the
 instrument was added says exactly where positions are, by their `POSITION`
 element, in floats, half floats or normalized integers. For input layouts
 made before that, the layout is worked out from the bound buffers, as for
-Metal.
+Metal. The same input layout says where UVs are, by its `TEXCOORD` element
+with index 0.
+
+A draw's textures are the shader resource views bound to the pixel shader,
+in their slots, when they view a `Texture2D`; views of buffers, arrays, cube
+maps, 3D and multisampled textures are not followed. A pixel shader created
+after the instrument was added tells which slots it samples and the names it
+gives its textures, such as `albedo`, from the resource definitions in its
+bytecode, so views it does not use are left out. For pixel shaders made
+before that, or whose bytecode was stripped of them, every bound view counts
+and the textures have no names. A draw with no pixel shader has no textures.
+Each texture's debug name, where the game set one, is its label.
 
 Buffers are read back on the thread that draws, by copying them on the
 immediate context into a staging buffer, so every buffer can be read, the
@@ -65,7 +76,9 @@ immutable ones too, and those made before the instrument was added. Live
 buffers are found by scanning the process's memory for instances of
 `d3d11.dll`'s buffer class, and freed ones are told apart and left alone.
 Buffers created afterwards are read once they have settled. Each buffer's
-debug name, where the game set one, is its label.
+debug name, where the game set one, is its label. Textures are read the same
+way, their first level copied into a staging texture, up to 64 MiB of them
+a frame.
 
 To learn `d3d11.dll`'s classes, the instrument makes a Direct3D 11 device of
 its own when it starts, without rendering, and lets it go again. Calls into
@@ -282,7 +295,9 @@ of them are meshes took about 20 s.
 - Metal meshes whose vertices are rewritten every frame, as dynamically
   batched geometry, particles and most user interfaces are.
 - Direct3D 11 draws whose input layout was made before the instrument was
-  added have their layout guessed, since an input layout keeps no names.
+  added have their layout guessed, since an input layout keeps no names,
+  and no UVs. Textures bound to stages other than the pixel shader, and
+  textures that are not plain 2D textures, are not followed.
   Draws that fetch their own vertices from shader resources, stream output
   (`DrawAuto`), and meshes generated on the GPU are not followed.
 - Direct3D 9, 10 and 12, and Direct3D 11 running on top of 12 through
