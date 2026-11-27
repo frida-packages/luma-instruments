@@ -1,0 +1,189 @@
+{
+  "name": "iokit",
+  "displayName": "IOKit",
+  "version": "1.0.0",
+  "main": "main.ts",
+  "engines": { "luma": ">=4.0.0" },
+  "luma": {
+    "icon": { "kind": "symbolic", "value": "cpu" },
+    "compatibility": { "platforms": ["darwin"] },
+    "settings": [
+      {
+        "id": "classes",
+        "name": "Only classes matching",
+        "schema": { "kind": "regex", "default": "^IOSurface" },
+        "optional": true,
+        "enabledByDefault": false
+      },
+      {
+        "id": "backtraces",
+        "name": "Capture caller backtraces",
+        "schema": { "kind": "boolean", "default": false },
+        "optional": false,
+        "enabledByDefault": true
+      },
+      {
+        "id": "dataLimit",
+        "name": "Bytes kept per struct or data value",
+        "schema": { "kind": "uint", "default": 256, "min": 0, "max": 1048576 },
+        "optional": false,
+        "enabledByDefault": true
+      },
+      {
+        "id": "callsPerSecond",
+        "name": "Method calls shown per second (more are only counted)",
+        "schema": { "kind": "uint", "default": 100, "min": 1, "max": 10000 },
+        "optional": false,
+        "enabledByDefault": true
+      }
+    ],
+    "widgets": [
+      {
+        "id": "connections",
+        "name": "Connections",
+        "kind": "table",
+        "config": {
+          "columns": [
+            { "id": "port", "name": "Port", "alignment": "trailing" },
+            { "id": "userClient", "name": "User client", "alignment": "leading" },
+            { "id": "service", "name": "Service", "alignment": "leading" },
+            { "id": "type", "name": "Type", "alignment": "trailing" },
+            { "id": "opened", "name": "Opened", "alignment": "leading" },
+            { "id": "calls", "name": "Calls", "alignment": "trailing" }
+          ],
+          "rowActions": [],
+          "maxRows": 1000
+        },
+        "persistence": "none"
+      },
+      {
+        "id": "methods",
+        "name": "Methods",
+        "kind": "table",
+        "config": {
+          "columns": [
+            { "id": "userClient", "name": "User client", "alignment": "leading" },
+            { "id": "selector", "name": "Selector", "alignment": "trailing" },
+            { "id": "calls", "name": "Calls", "alignment": "trailing" },
+            { "id": "errors", "name": "Errors", "alignment": "trailing" },
+            { "id": "meanUs", "name": "Mean µs", "alignment": "trailing" },
+            { "id": "last", "name": "Last call", "alignment": "leading" }
+          ],
+          "rowActions": [],
+          "maxRows": 1000
+        },
+        "actions": [{ "id": "clear", "name": "Clear" }],
+        "persistence": "session"
+      },
+      {
+        "id": "lookups",
+        "name": "Service lookups",
+        "kind": "table",
+        "config": {
+          "columns": [
+            { "id": "matching", "name": "Matching", "alignment": "leading" },
+            { "id": "via", "name": "Via", "alignment": "leading" },
+            { "id": "times", "name": "Times", "alignment": "trailing" },
+            { "id": "result", "name": "Last result", "alignment": "leading" }
+          ],
+          "rowActions": [],
+          "maxRows": 1000
+        },
+        "actions": [{ "id": "clear", "name": "Clear" }],
+        "persistence": "session"
+      },
+      {
+        "id": "properties",
+        "name": "Registry properties read",
+        "kind": "table",
+        "config": {
+          "columns": [
+            { "id": "entry", "name": "Entry", "alignment": "leading" },
+            { "id": "key", "name": "Key", "alignment": "leading" },
+            { "id": "times", "name": "Times", "alignment": "trailing" },
+            { "id": "value", "name": "Last value", "alignment": "leading" }
+          ],
+          "rowActions": [],
+          "maxRows": 1000
+        },
+        "actions": [{ "id": "clear", "name": "Clear" }],
+        "persistence": "session"
+      },
+      {
+        "id": "services",
+        "name": "Services with user clients",
+        "kind": "table",
+        "config": {
+          "columns": [
+            { "id": "entryId", "name": "Entry ID", "alignment": "trailing" },
+            { "id": "service", "name": "Service", "alignment": "leading" },
+            { "id": "userClients", "name": "User client classes", "alignment": "leading" },
+            { "id": "clients", "name": "Open now", "alignment": "trailing" }
+          ],
+          "rowActions": [
+            { "id": "showProperties", "name": "Properties" },
+            { "id": "open", "name": "Open" }
+          ],
+          "maxRows": 4000
+        },
+        "actions": [{ "id": "rescan", "name": "Rescan" }],
+        "persistence": "none"
+      },
+      {
+        "id": "log",
+        "name": "Recent activity",
+        "kind": "console",
+        "config": {
+          "maxEntries": 500,
+          "prompt": "#",
+          "placeholder": "Number to inspect",
+          "runButtonLabel": "Inspect"
+        },
+        "actions": [{ "id": "clear", "name": "Clear" }],
+        "persistence": "none"
+      },
+      {
+        "id": "explorer",
+        "name": "Explorer",
+        "kind": "console",
+        "config": {
+          "maxEntries": 1000,
+          "prompt": ">",
+          "placeholder": "io.find(\"IOSurfaceRoot\")[0].open().probe()",
+          "runButtonLabel": "Run"
+        },
+        "actions": [{ "id": "clear", "name": "Clear" }],
+        "persistence": "session"
+      }
+    ],
+    "layout": {
+      "column": [
+        {
+          "row": [
+            { "widget": "connections", "share": 55, "maxRows": 6 },
+            { "widget": "methods", "share": 45, "maxRows": 6 }
+          ]
+        },
+        {
+          "row": [
+            { "widget": "lookups", "maxRows": 5 },
+            { "widget": "properties", "maxRows": 5 }
+          ]
+        },
+        { "widget": "services", "maxRows": 6 },
+        {
+          "row": [
+            { "widget": "log" },
+            { "widget": "explorer" }
+          ],
+          "share": 1
+        }
+      ]
+    },
+    "store": {
+      "summary": "The IOKit user clients a process opens and the methods it calls on them, the services it looks up and the registry properties it reads, with a console to open and call any user client yourself.",
+      "category": "ipc",
+      "access": { "kind": "free" }
+    }
+  }
+}
