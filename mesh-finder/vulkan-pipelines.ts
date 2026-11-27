@@ -1,6 +1,6 @@
 import type { AttributeLayout } from "./graphics-backend.js";
-import { positionAttribute } from "./vertex-attributes.js";
-import { vertexInputNames, type InputNames, type VertexInputNames } from "./spirv-inputs.js";
+import { positionAttribute, texcoordAttribute } from "./vertex-attributes.js";
+import { shaderInterfaces, type InputNames, type SampledImage, type ShaderInterfaces } from "./spirv-inputs.js";
 import { attributeFormat, type ComponentType, type AttributeFormat } from "./vertex-format.js";
 import type { VulkanDriver } from "./vulkan-driver.js";
 import {
@@ -42,6 +42,7 @@ export interface PipelineDescription {
     vertexInput: VertexInputInfo | "dynamic" | null;
     strides: Strides;
     names: InputNames | null;
+    sampledImages: SampledImage[] | null;
 }
 
 export type InputRate = "per-vertex" | "per-instance";
@@ -51,6 +52,7 @@ export type Strides = "declared" | "dynamic";
 export const pipelineEntryPointNames = ["vkCreateGraphicsPipelines", "vkCreateShaderModule", "vkDestroyShaderModule"];
 
 const VERTEX_STAGE = 1;
+const FRAGMENT_STAGE = 0x10;
 const PER_VERTEX = 0;
 const SHADER_MODULE_CREATE_INFO = 16;
 const PIPELINE_LIBRARY_CREATE_INFO = 1000290000;
@@ -72,7 +74,7 @@ const vulkanFormats = new Map<number, [ComponentType, number]>([
 
 export class PipelineLayouts {
     readonly #pipelines = new Map<string, PipelineDescription>();
-    readonly #modules = new Map<string, VertexInputNames>();
+    readonly #modules = new Map<string, ShaderInterfaces>();
     readonly #listeners: InvocationListener[] = [];
 
     constructor(drivers: VulkanDriver[], learned: (pipeline: UInt64, description: PipelineDescription) => void) {
@@ -105,12 +107,13 @@ export class PipelineLayouts {
             });
             hook(driver.entryPoints.get("vkCreateShaderModule"), {
                 onEnter(args) {
-                    this.names = namesOfModuleInfo(ShaderModuleCreateInfo.at(args[1]));
+                    this.interfaces = interfacesOfModuleInfo(ShaderModuleCreateInfo.at(args[1]));
                     this.module = args[3];
                 },
                 onLeave(result) {
-                    if (result.toInt32() === 0 && this.names.size !== 0) {
-                        layouts.#modules.set((this.module as NativePointer).readPointer().toString(), this.names);
+                    const interfaces = this.interfaces as ShaderInterfaces;
+                    if (result.toInt32() === 0 && (interfaces.vertexInputs.size !== 0 || interfaces.fragmentImages.size !== 0)) {
+                        layouts.#modules.set((this.module as NativePointer).readPointer().toString(), interfaces);
                     }
                 },
             });
@@ -141,7 +144,8 @@ export class PipelineLayouts {
             vertexInput: dynamicStates.has(DYNAMIC_VERTEX_INPUT) ? "dynamic" : (vertexInputState === null ? null
                 : vertexInputOf(vertexInputState)),
             strides: dynamicStates.has(DYNAMIC_VERTEX_INPUT_BINDING_STRIDE) ? "dynamic" : "declared",
-            names: this.#vertexNamesOf(info.stages, info.stageCount),
+            names: this.#stageInterfaceOf(info, VERTEX_STAGE, interfaces => interfaces.vertexInputs),
+            sampledImages: this.#stageInterfaceOf(info, FRAGMENT_STAGE, interfaces => interfaces.fragmentImages),
         };
         return librariesOf(info).reduce((merged, library) => {
             const linked = this.#pipelines.get(library.toString());
@@ -150,20 +154,22 @@ export class PipelineLayouts {
                 vertexInput: merged.vertexInput ?? linked.vertexInput,
                 strides: (merged.strides === "dynamic" || linked.strides === "dynamic") ? "dynamic" : "declared",
                 names: merged.names ?? linked.names,
+                sampledImages: merged.sampledImages ?? linked.sampledImages,
             };
         }, own);
     }
 
-    #vertexNamesOf(stages: NativePointer, count: number): InputNames | null {
-        for (let i = 0; i !== count; i++) {
-            const stage = PipelineShaderStageCreateInfo.at(stages.add(i * PipelineShaderStageCreateInfo.size));
-            if (stage.stage !== VERTEX_STAGE) {
+    #stageInterfaceOf<T>(info: GraphicsPipelineCreateInfo, stageBit: number, pick: (interfaces: ShaderInterfaces) => Map<string, T>):
+        T | null {
+        for (let i = 0; i !== info.stageCount; i++) {
+            const stage = PipelineShaderStageCreateInfo.at(info.stages.add(i * PipelineShaderStageCreateInfo.size));
+            if (stage.stage !== stageBit) {
                 continue;
             }
             const entry = stage.name.readUtf8String()!;
             const module = stage.module;
-            const names = module.isNull() ? inlineModuleNames(stage) : this.#modules.get(module.toString());
-            return names?.get(entry) ?? null;
+            const interfaces = module.isNull() ? inlineModuleInterfaces(stage) : this.#modules.get(module.toString());
+            return (interfaces !== undefined) ? pick(interfaces).get(entry) ?? null : null;
         }
         return null;
     }
@@ -189,20 +195,11 @@ export function dynamicVertexInputOf(bindings: NativePointer, bindingCount: numb
 }
 
 export function positionLayoutOf(input: VertexInputInfo, names: InputNames | null, origin: string): AttributeLayout | null {
-    const perVertex = input.attributes.filter(attribute =>
-        input.bindings.find(binding => binding.binding === attribute.binding)?.rate === "per-vertex");
-    const chosen = positionAttribute(perVertex, names ?? new Map());
-    if (chosen === undefined) {
-        return null;
-    }
-    const name = names?.get(chosen.location);
-    return {
-        slot: chosen.binding,
-        stride: input.bindings.find(binding => binding.binding === chosen.binding)!.stride,
-        offset: chosen.offset,
-        format: chosen.format!,
-        source: `${origin} location ${chosen.location}${(name !== undefined) ? ` "${name}"` : ""}`,
-    };
+    return layoutOf(input, names, origin, positionAttribute);
+}
+
+export function texcoordLayoutOf(input: VertexInputInfo, names: InputNames | null, origin: string): AttributeLayout | null {
+    return layoutOf(input, names, origin, texcoordAttribute);
 }
 
 function dynamicStatesOf(state: PipelineDynamicStateCreateInfo | null): Set<number> {
@@ -242,9 +239,9 @@ function librariesOf(info: GraphicsPipelineCreateInfo): UInt64[] {
     return Array.from({ length: libraryCount }, (_, i) => libraries.add(i * 8).readU64());
 }
 
-function inlineModuleNames(stage: PipelineShaderStageCreateInfo): VertexInputNames | undefined {
+function inlineModuleInterfaces(stage: PipelineShaderStageCreateInfo): ShaderInterfaces | undefined {
     const chained = chainedInfo(stage.next, SHADER_MODULE_CREATE_INFO);
-    return (chained !== null) ? namesOfModuleInfo(ShaderModuleCreateInfo.at(chained)) : undefined;
+    return (chained !== null) ? interfacesOfModuleInfo(ShaderModuleCreateInfo.at(chained)) : undefined;
 }
 
 function chainedInfo(first: NativePointer, type: number): NativePointer | null {
@@ -256,9 +253,11 @@ function chainedInfo(first: NativePointer, type: number): NativePointer | null {
     return null;
 }
 
-function namesOfModuleInfo(info: ShaderModuleCreateInfo): VertexInputNames {
+function interfacesOfModuleInfo(info: ShaderModuleCreateInfo): ShaderInterfaces {
     const size = info.codeSize.toNumber();
-    return (size <= LARGEST_PARSED_SHADER) ? vertexInputNames(info.code.readByteArray(size)!) : new Map();
+    return (size <= LARGEST_PARSED_SHADER)
+        ? shaderInterfaces(info.code.readByteArray(size)!)
+        : { vertexInputs: new Map(), fragmentImages: new Map() };
 }
 
 function rateOf(rate: number): InputRate {
@@ -268,4 +267,22 @@ function rateOf(rate: number): InputRate {
 function formatOf(format: number): AttributeFormat | null {
     const known = vulkanFormats.get(format);
     return (known !== undefined) ? attributeFormat(known[0], known[1]) : null;
+}
+
+function layoutOf(input: VertexInputInfo, names: InputNames | null, origin: string,
+    choose: (attributes: VertexAttributeInfo[], names: InputNames) => VertexAttributeInfo | undefined): AttributeLayout | null {
+    const perVertex = input.attributes.filter(attribute =>
+        input.bindings.find(binding => binding.binding === attribute.binding)?.rate === "per-vertex");
+    const chosen = choose(perVertex, names ?? new Map());
+    if (chosen === undefined) {
+        return null;
+    }
+    const name = names?.get(chosen.location);
+    return {
+        slot: chosen.binding,
+        stride: input.bindings.find(binding => binding.binding === chosen.binding)!.stride,
+        offset: chosen.offset,
+        format: chosen.format!,
+        source: `${origin} location ${chosen.location}${(name !== undefined) ? ` "${name}"` : ""}`,
+    };
 }
