@@ -41,8 +41,9 @@ classes, and the frame rate.
 
 **Scenes** has a row per loaded scene: its name, its build index, its root
 GameObjects, its GameObjects in all, and whether it is the active scene.
-**Show** opens its page. Scenes come and go as Unity loads and unloads them:
-`SceneManager`'s own notifications are watched.
+Double-clicking a row, or selecting it and pressing Return, opens its page.
+Scenes come and go as Unity loads and unloads them: `SceneManager`'s own
+notifications are watched.
 
 **Assemblies** has every assembly with its number of classes. **Save .cs** on
 a row offers that assembly's classes as a C# file to save, and **Save

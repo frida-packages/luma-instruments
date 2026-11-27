@@ -3,7 +3,7 @@
   "displayName": "Unity",
   "version": "1.0.1",
   "main": "main.ts",
-  "engines": { "luma": ">=4.0.0" },
+  "engines": { "luma": ">=4.1.0" },
   "dependencies": { "frida-il2cpp-bridge": "0.14.0" },
   "luma": {
     "icon": { "kind": "file", "value": "icon.png" },
@@ -71,7 +71,8 @@
             { "id": "objects", "name": "Objects", "alignment": "trailing" },
             { "id": "state", "name": "State", "alignment": "leading" }
           ],
-          "rowActions": [{ "id": "show", "name": "Show" }],
+          "rowActions": [],
+          "rowActivation": { "id": "show", "name": "Show" },
           "maxRows": 64
         },
         "persistence": "none"
