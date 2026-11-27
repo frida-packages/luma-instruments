@@ -1,8 +1,9 @@
 import { comMethod, release, succeeded } from "./com-methods.js";
 import type { BufferContents, RetainedBuffer } from "./d3d11-buffers.js";
-import { BufferDesc } from "./d3d11-descriptions.pat";
+import { BufferDesc, Texture2DDesc } from "./d3d11-descriptions.pat";
 import { Box, MappedSubresource } from "./d3d11-readback.pat";
 import { contextSlots, deviceSlots } from "./d3d11-runtime.js";
+import type { RetainedTexture, TextureContents } from "./d3d11-textures.js";
 
 interface CopyRequest {
     source: RetainedBuffer;
@@ -10,7 +11,14 @@ interface CopyRequest {
     length: number;
 }
 
+interface StagedTexture {
+    texture: RetainedTexture;
+    staging: NativePointer;
+}
+
 type TurnState = "open" | "over";
+
+type TextureSnapshot = ArrayBuffer | Error;
 
 const USAGE_STAGING = 3;
 const CPU_ACCESS_READ = 0x20000;
@@ -18,11 +26,13 @@ const MAP_READ = 1;
 export const LARGEST_PREFETCH = 64 * 1048576;
 const STAGING_CHUNK = 16 * 1048576;
 
-export class TurnReadback implements BufferContents {
+export class TurnReadback implements BufferContents, TextureContents {
     readonly #context: NativePointer;
     readonly #device: NativePointer;
     readonly #snapshots = new Map<string, ArrayBuffer>();
+    readonly #textureSnapshots = new Map<string, TextureSnapshot>();
     readonly #description = BufferDesc.at(Memory.alloc(BufferDesc.size));
+    readonly #textureDescription = Texture2DDesc.at(Memory.alloc(Texture2DDesc.size));
     readonly #createdStaging = Memory.alloc(Process.pointerSize);
     readonly #box = Box.at(Memory.alloc(Box.size));
     readonly #mapping = MappedSubresource.at(Memory.alloc(MappedSubresource.size));
@@ -57,6 +67,37 @@ export class TurnReadback implements BufferContents {
 
     holds(buffer: RetainedBuffer): boolean {
         return this.#snapshots.has(buffer.handle.toString());
+    }
+
+    prefetchTextures(textures: RetainedTexture[]): void {
+        const staged: StagedTexture[] = [];
+        try {
+            for (const texture of textures) {
+                staged.push({ texture, staging: this.#stagedCopyOf(texture) });
+            }
+            for (const { texture, staging } of staged) {
+                this.#textureSnapshots.set(texture.handle.toString(), this.#mappedTexture(staging, texture));
+            }
+        } catch (error) {
+            for (const texture of textures.filter(texture => !this.#textureSnapshots.has(texture.handle.toString()))) {
+                this.#textureSnapshots.set(texture.handle.toString(), error as Error);
+            }
+        } finally {
+            for (const { staging } of staged) {
+                release(staging);
+            }
+        }
+    }
+
+    readTexture(texture: RetainedTexture): ArrayBuffer {
+        const snapshot = this.#textureSnapshots.get(texture.handle.toString());
+        if (snapshot === undefined) {
+            throw new Error(`${texture.handle} can only be read while the process draws`);
+        }
+        if (snapshot instanceof Error) {
+            throw snapshot;
+        }
+        return snapshot;
     }
 
     end(): void {
@@ -126,6 +167,53 @@ export class TurnReadback implements BufferContents {
         }
         try {
             return mapping.data.readByteArray(length)!;
+        } finally {
+            comMethod(this.#context, contextSlots.unmap, "void", ["pointer", "uint32"])(this.#context, staging, 0);
+        }
+    }
+
+    #stagedCopyOf(texture: RetainedTexture): NativePointer {
+        const { width, height, resourceFormat } = texture.description;
+        const description = this.#textureDescription;
+        description.width = width;
+        description.height = height;
+        description.mipLevels = 1;
+        description.arraySize = 1;
+        description.format = resourceFormat;
+        description.sampleCount = 1;
+        description.sampleQuality = 0;
+        description.usage = USAGE_STAGING;
+        description.bindFlags = 0;
+        description.cpuAccessFlags = CPU_ACCESS_READ;
+        description.miscFlags = 0;
+        const result = comMethod(this.#device, deviceSlots.createTexture2D, "int", ["pointer", "pointer", "pointer"])(this.#device,
+            description.$address, NULL, this.#createdStaging);
+        if (!succeeded(result)) {
+            throw new Error(`a ${width} × ${height} staging texture could not be made: 0x${(result >>> 0).toString(16)}`);
+        }
+        const staging = this.#createdStaging.readPointer();
+        comMethod(this.#context, contextSlots.copySubresourceRegion, "void",
+            ["pointer", "uint32", "uint32", "uint32", "uint32", "pointer", "uint32", "pointer"])(this.#context, staging, 0, 0, 0, 0,
+            texture.handle, 0, NULL);
+        return staging;
+    }
+
+    #mappedTexture(staging: NativePointer, texture: RetainedTexture): ArrayBuffer {
+        const mapping = this.#mapping;
+        const result = comMethod(this.#context, contextSlots.map, "int", ["pointer", "uint32", "uint32", "uint32", "pointer"])(
+            this.#context, staging, 0, MAP_READ, 0, mapping.$address);
+        if (!succeeded(result)) {
+            throw new Error(`${texture.handle} could not be read back: 0x${(result >>> 0).toString(16)}`);
+        }
+        try {
+            const { rowBytes, rows } = texture.description.packing!;
+            const pitch = mapping.rowPitch;
+            const pitched = new Uint8Array(mapping.data.readByteArray(pitch * (rows - 1) + rowBytes)!);
+            const packed = new Uint8Array(rowBytes * rows);
+            for (let row = 0; row !== rows; row++) {
+                packed.set(pitched.subarray(row * pitch, row * pitch + rowBytes), row * rowBytes);
+            }
+            return packed.buffer;
         } finally {
             comMethod(this.#context, contextSlots.unmap, "void", ["pointer", "uint32"])(this.#context, staging, 0);
         }

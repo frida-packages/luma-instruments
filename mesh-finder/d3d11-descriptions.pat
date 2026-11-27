@@ -29,3 +29,23 @@ struct InputElementDesc {
     u32 inputSlotClass;
     u32 instanceDataStepRate;
 };
+
+struct Texture2DDesc {
+    u32 width;
+    u32 height;
+    u32 mipLevels;
+    u32 arraySize;
+    u32 format;
+    u32 sampleCount;
+    u32 sampleQuality;
+    u32 usage;
+    u32 bindFlags;
+    u32 cpuAccessFlags;
+    u32 miscFlags;
+};
+
+struct ShaderResourceViewDesc {
+    u32 format;
+    u32 viewDimension;
+    padding[16];
+};

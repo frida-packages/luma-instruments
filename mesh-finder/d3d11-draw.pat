@@ -4,6 +4,10 @@ struct DrawSlot {
     u64 offset;
 };
 
+struct DrawView {
+    u8 *view : u64;
+};
+
 struct Draw {
     u8 *device : u64;
     u64 kind;
@@ -19,6 +23,8 @@ struct Draw {
     u64 startVertex;
     u8 *indirectBuffer : u64;
     u64 indirectOffset;
+    u8 *pixelShader : u64;
     u64 bound;
     DrawSlot slots[32];
+    DrawView views[128];
 };

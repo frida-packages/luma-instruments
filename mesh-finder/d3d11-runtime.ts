@@ -6,6 +6,8 @@ export type TapCall =
     | "setVertexBuffers"
     | "setIndexBuffer"
     | "setTopology"
+    | "setPixelShader"
+    | "setShaderResources"
     | "draw"
     | "drawIndexed"
     | "drawInstanced"
@@ -16,8 +18,13 @@ export type TapCall =
     | "executeCommandList"
     | "finishCommandList"
     | "swapState"
+    | "setRenderTargets"
+    | "setRenderTargetsAndUnorderedAccessViews"
+    | "setStreamOutputTargets"
+    | "setComputeUnorderedAccessViews"
     | "createBuffer"
     | "createInputLayout"
+    | "createPixelShader"
     | "createDeferredContext";
 
 export interface HookTarget {
@@ -64,6 +71,7 @@ export const contextSlots = {
 
 export const deviceSlots = {
     createBuffer: 3,
+    createTexture2D: 5,
     createQuery: 24,
     createDeferredContext: 27,
 };
@@ -72,13 +80,27 @@ const multithreadSlots = {
     setMultithreadProtected: 5,
 };
 
-export const bufferSlots = {
+export const deviceChildSlots = {
     getDevice: 3,
     getPrivateData: 4,
+};
+
+export const bufferSlots = {
     getDesc: 10,
 };
 
+export const textureSlots = {
+    getDesc: 10,
+};
+
+export const viewSlots = {
+    getResource: 7,
+    getDesc: 8,
+};
+
 const contextCalls: [TapCall, number][] = [
+    ["setShaderResources", 8],
+    ["setPixelShader", 9],
     ["drawIndexed", 12],
     ["draw", 13],
     ["setInputLayout", 17],
@@ -87,14 +109,23 @@ const contextCalls: [TapCall, number][] = [
     ["drawIndexedInstanced", 20],
     ["drawInstanced", 21],
     ["setTopology", 24],
+    ["setRenderTargets", 33],
+    ["setRenderTargetsAndUnorderedAccessViews", 34],
+    ["setStreamOutputTargets", 37],
     ["drawIndexedInstancedIndirect", 39],
     ["drawInstancedIndirect", 40],
     ["executeCommandList", 58],
+    ["setComputeUnorderedAccessViews", 68],
     ["clearState", 110],
     ["finishCommandList", 114],
 ];
 const context1Calls: [TapCall, number][] = [["swapState", 131]];
-const deviceCalls: [TapCall, number][] = [["createBuffer", 3], ["createInputLayout", 11], ["createDeferredContext", 27]];
+const deviceCalls: [TapCall, number][] = [
+    ["createBuffer", 3],
+    ["createInputLayout", 11],
+    ["createPixelShader", 15],
+    ["createDeferredContext", 27],
+];
 const device1Calls: [TapCall, number][] = [["createDeferredContext", 44]];
 
 const IID_ID3D11DEVICE1 = guid("a04bfb29-08ef-43d6-a49c-a9bdbdcbe686");

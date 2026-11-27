@@ -6,6 +6,7 @@ export interface TapEvents {
     turn(context: NativePointer, device: NativePointer): void;
     bufferCreated(buffer: NativePointer): void;
     inputLayoutCreated(layout: NativePointer, elements: NativePointer, count: number): void;
+    pixelShaderCreated(shader: NativePointer, bytecode: NativePointer): void;
 }
 
 export type DrawWatch = "observed" | "ignored";
@@ -27,7 +28,9 @@ export interface TappedDraw {
     startVertex: number;
     indirectBuffer: NativePointer;
     indirectOffset: number;
+    pixelShader: NativePointer;
     slots: TappedSlot[];
+    views: TappedView[];
 }
 
 export interface TappedSlot {
@@ -37,29 +40,45 @@ export interface TappedSlot {
     offset: number;
 }
 
+export interface TappedView {
+    slot: number;
+    view: NativePointer;
+}
+
 const TAP_STATE_SIZE = 2 * 1048576;
+
+const VIEW_COUNT = 128;
+const VIEW_WORDS = VIEW_COUNT / 32;
+const ALL_VIEWS = 0xffffffff;
 
 const callIds: Record<TapCall, number> = {
     setInputLayout: 1,
     setVertexBuffers: 2,
     setIndexBuffer: 3,
     setTopology: 4,
-    draw: 5,
-    drawIndexed: 6,
-    drawInstanced: 7,
-    drawIndexedInstanced: 8,
-    drawInstancedIndirect: 9,
-    drawIndexedInstancedIndirect: 10,
-    clearState: 11,
-    executeCommandList: 12,
-    finishCommandList: 13,
-    swapState: 14,
-    createBuffer: 15,
-    createInputLayout: 16,
-    createDeferredContext: 17,
+    setPixelShader: 5,
+    setShaderResources: 6,
+    draw: 7,
+    drawIndexed: 8,
+    drawInstanced: 9,
+    drawIndexedInstanced: 10,
+    drawInstancedIndirect: 11,
+    drawIndexedInstancedIndirect: 12,
+    clearState: 13,
+    executeCommandList: 14,
+    finishCommandList: 15,
+    swapState: 16,
+    setRenderTargets: 17,
+    setRenderTargetsAndUnorderedAccessViews: 17,
+    setStreamOutputTargets: 17,
+    setComputeUnorderedAccessViews: 17,
+    createBuffer: 18,
+    createInputLayout: 19,
+    createPixelShader: 20,
+    createDeferredContext: 21,
 };
 
-const creationCalls = new Set<TapCall>(["createBuffer", "createInputLayout", "createDeferredContext"]);
+const creationCalls = new Set<TapCall>(["createBuffer", "createInputLayout", "createPixelShader", "createDeferredContext"]);
 
 const drawKinds: DrawKind[] = ["vertices", "indexed", "vertices-indirect", "indexed-indirect"];
 
@@ -69,9 +88,12 @@ const source = `
 #include <string.h>
 
 #define SLOT_COUNT 32
+#define VIEW_COUNT ${VIEW_COUNT}
+#define VIEW_WORDS (VIEW_COUNT / 32)
 #define STATE_COUNT 256
 #define SEEN_CAPACITY 65536
 #define LAYOUT_CAPACITY 4096
+#define SHADER_CAPACITY 4096
 #define TURN_CAPACITY 16
 #define ALL_SLOTS 0xffffffffu
 #define BIND_VERTEX_BUFFER 0x1
@@ -84,6 +106,8 @@ const source = `
 
 #define IUNKNOWN_RELEASE 2
 #define CONTEXT_GET_DEVICE 3
+#define CONTEXT_PS_GET_SHADER_RESOURCES 73
+#define CONTEXT_PS_GET_SHADER 74
 #define CONTEXT_IA_GET_INPUT_LAYOUT 78
 #define CONTEXT_IA_GET_VERTEX_BUFFERS 79
 #define CONTEXT_IA_GET_INDEX_BUFFER 80
@@ -101,6 +125,8 @@ enum
   SET_VERTEX_BUFFERS,
   SET_INDEX_BUFFER,
   SET_TOPOLOGY,
+  SET_PIXEL_SHADER,
+  SET_SHADER_RESOURCES,
   DRAW,
   DRAW_INDEXED,
   DRAW_INSTANCED,
@@ -111,8 +137,10 @@ enum
   EXECUTE_COMMAND_LIST,
   FINISH_COMMAND_LIST,
   SWAP_STATE,
+  BIND_OUTPUTS,
   CREATE_BUFFER,
   CREATE_INPUT_LAYOUT,
+  CREATE_PIXEL_SHADER,
   CREATE_DEFERRED_CONTEXT
 };
 
@@ -124,6 +152,8 @@ typedef void (COM_CALL * GetVertexBuffersFunc) (gpointer self, guint32 start, gu
     guint32 * offsets);
 typedef void (COM_CALL * GetIndexBufferFunc) (gpointer self, gpointer * buffer, guint32 * format, guint32 * offset);
 typedef void (COM_CALL * GetTopologyFunc) (gpointer self, guint32 * topology);
+typedef void (COM_CALL * GetShaderResourcesFunc) (gpointer self, guint32 start, guint32 count, gpointer * views);
+typedef void (COM_CALL * GetShaderFunc) (gpointer self, gpointer * shader, gpointer * class_instances, guint32 * class_instance_count);
 typedef guint32 (COM_CALL * GetTypeFunc) (gpointer self);
 
 typedef struct
@@ -146,6 +176,9 @@ typedef struct
   guint32 index_offset;
   guint32 bound;
   Binding bindings[SLOT_COUNT];
+  gpointer pixel_shader;
+  guint32 views_bound[VIEW_WORDS];
+  gpointer views[VIEW_COUNT];
 } ContextState;
 
 typedef struct
@@ -171,8 +204,10 @@ typedef struct
   guint64 start_vertex;
   guint64 indirect_buffer;
   guint64 indirect_offset;
+  guint64 pixel_shader;
   guint64 bound;
   DrawSlot slots[SLOT_COUNT];
+  guint64 views[VIEW_COUNT];
 } Draw;
 
 typedef struct
@@ -180,6 +215,12 @@ typedef struct
   gpointer layout;
   guint32 slots;
 } LayoutSlots;
+
+typedef struct
+{
+  gpointer shader;
+  guint32 slots[VIEW_WORDS];
+} ShaderSlots;
 
 typedef struct
 {
@@ -202,6 +243,7 @@ typedef struct
   ContextState states[STATE_COUNT];
   guint64 seen[SEEN_CAPACITY];
   LayoutSlots layouts[LAYOUT_CAPACITY];
+  ShaderSlots shaders[SHADER_CAPACITY];
 } Tap;
 
 extern Tap tap;
@@ -209,28 +251,35 @@ extern void deliver_new_draw (Draw * draw);
 extern void deliver_turn (gpointer context, gpointer device);
 extern void deliver_buffer_created (gpointer buffer);
 extern void deliver_input_layout (gpointer layout, gconstpointer elements, guint32 count);
+extern void deliver_pixel_shader (gpointer shader, gconstpointer bytecode);
 
 static void note_creation (GumInvocationContext * ic, guint call);
 static ContextState * state_of (gpointer context);
 static gboolean claim_turn (gpointer device);
 static void on_turn (gpointer context, gpointer device);
 static void note_vertex_buffers (ContextState * state, GumInvocationContext * ic);
+static void note_shader_resources (ContextState * state, GumInvocationContext * ic);
 static void begin_draw (Draw * draw, guint kind);
 static void record_draw (ContextState * state, Draw * draw);
 static void on_buffer_created (gpointer buffer);
 static void on_input_layout (gpointer layout, gconstpointer elements, guint32 count);
+static void on_pixel_shader (gpointer shader, gconstpointer bytecode);
 static void forget_state (gpointer context);
 static void sync_state (ContextState * state);
 static gboolean is_mesh_topology (guint32 topology);
 static guint32 slots_that_matter (gpointer layout);
+static void views_sampled (ContextState * state, guint32 * sampled);
 static guint64 mix (guint64 hash, guint64 value);
+static gboolean is_sampled (const guint32 * sampled, guint slot);
 static gboolean remember (guint64 key);
 static void on_new_draw (Draw * draw);
 static void release (gpointer object);
 static void enter_js (void);
 static void leave_js (void);
 static void bind (ContextState * state, guint32 slot, gpointer buffer, guint32 stride, guint32 offset);
+static void bind_view (ContextState * state, guint32 slot, gpointer view);
 static guint layout_index (gpointer layout);
+static guint shader_index (gpointer shader);
 
 void init (void)
 {
@@ -280,6 +329,12 @@ void on_enter (GumInvocationContext * ic)
     case SET_TOPOLOGY:
       state->topology = UINT_ARG (1);
       return;
+    case SET_PIXEL_SHADER:
+      state->pixel_shader = ARG (1);
+      return;
+    case SET_SHADER_RESOURCES:
+      note_shader_resources (state, ic);
+      return;
     case DRAW:
       begin_draw (&draw, VERTICES);
       draw.vertex_count = UINT_ARG (1);
@@ -326,6 +381,9 @@ void on_enter (GumInvocationContext * ic)
     case SWAP_STATE:
       state->synced = FALSE;
       return;
+    case BIND_OUTPUTS:
+      state->synced = FALSE;
+      return;
   }
   record_draw (state, &draw);
 }
@@ -349,6 +407,9 @@ void on_leave (GumInvocationContext * ic)
       break;
     case CREATE_INPUT_LAYOUT:
       on_input_layout (*creation->result, creation->description, creation->count);
+      break;
+    case CREATE_PIXEL_SHADER:
+      on_pixel_shader (*creation->result, creation->description);
       break;
     case CREATE_DEFERRED_CONTEXT:
       forget_state (*creation->result);
@@ -402,6 +463,19 @@ void narrow_layout (gpointer layout, guint32 slots)
   g_mutex_unlock (&tap.lock);
 }
 
+void narrow_shader (gpointer shader, const guint32 * slots)
+{
+  guint index;
+  g_mutex_lock (&tap.lock);
+  index = shader_index (shader);
+  if (index != SHADER_CAPACITY)
+  {
+    tap.shaders[index].shader = shader;
+    memcpy (tap.shaders[index].slots, slots, sizeof (tap.shaders[index].slots));
+  }
+  g_mutex_unlock (&tap.lock);
+}
+
 void wait_until_idle (void)
 {
   g_mutex_lock (&tap.lock);
@@ -422,6 +496,9 @@ static void note_creation (GumInvocationContext * ic, guint call)
     case CREATE_INPUT_LAYOUT:
       creation->count = UINT_ARG (2);
       creation->result = ARG (5);
+      break;
+    case CREATE_PIXEL_SHADER:
+      creation->result = ARG (4);
       break;
     case CREATE_DEFERRED_CONTEXT:
       creation->result = ARG (2);
@@ -516,18 +593,26 @@ static void note_vertex_buffers (ContextState * state, GumInvocationContext * ic
   }
 }
 
+static void note_shader_resources (ContextState * state, GumInvocationContext * ic)
+{
+  guint32 start = UINT_ARG (1), count = UINT_ARG (2), i;
+  gpointer * views = ARG (3);
+  for (i = 0; i != count; i++)
+    bind_view (state, start + i, (views != NULL) ? views[i] : NULL);
+}
+
 static void begin_draw (Draw * draw, guint kind)
 {
-  memset (draw, 0, sizeof (Draw) - sizeof (draw->slots));
+  memset (draw, 0, G_STRUCT_OFFSET (Draw, slots));
   draw->kind = kind;
 }
 
 static void record_draw (ContextState * state, Draw * draw)
 {
   gboolean indexed = draw->kind == INDEXED || draw->kind == INDEXED_INDIRECT;
-  guint32 relevant, bound;
+  guint32 relevant, bound, sampled[VIEW_WORDS];
   guint64 key;
-  guint i;
+  guint i, word;
   gboolean fresh;
 
   if (!tap.observing_draws)
@@ -546,21 +631,31 @@ static void record_draw (ContextState * state, Draw * draw)
   draw->index_buffer = indexed ? (guint64) (gsize) state->index_buffer : 0;
   draw->index_format = indexed ? state->index_format : 0;
   draw->index_offset = indexed ? state->index_offset : 0;
+  draw->pixel_shader = (guint64) (gsize) state->pixel_shader;
 
   g_mutex_lock (&tap.lock);
   relevant = slots_that_matter (state->layout);
   bound = state->bound & relevant;
+  views_sampled (state, sampled);
   key = mix (mix (mix (mix (mix (draw->layout, draw->topology), draw->kind), draw->index_buffer), draw->index_format),
       draw->index_offset);
   key = mix (mix (mix (mix (mix (key, draw->index_count), draw->start_index), (guint64) draw->base_vertex), draw->vertex_count),
       draw->start_vertex);
-  key = mix (mix (key, draw->indirect_buffer), draw->indirect_offset);
+  key = mix (mix (mix (key, draw->indirect_buffer), draw->indirect_offset), draw->pixel_shader);
   for (i = 0; i != SLOT_COUNT; i++)
   {
     const Binding * binding = &state->bindings[i];
     if ((bound & (1u << i)) == 0)
       continue;
     key = mix (mix (mix (mix (key, i), (guint64) (gsize) binding->buffer), binding->stride), binding->offset);
+  }
+  for (word = 0; word != VIEW_WORDS; word++)
+  {
+    for (i = word * 32; i != (word + 1) * 32 && (sampled[word] >> (i % 32)) != 0; i++)
+    {
+      if (is_sampled (sampled, i))
+        key = mix (mix (key, i), (guint64) (gsize) state->views[i]);
+    }
   }
   fresh = remember (key);
   g_mutex_unlock (&tap.lock);
@@ -577,6 +672,8 @@ static void record_draw (ContextState * state, Draw * draw)
     draw->slots[i].stride = binding->stride;
     draw->slots[i].offset = binding->offset;
   }
+  for (i = 0; i != VIEW_COUNT; i++)
+    draw->views[i] = is_sampled (sampled, i) ? (guint64) (gsize) state->views[i] : 0;
   on_new_draw (draw);
 }
 
@@ -591,6 +688,13 @@ static void on_input_layout (gpointer layout, gconstpointer elements, guint32 co
 {
   enter_js ();
   deliver_input_layout (layout, elements, count);
+  leave_js ();
+}
+
+static void on_pixel_shader (gpointer shader, gconstpointer bytecode)
+{
+  enter_js ();
+  deliver_pixel_shader (shader, bytecode);
   leave_js ();
 }
 
@@ -611,6 +715,7 @@ static void sync_state (ContextState * state)
   gpointer context = state->context;
   gpointer buffers[SLOT_COUNT];
   guint32 strides[SLOT_COUNT], offsets[SLOT_COUNT];
+  gpointer views[VIEW_COUNT];
   guint32 i;
 
   ((GetVertexBuffersFunc) METHOD (context, CONTEXT_IA_GET_VERTEX_BUFFERS)) (context, 0, SLOT_COUNT, buffers, strides, offsets);
@@ -627,6 +732,15 @@ static void sync_state (ContextState * state)
   ((GetObjectFunc) METHOD (context, CONTEXT_IA_GET_INPUT_LAYOUT)) (context, &state->layout);
   release (state->layout);
   ((GetTopologyFunc) METHOD (context, CONTEXT_IA_GET_PRIMITIVE_TOPOLOGY)) (context, &state->topology);
+  ((GetShaderResourcesFunc) METHOD (context, CONTEXT_PS_GET_SHADER_RESOURCES)) (context, 0, VIEW_COUNT, views);
+  for (i = 0; i != VIEW_COUNT; i++)
+  {
+    bind_view (state, i, views[i]);
+    release (views[i]);
+  }
+  state->pixel_shader = NULL;
+  ((GetShaderFunc) METHOD (context, CONTEXT_PS_GET_SHADER)) (context, &state->pixel_shader, NULL, NULL);
+  release (state->pixel_shader);
   state->synced = TRUE;
 }
 
@@ -641,10 +755,29 @@ static guint32 slots_that_matter (gpointer layout)
   return (index != LAYOUT_CAPACITY && tap.layouts[index].layout == layout) ? tap.layouts[index].slots : ALL_SLOTS;
 }
 
+static void views_sampled (ContextState * state, guint32 * sampled)
+{
+  guint index = shader_index (state->pixel_shader);
+  gboolean narrowed = index != SHADER_CAPACITY && tap.shaders[index].shader == state->pixel_shader;
+  guint word;
+  for (word = 0; word != VIEW_WORDS; word++)
+  {
+    if (state->pixel_shader == NULL)
+      sampled[word] = 0;
+    else
+      sampled[word] = state->views_bound[word] & (narrowed ? tap.shaders[index].slots[word] : ALL_SLOTS);
+  }
+}
+
 static guint64 mix (guint64 hash, guint64 value)
 {
   hash ^= value + 0x9e3779b97f4a7c15ull + (hash << 6) + (hash >> 2);
   return hash * 0x100000001b3ull;
+}
+
+static gboolean is_sampled (const guint32 * sampled, guint slot)
+{
+  return (sampled[slot / 32] & (1u << (slot % 32))) != 0;
 }
 
 static gboolean remember (guint64 key)
@@ -712,6 +845,17 @@ static void bind (ContextState * state, guint32 slot, gpointer buffer, guint32 s
     state->bound &= ~(1u << slot);
 }
 
+static void bind_view (ContextState * state, guint32 slot, gpointer view)
+{
+  if (slot >= VIEW_COUNT)
+    return;
+  state->views[slot] = view;
+  if (view != NULL)
+    state->views_bound[slot / 32] |= 1u << (slot % 32);
+  else
+    state->views_bound[slot / 32] &= ~(1u << (slot % 32));
+}
+
 static guint layout_index (gpointer layout)
 {
   guint index = ((gsize) layout >> 4) % LAYOUT_CAPACITY;
@@ -724,6 +868,19 @@ static guint layout_index (gpointer layout)
   }
   return LAYOUT_CAPACITY;
 }
+
+static guint shader_index (gpointer shader)
+{
+  guint index = ((gsize) shader >> 4) % SHADER_CAPACITY;
+  guint probes;
+  for (probes = 0; probes != SHADER_CAPACITY; probes++)
+  {
+    if (tap.shaders[index].shader == shader || tap.shaders[index].shader == NULL)
+      return index;
+    index = (index + 1) % SHADER_CAPACITY;
+  }
+  return SHADER_CAPACITY;
+}
 `;
 
 export class ContextTap {
@@ -735,6 +892,8 @@ export class ContextTap {
     readonly #requestTurnOf: NativeFunction<void, [NativePointerValue]>;
     readonly #requestAnyTurnNow: NativeFunction<void, []>;
     readonly #narrow: NativeFunction<void, [NativePointerValue, number]>;
+    readonly #narrowShaderTo: NativeFunction<void, [NativePointerValue, NativePointerValue]>;
+    readonly #shaderSlots = Memory.alloc(VIEW_WORDS * 4);
     readonly #waitUntilIdle: NativeFunction<void, []>;
 
     constructor(targets: HookTarget[], events: TapEvents) {
@@ -743,7 +902,9 @@ export class ContextTap {
         const onBufferCreated = new NativeCallback(buffer => events.bufferCreated(buffer), "void", ["pointer"]);
         const onInputLayout = new NativeCallback((layout, elements, count) => events.inputLayoutCreated(layout, elements, count), "void",
             ["pointer", "pointer", "uint32"]);
-        this.#callbacks = [onNewDraw, onTurn, onBufferCreated, onInputLayout];
+        const onPixelShader = new NativeCallback((shader, bytecode) => events.pixelShaderCreated(shader, bytecode), "void",
+            ["pointer", "pointer"]);
+        this.#callbacks = [onNewDraw, onTurn, onBufferCreated, onInputLayout, onPixelShader];
         const comCall = (Process.arch === "ia32") ? "__attribute__ ((stdcall))" : "";
         this.#tap = new CModule(`#define COM_CALL ${comCall}\n${source}`, {
             tap: this.#state,
@@ -751,11 +912,13 @@ export class ContextTap {
             deliver_turn: onTurn,
             deliver_buffer_created: onBufferCreated,
             deliver_input_layout: onInputLayout,
+            deliver_pixel_shader: onPixelShader,
         });
         this.#observe = new NativeFunction(this.#tap.observe_draws, "void", ["int"]);
         this.#requestTurnOf = new NativeFunction(this.#tap.request_turn, "void", ["pointer"]);
         this.#requestAnyTurnNow = new NativeFunction(this.#tap.request_any_turn, "void", []);
         this.#narrow = new NativeFunction(this.#tap.narrow_layout, "void", ["pointer", "uint32"]);
+        this.#narrowShaderTo = new NativeFunction(this.#tap.narrow_shader, "void", ["pointer", "pointer"]);
         this.#waitUntilIdle = new NativeFunction(this.#tap.wait_until_idle, "void", []);
 
         for (const { call, address } of targets) {
@@ -780,6 +943,18 @@ export class ContextTap {
         this.#narrow(layout, slots >>> 0);
     }
 
+    narrowShader(shader: NativePointer, slots: number[] | null): void {
+        const words = this.#shaderSlots;
+        for (let word = 0; word !== VIEW_WORDS; word++) {
+            words.add(word * 4).writeU32((slots === null) ? ALL_VIEWS : 0);
+        }
+        for (const slot of slots ?? []) {
+            const word = words.add(Math.floor(slot / 32) * 4);
+            word.writeU32((word.readU32() | (1 << (slot % 32))) >>> 0);
+        }
+        this.#narrowShaderTo(shader, words);
+    }
+
     dispose(): void {
         this.#observe(0);
         for (const listener of this.#listeners) {
@@ -800,6 +975,12 @@ function tappedDrawOf(draw: Draw): TappedDraw {
         }
         slots.push({ index, buffer: slot.buffer, stride: slot.stride.toNumber(), offset: slot.offset.toNumber() });
     });
+    const views: TappedView[] = [];
+    draw.views.forEach(({ view }, slot) => {
+        if (!view.isNull()) {
+            views.push({ slot, view });
+        }
+    });
     return {
         device: draw.device,
         kind: drawKinds[draw.kind.toNumber()],
@@ -815,6 +996,8 @@ function tappedDrawOf(draw: Draw): TappedDraw {
         startVertex: draw.startVertex.toNumber(),
         indirectBuffer: draw.indirectBuffer,
         indirectOffset: draw.indirectOffset.toNumber(),
+        pixelShader: draw.pixelShader,
         slots,
+        views,
     };
 }

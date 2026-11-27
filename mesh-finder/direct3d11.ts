@@ -1,8 +1,10 @@
 import { API, BufferDescriber, candidateBuffers, D3D11Buffer, releaseAll, type RetainedBuffer } from "./d3d11-buffers.js";
 import { ContextTap, type TappedDraw } from "./d3d11-context-tap.js";
 import { InputLayouts, type DeclaredAttribute } from "./d3d11-input-layouts.js";
+import { PixelShaders } from "./d3d11-pixel-shaders.js";
 import { LARGEST_PREFETCH, TurnReadback } from "./d3d11-readback.js";
 import { discoverRuntime, type D3D11Runtime } from "./d3d11-runtime.js";
+import { D3D11Texture, releaseTextures, TextureDescriber, type RetainedTexture } from "./d3d11-textures.js";
 import type {
     BufferSearch,
     DrawCall,
@@ -27,6 +29,18 @@ export const direct3D11: GraphicsBackendFactory = {
 interface PendingDraw {
     draw: TappedDraw;
     buffers: Map<string, RetainedBuffer>;
+    textures: PendingTexture[];
+}
+
+interface PendingTexture {
+    slot: number;
+    name: string | null;
+    texture: RetainedTexture;
+}
+
+interface ReadyDraw {
+    pending: PendingDraw;
+    prefetched: boolean;
 }
 
 interface PendingSearch {
@@ -61,6 +75,7 @@ const TURN_BUDGET = 64 * 1048576;
 const SCAN_SLICE = 512;
 const TURN_WAIT_MS = 3000;
 const BATCH_SLICE = 512;
+const TEXTURE_SLICE = 128;
 const SETTLE_MS = 250;
 const INDEXED_ARGUMENTS_SIZE = 20;
 const ARGUMENTS_SIZE = 16;
@@ -73,6 +88,9 @@ class Direct3D11Backend implements GraphicsBackend {
     readonly #observer: GeometryObserver;
     readonly #describer = new BufferDescriber();
     readonly #layouts = new InputLayouts();
+    readonly #pixelShaders = new PixelShaders();
+    readonly #textureDescriber = new TextureDescriber();
+    readonly #fetchedTextures = new Set<string>();
     readonly #work = new Map<string, DeviceWork>();
     readonly #scans: PendingScan[] = [];
     readonly #runtime: D3D11Runtime;
@@ -89,6 +107,7 @@ class Direct3D11Backend implements GraphicsBackend {
             turn: (context, device) => this.#onTurn(context, device),
             bufferCreated: buffer => this.#onBufferCreated(buffer),
             inputLayoutCreated: (layout, elements, count) => this.#onInputLayout(layout, elements, count),
+            pixelShaderCreated: (shader, bytecode) => this.#onPixelShader(shader, bytecode),
         });
     }
 
@@ -133,7 +152,7 @@ class Direct3D11Backend implements GraphicsBackend {
         }
         for (const work of this.#work.values()) {
             for (const draw of work.draws) {
-                releaseAll([...draw.buffers.values()]);
+                releasePending(draw);
             }
             for (const batch of work.batches) {
                 releaseAll(batch.buffers);
@@ -154,7 +173,7 @@ class Direct3D11Backend implements GraphicsBackend {
                 buffers.set(handle.toString(), this.#describer.retain(handle));
             }
         }
-        this.#workOf(draw.device).draws.push({ draw, buffers });
+        this.#workOf(draw.device).draws.push({ draw, buffers, textures: this.#texturesOf(draw) });
         this.#tap.requestTurn(draw.device);
     }
 
@@ -203,6 +222,19 @@ class Direct3D11Backend implements GraphicsBackend {
         }
     }
 
+    #onPixelShader(shader: NativePointer, bytecode: NativePointer): void {
+        const textures = this.#pixelShaders.learn(shader, bytecode);
+        this.#tap.narrowShader(shader, (textures !== null) ? [...textures.keys()] : null);
+    }
+
+    #texturesOf(draw: TappedDraw): PendingTexture[] {
+        const names = this.#pixelShaders.texturesOf(draw.pixelShader);
+        return draw.views.flatMap(({ slot, view }) => {
+            const texture = this.#textureDescriber.retain(view);
+            return (texture !== null) ? [{ slot, name: names?.get(slot) ?? null, texture }] : [];
+        });
+    }
+
     #retainScanned(afterTurn: AfterTurn[]): void {
         const scan = this.#scans[0];
         if (scan === undefined) {
@@ -236,18 +268,22 @@ class Direct3D11Backend implements GraphicsBackend {
             }
         }
         readback.prefetch(partitionByBudget([...distinct.values()], TURN_BUDGET).taken);
+        const ready: ReadyDraw[] = [];
         for (const pending of draws) {
             const unread = [...pending.buffers.values()].filter(buffer => !readback.holds(buffer));
-            if (unread.length === 0) {
-                afterTurn.push(() => this.#observeDraw(pending, readback));
-            } else if (unread.every(buffer => buffer.description.byteLength > LARGEST_PREFETCH)) {
-                this.#observeDraw(pending, readback);
+            if (unread.every(buffer => buffer.description.byteLength > LARGEST_PREFETCH)) {
+                ready.push({ pending, prefetched: unread.length === 0 });
             } else {
-                this.#workOf(pending.draw.device).draws.push(pending);
-                this.#tap.requestTurn(pending.draw.device);
-                continue;
+                this.#postpone(pending);
             }
-            releaseAll([...pending.buffers.values()]);
+        }
+        for (const { pending, prefetched } of this.#fetchTextures(ready, readback)) {
+            if (prefetched) {
+                afterTurn.push(() => this.#observeDraw(pending, readback));
+            } else {
+                this.#observeDraw(pending, readback);
+            }
+            releasePending(pending);
         }
     }
 
@@ -275,6 +311,39 @@ class Direct3D11Backend implements GraphicsBackend {
                 afterTurn.push(() => this.#settle(search));
             }
         }
+    }
+
+    #postpone(pending: PendingDraw): void {
+        this.#workOf(pending.draw.device).draws.push(pending);
+        this.#tap.requestTurn(pending.draw.device);
+    }
+
+    #fetchTextures(ready: ReadyDraw[], readback: TurnReadback): ReadyDraw[] {
+        const taken = new Map<string, RetainedTexture>();
+        const accepted: ReadyDraw[] = [];
+        let cost = 0;
+        for (const entry of ready) {
+            const wanted = entry.pending.textures
+                .map(({ texture }) => texture)
+                .filter(texture => this.#needsFetch(texture) && !taken.has(texture.handle.toString()));
+            const size = wanted.reduce((sum, texture) => sum + byteLengthOf(texture), 0);
+            if (taken.size !== 0 && wanted.length !== 0 && (cost + size > TURN_BUDGET || taken.size + wanted.length > TEXTURE_SLICE)) {
+                this.#postpone(entry.pending);
+                continue;
+            }
+            for (const texture of wanted) {
+                taken.set(texture.handle.toString(), texture);
+            }
+            cost += size;
+            accepted.push(entry);
+        }
+        readback.prefetchTextures([...taken.values()]);
+        return accepted;
+    }
+
+    #needsFetch(texture: RetainedTexture): boolean {
+        return texture.description.packing !== null && byteLengthOf(texture) <= LARGEST_PREFETCH
+            && !this.#fetchedTextures.has(texture.handle.toString());
     }
 
     #runAfterTurn(work: AfterTurn[]): void {
@@ -317,6 +386,9 @@ class Direct3D11Backend implements GraphicsBackend {
         const call = this.#drawCallOf(pending, readback);
         if (call !== null) {
             this.#observer.observeDraw(call);
+            for (const { texture } of pending.textures) {
+                this.#fetchedTextures.add(texture.handle.toString());
+            }
         }
     }
 
@@ -330,7 +402,7 @@ class Direct3D11Backend implements GraphicsBackend {
         return work;
     }
 
-    #drawCallOf({ draw, buffers }: PendingDraw, readback: TurnReadback): DrawCall | null {
+    #drawCallOf({ draw, buffers, textures }: PendingDraw, readback: TurnReadback): DrawCall | null {
         const topology = topologies.get(draw.topology)!;
         const bufferOf = (handle: NativePointer) => new D3D11Buffer(buffers.get(handle.toString())!, readback);
         const streams: VertexStream[] = draw.slots.map(slot => ({
@@ -349,7 +421,7 @@ class Direct3D11Backend implements GraphicsBackend {
             bystanders: [],
             position,
             texcoord: attributeLayoutOf(declared?.texcoord ?? null, streams),
-            textures: [],
+            textures: textures.map(({ slot, name, texture }) => ({ slot, name, texture: new D3D11Texture(texture, readback) })),
             indices: null,
             firstVertex: draw.startVertex,
             vertexCount: draw.vertexCount,
@@ -388,6 +460,16 @@ class Direct3D11Backend implements GraphicsBackend {
 
 function contextsOf(runtime: D3D11Runtime): string {
     return `${runtime.liveContexts} live contexts, classes learned from a ${runtime.driver} device`;
+}
+
+function releasePending({ buffers, textures }: PendingDraw): void {
+    releaseAll([...buffers.values()]);
+    releaseTextures(textures.map(({ texture }) => texture));
+}
+
+function byteLengthOf({ description }: RetainedTexture): number {
+    const { packing } = description;
+    return (packing !== null) ? packing.rowBytes * packing.rows : 0;
 }
 
 function attributeLayoutOf(declared: DeclaredAttribute | null, streams: VertexStream[]): AttributeLayout | null {

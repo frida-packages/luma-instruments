@@ -1,6 +1,6 @@
 import { addRef, comMethod, guid, release, succeeded } from "./com-methods.js";
 import { BufferDesc } from "./d3d11-descriptions.pat";
-import { bufferSlots, isReferencedFromBehind, readPointerOrNull, type BufferClass } from "./d3d11-runtime.js";
+import { bufferSlots, deviceChildSlots, isReferencedFromBehind, readPointerOrNull, type BufferClass } from "./d3d11-runtime.js";
 import type { BufferAccess, GpuBuffer } from "./graphics-backend.js";
 
 export const API = "Direct3D 11";
@@ -60,8 +60,7 @@ export class D3D11Buffer implements GpuBuffer {
 export class BufferDescriber {
     readonly #description = BufferDesc.at(Memory.alloc(BufferDesc.size));
     readonly #device = Memory.alloc(Process.pointerSize);
-    readonly #labelSize = Memory.alloc(4);
-    readonly #label = Memory.alloc(LONGEST_LABEL);
+    readonly #names = new DebugNames();
 
     retainLive(candidates: NativePointer[], bufferClass: BufferClass): RetainedBuffer[] {
         const retained: RetainedBuffer[] = [];
@@ -87,7 +86,7 @@ export class BufferDescriber {
     #describe(handle: NativePointer): BufferDescription {
         const description = this.#description;
         comMethod(handle, bufferSlots.getDesc, "void", ["pointer"])(handle, description.$address);
-        comMethod(handle, bufferSlots.getDevice, "void", ["pointer"])(handle, this.#device);
+        comMethod(handle, deviceChildSlots.getDevice, "void", ["pointer"])(handle, this.#device);
         const device = this.#device.readPointer();
         release(device);
         return {
@@ -95,18 +94,23 @@ export class BufferDescriber {
             usage: description.usage,
             bindFlags: description.bindFlags,
             device,
-            label: this.#labelOf(handle),
+            label: this.#names.of(handle),
         };
     }
+}
 
-    #labelOf(handle: NativePointer): string | null {
-        this.#labelSize.writeU32(LONGEST_LABEL);
-        const result = comMethod(handle, bufferSlots.getPrivateData, "int", ["pointer", "pointer", "pointer"])(handle,
-            WKPDID_D3D_DEBUG_OBJECT_NAME, this.#labelSize, this.#label);
+export class DebugNames {
+    readonly #size = Memory.alloc(4);
+    readonly #name = Memory.alloc(LONGEST_LABEL);
+
+    of(object: NativePointer): string | null {
+        this.#size.writeU32(LONGEST_LABEL);
+        const result = comMethod(object, deviceChildSlots.getPrivateData, "int", ["pointer", "pointer", "pointer"])(object,
+            WKPDID_D3D_DEBUG_OBJECT_NAME, this.#size, this.#name);
         if (!succeeded(result)) {
             return null;
         }
-        return this.#label.readUtf8String(this.#labelSize.readU32())!.replace(/\0+$/, "") || null;
+        return this.#name.readUtf8String(this.#size.readU32())!.replace(/\0+$/, "") || null;
     }
 }
 
