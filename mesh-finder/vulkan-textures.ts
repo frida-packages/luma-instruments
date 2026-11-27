@@ -1,6 +1,6 @@
 import type { BufferAccess, GpuTexture, TextureBinding } from "./graphics-backend.js";
 import type { SampledImage } from "./spirv-inputs.js";
-import type { TextureFormat } from "./texture-format.js";
+import { textureByteLength, textureFootprint, type TextureFootprint, type TextureFormat } from "./texture-format.js";
 import type { MemoryShadow, VulkanContents } from "./vulkan-buffers.js";
 import type { VulkanDriver } from "./vulkan-driver.js";
 import { vulkanFormatName, vulkanTextureFormats, type VulkanTextureFormat } from "./vulkan-formats.js";
@@ -91,18 +91,19 @@ export class VulkanTextures {
         if (shadow === null) {
             return;
         }
-        const rowBytes = blocksAcross(facts.width, layout) * layout.blockBytes;
-        const sourceRowBytes = blocksAcross((copy.rowLength !== 0) ? copy.rowLength : copy.width, layout) * layout.blockBytes;
-        const copiedRowBytes = blocksAcross(copy.width, layout) * layout.blockBytes;
-        const rows = blocksDown(copy.height, layout);
+        const footprint = textureFootprint(layout.format);
+        const rowBytes = blocksAcross(facts.width, footprint) * footprint.bytes;
+        const sourceRowBytes = blocksAcross((copy.rowLength !== 0) ? copy.rowLength : copy.width, footprint) * footprint.bytes;
+        const copiedRowBytes = blocksAcross(copy.width, footprint) * footprint.bytes;
+        const rows = blocksDown(copy.height, footprint);
         let region: Uint8Array;
         try {
             region = new Uint8Array(source.read(copy.bufferOffset, sourceRowBytes * (rows - 1) + copiedRowBytes));
         } catch {
             return;
         }
-        const firstRow = copy.y / layout.blockHeight;
-        const firstByte = copy.x / layout.blockWidth * layout.blockBytes;
+        const firstRow = copy.y / footprint.height;
+        const firstByte = copy.x / footprint.width * footprint.bytes;
         for (let row = 0; row !== rows; row++) {
             const start = row * sourceRowBytes;
             shadow.bytes.set(region.subarray(start, start + copiedRowBytes), (firstRow + row) * rowBytes + firstByte);
@@ -179,8 +180,9 @@ export class VulkanTextures {
         if (layout === null) {
             return null;
         }
-        const rowBytes = blocksAcross(facts.width, format) * format.blockBytes;
-        const rows = blocksDown(facts.height, format);
+        const footprint = textureFootprint(format.format);
+        const rowBytes = blocksAcross(facts.width, footprint) * footprint.bytes;
+        const rows = blocksDown(facts.height, footprint);
         const readRow = (row: number): ArrayBuffer => {
             const offset = facts.memoryOffset + layout.offset + row * layout.rowPitch;
             if (memory === null) {
@@ -213,7 +215,7 @@ export class VulkanTextures {
         if (existing !== undefined) {
             return existing;
         }
-        const size = blocksAcross(facts.width, layout) * blocksDown(facts.height, layout) * layout.blockBytes;
+        const size = textureByteLength(layout.format, facts.width, facts.height);
         if (size > LARGEST_SHADOW || this.#shadowBytes + size > SHADOW_BUDGET) {
             return null;
         }
@@ -282,10 +284,10 @@ function hexOf(handle: UInt64): string {
     return `0x${handle.toString(16)}`;
 }
 
-function blocksAcross(width: number, format: VulkanTextureFormat): number {
-    return Math.ceil(width / format.blockWidth);
+function blocksAcross(width: number, footprint: TextureFootprint): number {
+    return Math.ceil(width / footprint.width);
 }
 
-function blocksDown(height: number, format: VulkanTextureFormat): number {
-    return Math.ceil(height / format.blockHeight);
+function blocksDown(height: number, footprint: TextureFootprint): number {
+    return Math.ceil(height / footprint.height);
 }

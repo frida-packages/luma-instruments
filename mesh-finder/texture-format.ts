@@ -50,7 +50,7 @@ export type AstcFootprint =
 
 export type TextureFormat = PlainFormat | BlockFormat;
 
-interface Footprint {
+export interface TextureFootprint {
     width: number;
     height: number;
     bytes: number;
@@ -86,11 +86,11 @@ const plainTexelBytes: Record<PlainFormat, number> = {
 const eightByteBlocks = new Set<TextureFormat>(["bc1", "bc4unorm", "bc4snorm", "etc2rgb8", "etc2rgb8a1", "eacr11"]);
 
 export function textureByteLength(format: TextureFormat, width: number, height: number): number {
-    const footprint = footprintOf(format);
+    const footprint = textureFootprint(format);
     return Math.ceil(width / footprint.width) * Math.ceil(height / footprint.height) * footprint.bytes;
 }
 
-function footprintOf(format: TextureFormat): Footprint {
+export function textureFootprint(format: TextureFormat): TextureFootprint {
     if (format in plainTexelBytes) {
         return { width: 1, height: 1, bytes: plainTexelBytes[format as PlainFormat] };
     }
