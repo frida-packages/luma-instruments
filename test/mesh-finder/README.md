@@ -8,8 +8,8 @@ way each:
 
 | Mesh | Direct3D 11 | Metal | OpenGL |
 | --- | --- | --- | --- |
-| cube | immutable, interleaved position, normal and uv, 16-bit indices, `DrawIndexed`, an RGBA8 albedo and a normal map | interleaved position, normal and uv, 16-bit indices, a BGRA8 sRGB `albedo` and an RGBA8 `normalMap` bound with `setFragmentTextures:withRange:` | the same, `glDrawElements` |
-| sphere | `UpdateSubresource`, positions alone at an offset, normals and uvs in a second stream, 32-bit indices at an offset, a BC1 albedo | positions alone, at an offset in their buffer, 32-bit indices | the same, with the indices at an offset too |
+| cube | immutable, interleaved position, normal and uv, 16-bit indices, `DrawIndexed`, an RGBA8 albedo and a normal map | interleaved position, normal and uv, 16-bit indices, a BGRA8 sRGB `albedo` and an RGBA8 `normalMap` bound with `setFragmentTextures:withRange:` | the same, `glDrawElements`, with an 8 × 4 `GL_RGBA8` `u_albedo` and a `u_normalMap` |
+| sphere | `UpdateSubresource`, positions alone at an offset, normals and uvs in a second stream, 32-bit indices at an offset, a BC1 albedo | positions alone, at an offset in their buffer, 32-bit indices | the same, with the indices at an offset too, uvs beside the normals, and an 8 × 8 DXT1 `u_albedo` |
 | torus | dynamic, filled with `Map`, base vertex 7, `DrawIndexedInstancedIndirect` | pulled by the shader, no vertex descriptor | interleaved, `glDrawRangeElements` |
 | ribbon | triangle strip, `Draw` | triangle strip, not indexed, a BC1 `albedo` | the same, `glDrawArrays` |
 | octahedron | four floats per position, drawn on a deferred context | not indexed, four floats per position | the same, in a VAO it shares |
@@ -195,6 +195,10 @@ recording them took.
 window: in a surfaceless desktop OpenGL 3.3 core context, or in an OpenGL ES
 3 context current on a pbuffer. The sphere's positions and indices are
 copied into their buffers with `glCopyBufferSubData` from staging buffers.
+OpenGL ES has no way to read a compressed texture back, so there the sphere's
+albedo is ETC2, uploaded on `SIGUSR1` with `glTexStorage2D` and a
+`glCompressedTexSubImage2D` for each row of blocks, and the sphere is drawn
+from then on.
 It takes its functions from the library's exports, as a program linked
 against it would call them, or from `eglGetProcAddress`, as glad does, and
 the two are different functions:

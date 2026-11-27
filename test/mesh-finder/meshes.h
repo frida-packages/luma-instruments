@@ -26,11 +26,19 @@ typedef enum { PRESENCE_LISTED, PRESENCE_ABSENT } Presence;
 
 static const char *const presence_names[] = { "listed", "absent" };
 
+typedef struct {
+    uint32_t width;
+    uint32_t height;
+    const char *format;
+    uint8_t corners[4][4];
+} TextureExpectation;
+
 char mesh_finder_expectations[16384];
 
 static Mesh mesh_alloc(const char *name, uint32_t vertex_count, uint32_t index_count);
 static void set_vertex(Vertex *v, float x, float y, float z, float nx, float ny, float nz, float u, float t);
 static void record_expectation(const Mesh *mesh, const char *how, uint32_t triangle_count, Contents contents, Presence presence);
+static void used_range(const Mesh *mesh, uint32_t *first, uint32_t *last);
 
 static Mesh make_cube(const char *name, float cx, float cy, float cz)
 {
@@ -185,6 +193,20 @@ static void expect(const Mesh *mesh, const char *how, uint32_t triangle_count, C
     record_expectation(mesh, how, triangle_count, contents, PRESENCE_LISTED);
 }
 
+static void expect_texture(const Mesh *mesh, const TextureExpectation *texture)
+{
+    uint32_t first, last;
+    used_range(mesh, &first, &last);
+    size_t used = strlen(mesh_finder_expectations) - 1;
+    const uint8_t (*c)[4] = texture->corners;
+    const float *a = mesh->vertices[first].uv, *b = mesh->vertices[first + 1].uv, *d = mesh->vertices[first + 2].uv;
+    snprintf(mesh_finder_expectations + used, sizeof(mesh_finder_expectations) - used,
+        ",\"texture\":{\"width\":%u,\"height\":%u,\"format\":\"%s\",\"corners\":[[%u,%u,%u,%u],[%u,%u,%u,%u],[%u,%u,%u,%u],[%u,%u,%u,%u]]},"
+        "\"texcoords\":[[%g,%g],[%g,%g],[%g,%g]]}",
+        texture->width, texture->height, texture->format, c[0][0], c[0][1], c[0][2], c[0][3], c[1][0], c[1][1], c[1][2], c[1][3],
+        c[2][0], c[2][1], c[2][2], c[2][3], c[3][0], c[3][1], c[3][2], c[3][3], a[0], a[1], b[0], b[1], d[0], d[1]);
+}
+
 static Mesh mesh_alloc(const char *name, uint32_t vertex_count, uint32_t index_count)
 {
     Mesh mesh = { name, calloc(vertex_count, sizeof(Vertex)), vertex_count, calloc(index_count ? index_count : 1, 4), index_count };
@@ -200,15 +222,8 @@ static void set_vertex(Vertex *v, float x, float y, float z, float nx, float ny,
 
 static void record_expectation(const Mesh *mesh, const char *how, uint32_t triangle_count, Contents contents, Presence presence)
 {
-    uint32_t first = 0, last = mesh->vertex_count - 1;
-    if (mesh->index_count != 0) {
-        first = UINT32_MAX;
-        last = 0;
-        for (uint32_t i = 0; i != mesh->index_count; i++) {
-            first = (mesh->indices[i] < first) ? mesh->indices[i] : first;
-            last = (mesh->indices[i] > last) ? mesh->indices[i] : last;
-        }
-    }
+    uint32_t first, last;
+    used_range(mesh, &first, &last);
     float lo[3] = { INFINITY, INFINITY, INFINITY }, hi[3] = { -INFINITY, -INFINITY, -INFINITY };
     for (uint32_t i = first; i <= last; i++) {
         for (int k = 0; k != 3; k++) {
@@ -223,4 +238,18 @@ static void record_expectation(const Mesh *mesh, const char *how, uint32_t trian
         "\"min\":[%g,%g,%g],\"max\":[%g,%g,%g],\"first\":[[%g,%g,%g],[%g,%g,%g],[%g,%g,%g]]}",
         used == 0 ? "" : ",", mesh->name, how, last - first + 1, triangle_count, contents_names[contents], presence_names[presence],
         lo[0], lo[1], lo[2], hi[0], hi[1], hi[2], a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2]);
+}
+
+static void used_range(const Mesh *mesh, uint32_t *first, uint32_t *last)
+{
+    *first = 0;
+    *last = mesh->vertex_count - 1;
+    if (mesh->index_count != 0) {
+        *first = UINT32_MAX;
+        *last = 0;
+        for (uint32_t i = 0; i != mesh->index_count; i++) {
+            *first = (mesh->indices[i] < *first) ? mesh->indices[i] : *first;
+            *last = (mesh->indices[i] > *last) ? mesh->indices[i] : *last;
+        }
+    }
 }

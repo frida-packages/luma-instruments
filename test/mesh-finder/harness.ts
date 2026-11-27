@@ -378,7 +378,8 @@ function hookCandidates(): NativePointer[] {
             }
         }
         const gl = Process.findModuleByName("libGL.dylib");
-        for (const name of ["glDrawElements", "glDrawArrays", "glBufferData", "glVertexAttribPointer", "glUnmapBuffer"]) {
+        for (const name of ["glDrawElements", "glDrawArrays", "glBufferData", "glVertexAttribPointer", "glUnmapBuffer", "glTexImage2D",
+            "glCompressedTexImage2D", "glCompressedTexSubImage2D", "glDeleteTextures"]) {
             const address = gl?.findExportByName(name) ?? null;
             if (address !== null) {
                 candidates.push(address);
