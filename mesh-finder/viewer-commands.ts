@@ -39,7 +39,7 @@ export class ViewerCommands {
         const [verb, argument] = text.trim().replace(/^>\s*/, "").split(/\s+/);
         switch (verb) {
             case "show":
-                this.#withMesh(argument, reply, mesh => this.#display.showMesh(mesh));
+                this.#withMesh(argument, reply, mesh => this.#show(mesh, reply));
                 break;
             case "obj":
                 this.#withMesh(argument, reply, mesh => offerObj(mesh, reply));
@@ -55,7 +55,14 @@ export class ViewerCommands {
                 reply.output(help);
                 break;
             default:
-                this.#withMesh(verb, reply, mesh => this.#display.showMesh(mesh));
+                this.#withMesh(verb, reply, mesh => this.#show(mesh, reply));
+        }
+    }
+
+    #show(mesh: Mesh, reply: Reply): void {
+        const picture = this.#display.showMesh(mesh);
+        if (picture.kind === "not-shown") {
+            reply.error(`${meshTitle(mesh)}: ${picture.reason}`);
         }
     }
 

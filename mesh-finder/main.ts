@@ -15,7 +15,7 @@ export const instrument: CustomInstrument = {
         const progress = { note: (text: string) => viewer.appendOutput(text) };
         const table = new MeshTable(ctx.widget("meshes"), settings);
         const catalog = new MeshCatalog(table);
-        const display = new MeshDisplay(ctx.widget("mesh"), viewer);
+        const display = new MeshDisplay(ctx.widget("mesh"));
         const finder = new MeshFinder(catalog, settings, progress);
         const apis = new GraphicsApis(backends, finder, settings, progress, table);
         const commands = new ViewerCommands(catalog, display, apis);

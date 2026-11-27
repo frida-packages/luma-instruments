@@ -22,6 +22,7 @@ Class {
 		'triangleCount',
 		'title',
 		'remark',
+		'facts',
 		'dragStart',
 		'dragFrom',
 		'gesture'
@@ -44,6 +45,7 @@ MeshView >> openIn: aContext [
 	triangleCount := 0.
 	title := 'Mesh'.
 	remark := ''.
+	facts := #().
 	self reset.
 	self show
 ]
@@ -54,8 +56,9 @@ MeshView >> state: aValue data: someBytes [
 	vertexCount := aValue at: 'vertices'.
 	triangleCount := aValue at: 'triangles' ifAbsent: [ 0 ].
 	title := aValue at: 'title' ifAbsent: [ 'Mesh' ].
-	remark := ''.
-	self take: someBytes.
+	remark := aValue at: 'unshown' ifAbsent: [ '' ].
+	facts := (aValue at: 'details' ifAbsent: [ #() ]) collect: [ :each | each first -> each last ].
+	vertexCount > 0 ifTrue: [ self take: someBytes ].
 	self reset.
 	self show
 ]
@@ -101,10 +104,7 @@ MeshView >> gtDetailsFor: aView [
 
 { #category : 'accessing' }
 MeshView >> details [
-	^ {
-		'Title' -> title.
-		'Vertices' -> vertexCount printString.
-		'Triangles' -> triangleCount printString.
+	^ { 'Title' -> title. 'Vertices' -> vertexCount printString. 'Triangles' -> triangleCount printString } , facts , {
 		'Mode' -> mode.
 		'Zoom' -> (zoom printShowingDecimalPlaces: 2).
 		'Remark' -> remark }
@@ -183,6 +183,7 @@ MeshView >> forget [
 	triangleCount := 0.
 	title := 'Waiting for a mesh'.
 	remark := ''.
+	facts := #().
 	self show
 ]
 

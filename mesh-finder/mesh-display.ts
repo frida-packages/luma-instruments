@@ -2,9 +2,8 @@ import { describeLayout, type Bounds, type Mesh } from "./mesh.js";
 import { compact, learnedFrom, meshTitle, sizeOf, whyUnreadable } from "./mesh-table.js";
 
 type MeshView = CustomInstrumentWidgetMap["mesh"];
-type Console = CustomInstrumentWidgetMap["viewer"];
 
-type Picture = { kind: "shown" } | { kind: "not-shown"; reason: string };
+export type Picture = { kind: "shown" } | { kind: "not-shown"; reason: string };
 
 const LARGEST_VIEW_DATA = 64 * 1048576;
 const BYTES_PER_VERTEX = 12;
@@ -12,12 +11,10 @@ const BYTES_PER_TRIANGLE = 12;
 
 export class MeshDisplay {
     readonly #view: MeshView;
-    readonly #console: Console;
     #selected: Mesh | null = null;
 
-    constructor(view: MeshView, console: Console) {
+    constructor(view: MeshView) {
         this.#view = view;
-        this.#console = console;
         view.setActionEnabled("obj", false);
     }
 
@@ -25,58 +22,67 @@ export class MeshDisplay {
         return this.#selected;
     }
 
-    showMesh(mesh: Mesh): void {
+    showMesh(mesh: Mesh): Picture {
         this.#selected = mesh;
         this.#view.setActionEnabled("obj", true);
-        const picture = this.#picture(mesh);
+        const title = `${meshTitle(mesh)} · ${mesh.api}`;
+        const details = detailsOf(mesh);
+        const picture = pictureOf(mesh);
         if (picture.kind === "not-shown") {
-            this.#view.clear();
-            this.#console.appendError(picture.reason);
-        }
-        this.#console.appendOutput(summaryOf(mesh, picture));
-    }
-
-    #picture(mesh: Mesh): Picture {
-        if (mesh.positions === null) {
-            return { kind: "not-shown", reason: `${meshTitle(mesh)} has nothing to show. ${whyUnreadable(mesh)}.` };
+            this.#view.setState({ vertices: 0, triangles: 0, title, details, unshown: picture.reason });
+            return picture;
         }
         const triangles = (mesh.indices !== null) ? mesh.indices.length / 3 : 0;
-        const size = mesh.vertexCount * BYTES_PER_VERTEX + triangles * BYTES_PER_TRIANGLE;
-        if (size > LARGEST_VIEW_DATA) {
-            return {
-                kind: "not-shown",
-                reason: `${meshTitle(mesh)} is too large to show: its positions and indices take ${mebibytes(size)} MiB, `
-                    + `more than the ${mebibytes(LARGEST_VIEW_DATA)} MiB a view can be handed.`,
-            };
-        }
-        const data = new ArrayBuffer(size);
-        new Float32Array(data, 0, mesh.vertexCount * 3).set(mesh.positions);
-        if (mesh.indices !== null) {
-            new Uint32Array(data, mesh.vertexCount * BYTES_PER_VERTEX, triangles * 3).set(mesh.indices);
-        }
-        this.#view.setState({ vertices: mesh.vertexCount, triangles, title: `${meshTitle(mesh)} · ${mesh.api}` }, data);
+        this.#view.setState({ vertices: mesh.vertexCount, triangles, title, details }, viewDataOf(mesh, triangles));
         this.#view.sendEvent({ say: learnedFrom(mesh) });
-        return { kind: "shown" };
+        return picture;
     }
 }
 
-function summaryOf(mesh: Mesh, picture: Picture): string {
-    const evidence = (mesh.evidence === "drawn") ? "seen drawn" : "found in memory, never seen drawn";
-    const lines = [`${meshTitle(mesh)}: ${mesh.api} mesh, ${evidence}`];
-    if (picture.kind === "not-shown") {
-        lines.push(countsOf(mesh));
+function pictureOf(mesh: Mesh): Picture {
+    if (mesh.positions === null) {
+        return { kind: "not-shown", reason: `Nothing to show. ${whyUnreadable(mesh)}.` };
     }
+    const size = viewDataSize(mesh, (mesh.indices !== null) ? mesh.indices.length / 3 : 0);
+    if (size > LARGEST_VIEW_DATA) {
+        return {
+            kind: "not-shown",
+            reason: `Too large to show: its positions and indices take ${mebibytes(size)} MiB, `
+                + `more than the ${mebibytes(LARGEST_VIEW_DATA)} MiB a view can be handed.`,
+        };
+    }
+    return { kind: "shown" };
+}
+
+function viewDataOf(mesh: Mesh, triangles: number): ArrayBuffer {
+    const data = new ArrayBuffer(viewDataSize(mesh, triangles));
+    new Float32Array(data, 0, mesh.vertexCount * 3).set(mesh.positions!);
+    if (mesh.indices !== null) {
+        new Uint32Array(data, mesh.vertexCount * BYTES_PER_VERTEX, triangles * 3).set(mesh.indices);
+    }
+    return data;
+}
+
+function viewDataSize(mesh: Mesh, triangles: number): number {
+    return mesh.vertexCount * BYTES_PER_VERTEX + triangles * BYTES_PER_TRIANGLE;
+}
+
+function detailsOf(mesh: Mesh): [string, string][] {
+    const details: [string, string][] = [
+        ["Found", (mesh.evidence === "drawn") ? "seen drawn" : "in memory, never seen drawn"],
+        ["Contents", countsOf(mesh)],
+    ];
     if (mesh.bounds !== null) {
-        lines.push(boundsOf(mesh.bounds));
+        details.push(["Bounds", boundsOf(mesh.bounds)]);
     }
     if (mesh.layout !== null) {
-        lines.push(`Positions: ${describeLayout(mesh.layout)}; ${mesh.layout.source}`);
+        details.push(["Positions", `${describeLayout(mesh.layout)}; ${mesh.layout.source}`]);
     }
-    lines.push(`Vertex buffer: ${placementText(mesh.vertexBuffer)}`);
+    details.push(["Vertex buffer", placementText(mesh.vertexBuffer)]);
     if (mesh.indexBuffer !== null) {
-        lines.push(`Index buffer: ${placementText(mesh.indexBuffer)}`);
+        details.push(["Index buffer", placementText(mesh.indexBuffer)]);
     }
-    return lines.join("\n");
+    return details;
 }
 
 function countsOf(mesh: Mesh): string {
@@ -88,7 +94,7 @@ function countsOf(mesh: Mesh): string {
 
 function boundsOf(bounds: Bounds): string {
     const center = [0, 1, 2].map(axis => (bounds.min[axis] + bounds.max[axis]) / 2) as [number, number, number];
-    return `Bounds: ${point(bounds.min)} to ${point(bounds.max)}, size ${sizeOf(bounds)}, center ${point(center)}`;
+    return `${point(bounds.min)} to ${point(bounds.max)}, size ${sizeOf(bounds)}, center ${point(center)}`;
 }
 
 function placementText(placement: Mesh["vertexBuffer"]): string {

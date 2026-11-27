@@ -24,8 +24,8 @@ interface Expectation {
 }
 
 interface ViewState {
-    value: { vertices: number; triangles: number; title: string };
-    data: ArrayBuffer;
+    value: { vertices: number; triangles: number; title: string; unshown?: string };
+    data: ArrayBuffer | undefined;
 }
 
 interface Target {
@@ -432,7 +432,11 @@ function problemShowing(handle: CustomInstrumentHandle, expected: Expectation, r
     lastViewState = null;
     handle.onAction!({ widget: "meshes", action: "show", item: row.id }, respond);
     if (expected.contents !== "cpu-visible") {
-        return (lastViewState === null) ? null : "a mesh with no CPU contents was handed to the viewer";
+        const told = lastViewState as ViewState | null;
+        if (told === null || told.data !== undefined) {
+            return "a mesh with no CPU contents was not shown as empty";
+        }
+        return (typeof told.value.unshown === "string") ? null : "the viewer was not told why the mesh has nothing to show";
     }
     const shown = lastViewState as ViewState | null;
     if (shown === null) {
@@ -441,6 +445,9 @@ function problemShowing(handle: CustomInstrumentHandle, expected: Expectation, r
     const { vertices, triangles } = shown.value;
     if (vertices !== expected.vertices || triangles !== expected.triangles) {
         return `the viewer was told ${vertices} vertices and ${triangles} triangles`;
+    }
+    if (shown.data === undefined) {
+        return "the viewer was handed no data";
     }
     if (shown.data.byteLength !== (vertices + triangles) * 12) {
         return `the viewer was handed ${shown.data.byteLength} bytes for ${vertices} vertices and ${triangles} triangles`;

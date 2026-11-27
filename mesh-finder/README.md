@@ -171,22 +171,23 @@ declared by the API comes with a confidence.
 
 - Selecting a row puts its mesh in the **Mesh** view below the table, beside the
   console: drag to orbit, scroll or pinch to zoom, and pick Shaded, Wire or
-  Points. A line under its title says what its layout was learned from. The
-  console gets the details the picture does not show: its exact bounds and
-  center, the layout and why, and the buffers. Meshes with no CPU contents,
-  because they are in GPU-only storage or, with Vulkan, were bound to memory
-  before the instrument was added, have nothing to show, and meshes whose
-  positions and indices exceed the 64 MiB a view can be handed are refused; the
-  view is then left empty and the console says which. In a narrow window the console goes below the view, the
-  table shows 6 rows, and the page scrolls.
+  Points. A line under its title says what its layout was learned from. Its
+  **Details** tab lists what the picture does not show: whether the mesh was
+  seen drawn, what it holds, its exact bounds and center, the layout and why,
+  and the buffers. Meshes with no CPU contents, because they are in GPU-only
+  storage or, with Vulkan, were bound to memory before the instrument was added,
+  have nothing to show, and meshes whose positions and indices exceed the 64 MiB
+  a view can be handed are refused; the view is then left empty and says why. In
+  a narrow window the console goes below the view, the table shows 6 rows, and
+  the page scrolls.
 - **Export OBJ**, in the **Mesh** view's header, offers the selected mesh as a
   Wavefront OBJ file, ready to open in any 3D tool, and Luma asks where to save
   it. It is disabled until a mesh has been selected, and also works for a mesh
-  too large for the view. The file is named after the mesh as
-  the table names it, such as `#3 Cube vertices.obj`, with characters a file
-  name cannot have, such as `/` and `:`, made `-`. Point clouds are written as
-  `p` elements. Meshes that would make more than 64 MiB of OBJ are refused,
-  and the console says so.
+  too large for the view. The file is named after the mesh as the table names
+  it, such as `#3 Cube vertices.obj`, with characters a file name cannot have,
+  such as `/` and `:`, made `-`. Point clouds are written as `p` elements.
+  Meshes that would make more than 64 MiB of OBJ are refused, and the console
+  says so.
 
 **Scan**, in the table's header, looks for buffers again, such as after a new
 level has loaded. It is disabled while a search is under way, and while
