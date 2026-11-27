@@ -13,6 +13,8 @@ def main():
         return
     if sys.argv[1] == "--export":
         check_export()
+    if sys.argv[1] == "--probe":
+        probe(int(sys.argv[2]), float(sys.argv[3]))
     pid, out = int(sys.argv[1]), sys.argv[2]
     exploring = len(sys.argv) > 3
     bundle = build("explore.ts" if exploring else "harness.ts")
@@ -40,6 +42,17 @@ def check_export():
     script.unload()
     session.detach()
     sys.exit(1 if failures else 0)
+
+
+def probe(pid, seconds):
+    session = frida.attach(pid)
+    script = session.create_script(build("draw-probe.ts"))
+    script.on("message", print_message)
+    script.load()
+    script.exports_sync.probe(seconds)
+    script.unload()
+    session.detach()
+    sys.exit(0)
 
 
 def build(entry):
