@@ -8,28 +8,42 @@ static NSString *const shaderSource = @
     "#include <metal_stdlib>\n"
     "using namespace metal;\n"
     "struct Uniforms { float4x4 mvp; };\n"
-    "struct Out { float4 position [[position]]; float3 color; };\n"
+    "struct Out { float4 position [[position]]; float3 color; float2 uv; };\n"
     "struct Described { float3 position [[attribute(0)]]; float3 normal [[attribute(1)]]; };\n"
+    "struct Textured { float3 position [[attribute(0)]]; float3 normal [[attribute(1)]]; float2 uv [[attribute(2)]]; };\n"
     "struct PositionOnly { float3 position [[attribute(0)]]; };\n"
     "struct Pulled { packed_float3 position; packed_float3 normal; };\n"
     "vertex Out described_vertex(Described in [[stage_in]], constant Uniforms &u [[buffer(0)]]) {\n"
-    "    return { u.mvp * float4(in.position, 1), in.normal * 0.5 + 0.5 };\n"
+    "    return { u.mvp * float4(in.position, 1), in.normal * 0.5 + 0.5, float2(0) };\n"
+    "}\n"
+    "vertex Out textured_vertex(Textured in [[stage_in]], constant Uniforms &u [[buffer(0)]]) {\n"
+    "    return { u.mvp * float4(in.position, 1), in.normal * 0.5 + 0.5, in.uv };\n"
     "}\n"
     "vertex Out position_vertex(PositionOnly in [[stage_in]], constant Uniforms &u [[buffer(0)]]) {\n"
-    "    return { u.mvp * float4(in.position, 1), float3(1) };\n"
+    "    return { u.mvp * float4(in.position, 1), float3(1), float2(0) };\n"
     "}\n"
     "vertex Out pulled_vertex(uint vid [[vertex_id]], const device Pulled *vertices [[buffer(1)]], constant Uniforms &u [[buffer(0)]]) {\n"
     "    Pulled v = vertices[vid];\n"
-    "    return { u.mvp * float4(float3(v.position), 1), float3(v.normal) * 0.5 + 0.5 };\n"
+    "    return { u.mvp * float4(float3(v.position), 1), float3(v.normal) * 0.5 + 0.5, float2(0) };\n"
     "}\n"
-    "fragment float4 shade(Out in [[stage_in]]) { return float4(in.color, 1); }\n";
+    "fragment float4 shade(Out in [[stage_in]]) { return float4(in.color, 1); }\n"
+    "fragment float4 textured_shade(Out in [[stage_in]], texture2d<float> albedo [[texture(0)]], texture2d<float> normalMap [[texture(1)]]) {\n"
+    "    constexpr sampler linear(filter::linear);\n"
+    "    float3 normal = normalMap.sample(linear, in.uv).xyz * 2 - 1;\n"
+    "    return albedo.sample(linear, in.uv) * float4(in.color * max(normal.z, 0.5), 1);\n"
+    "}\n";
 
 static volatile sig_atomic_t late_upload_requested;
 
 enum {
     UNIFORM_SLOT = 0, VERTEX_SLOT = 1, ATTRIBUTE_SLOT = 2, UNIFORM_STRIDE = 256, SCRATCH_LENGTH = 4 * 1024 * 1024, SCRATCH_COUNT = 2,
-    SPHERE_OFFSET = 256,
+    SPHERE_OFFSET = 256, CUBE_ALBEDO_WIDTH = 8, CUBE_ALBEDO_HEIGHT = 4, RIBBON_ALBEDO_WIDTH = 16, RIBBON_ALBEDO_HEIGHT = 8,
+    ALBEDO_SLOT = 0, NORMAL_MAP_SLOT = 1,
 };
+
+static const uint8_t cubeAlbedoCorners[4][4] = { { 255, 0, 0, 255 }, { 0, 255, 0, 255 }, { 0, 0, 255, 255 }, { 255, 255, 255, 128 } };
+static const uint16_t ribbonAlbedoCorners565[4] = { 0xf800, 0x07e0, 0x001f, 0xffe0 };
+static const uint8_t ribbonAlbedoCorners[4][4] = { { 255, 0, 0, 255 }, { 0, 255, 0, 255 }, { 0, 0, 255, 255 }, { 255, 255, 0, 255 } };
 
 @interface Scene : NSObject
 @property (nonatomic, strong) id<MTLDevice> device;
@@ -56,6 +70,7 @@ enum {
 @property (nonatomic, strong) id<MTLBuffer> privateVertices, privateIndices;
 @property (nonatomic, strong) id<MTLBuffer> hiddenVertices, hiddenIndices;
 @property (nonatomic, strong) id<MTLBuffer> lateVertices, lateIndices;
+@property (nonatomic, strong) id<MTLTexture> cubeAlbedo, normalMap, ribbonAlbedo, privateAlbedo;
 - (instancetype)initWithRepeats:(int)repeats;
 - (double)renderFrame;
 @end
@@ -65,6 +80,7 @@ static uint16_t *batched_indices16(const Mesh *first, const Mesh *second);
 static uint16_t *half_positions(const Mesh *mesh);
 static uint16_t half_of(float value);
 static void expect_absent(const Mesh *mesh, const char *how, uint32_t triangle_count);
+static void expect_texture(const Mesh *mesh, uint32_t width, uint32_t height, const char *format, const uint8_t corners[4][4]);
 static double elapsedMilliseconds(uint64_t start);
 
 int main(int argc, char **argv)
@@ -139,6 +155,7 @@ int main(int argc, char **argv)
 
     [self buildPipelines];
     [self uploadMeshes];
+    [self uploadTextures];
     return self;
 }
 
@@ -149,7 +166,7 @@ int main(int argc, char **argv)
         [self uploadLateMesh];
     }
     if (_frame % 120 == 119) {
-        _interleaved = [self pipelineWithFunction:@"described_vertex" layout:[self interleavedLayout]];
+        _interleaved = [self pipelineWithFunction:@"textured_vertex" fragment:@"textured_shade" layout:[self interleavedLayout]];
     }
     MTLRenderPassDescriptor *pass = [MTLRenderPassDescriptor renderPassDescriptor];
     pass.colorAttachments[0].texture = _target;
@@ -209,7 +226,7 @@ int main(int argc, char **argv)
 
 - (void)buildPipelines
 {
-    _interleaved = [self pipelineWithFunction:@"described_vertex" layout:[self interleavedLayout]];
+    _interleaved = [self pipelineWithFunction:@"textured_vertex" fragment:@"textured_shade" layout:[self interleavedLayout]];
     MTLVertexDescriptor *split = [MTLVertexDescriptor vertexDescriptor];
     split.attributes[0].format = MTLVertexFormatFloat3;
     split.attributes[0].bufferIndex = VERTEX_SLOT;
@@ -218,14 +235,14 @@ int main(int argc, char **argv)
     split.attributes[1].bufferIndex = ATTRIBUTE_SLOT;
     split.layouts[VERTEX_SLOT].stride = 12;
     split.layouts[ATTRIBUTE_SLOT].stride = sizeof(Vertex);
-    _splitStreams = [self pipelineWithFunction:@"described_vertex" layout:split];
-    _pulled = [self pipelineWithFunction:@"pulled_vertex" layout:nil];
-    _paddedPositions = [self pipelineWithFunction:@"position_vertex" layout:[self positionLayoutWithStride:16]];
-    _packedPositions = [self pipelineWithFunction:@"position_vertex" layout:[self positionLayoutWithStride:12]];
-    _batched = [self pipelineWithFunction:@"described_vertex" layout:[self interleavedLayout]];
+    _splitStreams = [self pipelineWithFunction:@"described_vertex" fragment:@"shade" layout:split];
+    _pulled = [self pipelineWithFunction:@"pulled_vertex" fragment:@"shade" layout:nil];
+    _paddedPositions = [self pipelineWithFunction:@"position_vertex" fragment:@"shade" layout:[self positionLayoutWithStride:16]];
+    _packedPositions = [self pipelineWithFunction:@"position_vertex" fragment:@"shade" layout:[self positionLayoutWithStride:12]];
+    _batched = [self pipelineWithFunction:@"described_vertex" fragment:@"shade" layout:[self interleavedLayout]];
     MTLVertexDescriptor *half = [self positionLayoutWithStride:8];
     half.attributes[0].format = MTLVertexFormatHalf3;
-    _halfPositions = [self pipelineWithFunction:@"position_vertex" layout:half];
+    _halfPositions = [self pipelineWithFunction:@"position_vertex" fragment:@"shade" layout:half];
 }
 
 - (void)uploadMeshes
@@ -312,10 +329,12 @@ int main(int argc, char **argv)
     free(halfPositions);
     free(halfIndices);
 
-    expect(&_cube, "interleaved position, normal and uv; 16-bit indices; vertex descriptor", 12, 1);
+    expect(&_cube, "interleaved position, normal and uv; 16-bit indices; vertex descriptor; BGRA8 sRGB albedo and a normal map", 12, 1);
+    expect_texture(&_cube, CUBE_ALBEDO_WIDTH, CUBE_ALBEDO_HEIGHT, "bgra8unorm", cubeAlbedoCorners);
     expect(&_sphere, "positions alone in their own buffer at an offset; 32-bit indices; vertex descriptor", _sphere.index_count / 3, 1);
     expect(&_torus, "vertex pulling with no vertex descriptor; 16-bit indices", _torus.index_count / 3, 1);
-    expect(&_ribbon, "triangle strip, not indexed", _ribbon.vertex_count - 2, 1);
+    expect(&_ribbon, "triangle strip, not indexed; BC1 albedo", _ribbon.vertex_count - 2, 1);
+    expect_texture(&_ribbon, RIBBON_ALBEDO_WIDTH, RIBBON_ALBEDO_HEIGHT, "bc1", ribbonAlbedoCorners);
     expect(&_octahedron, "triangle list, not indexed, 16-byte stride", 8, 1);
     expect(&_pyramid, "setVertexBytes, not indexed", 6, 1);
     expect(&_privateCube, "private storage", 12, 0);
@@ -326,6 +345,67 @@ int main(int argc, char **argv)
     expect(&_batchedTorus, "second of two meshes in one vertex buffer, indices rewritten every frame; pipeline made before attach",
         _batchedTorus.index_count / 3, 1);
     expect_absent(&_halfSphere, "half-float positions; pipeline made before attach", _halfSphere.index_count / 3);
+}
+
+- (void)uploadTextures
+{
+    uint8_t cubeTexels[CUBE_ALBEDO_HEIGHT][CUBE_ALBEDO_WIDTH][4];
+    for (int y = 0; y != CUBE_ALBEDO_HEIGHT; y++) {
+        for (int x = 0; x != CUBE_ALBEDO_WIDTH; x++) {
+            int corner = (x == CUBE_ALBEDO_WIDTH - 1) + 2 * (y == CUBE_ALBEDO_HEIGHT - 1);
+            BOOL isCorner = (x == 0 || x == CUBE_ALBEDO_WIDTH - 1) && (y == 0 || y == CUBE_ALBEDO_HEIGHT - 1);
+            const uint8_t gray[4] = { 128, 128, 128, 255 };
+            const uint8_t *rgba = isCorner ? cubeAlbedoCorners[corner] : gray;
+            uint8_t bgra[4] = { rgba[2], rgba[1], rgba[0], rgba[3] };
+            memcpy(cubeTexels[y][x], bgra, 4);
+        }
+    }
+    _cubeAlbedo = [self textureWithFormat:MTLPixelFormatBGRA8Unorm_sRGB width:CUBE_ALBEDO_WIDTH height:CUBE_ALBEDO_HEIGHT
+                                    bytes:cubeTexels bytesPerRow:CUBE_ALBEDO_WIDTH * 4 label:@"Cube albedo"];
+
+    uint8_t flatNormals[4][4][4];
+    for (int i = 0; i != 16; i++) {
+        memcpy(flatNormals[i / 4][i % 4], (uint8_t[4]) { 128, 128, 255, 255 }, 4);
+    }
+    _normalMap = [self textureWithFormat:MTLPixelFormatRGBA8Unorm width:4 height:4 bytes:flatNormals bytesPerRow:16 label:@"Normal map"];
+
+    enum { COLUMNS = RIBBON_ALBEDO_WIDTH / 4, ROWS = RIBBON_ALBEDO_HEIGHT / 4 };
+    uint16_t blocks[ROWS][COLUMNS][4] = { 0 };
+    for (int row = 0; row != ROWS; row++) {
+        for (int column = 0; column != COLUMNS; column++) {
+            int corner = (column == COLUMNS - 1) + 2 * (row == ROWS - 1);
+            BOOL isCorner = (column == 0 || column == COLUMNS - 1) && (row == 0 || row == ROWS - 1);
+            blocks[row][column][0] = isCorner ? ribbonAlbedoCorners565[corner] : 0x8410;
+        }
+    }
+    _ribbonAlbedo = [self textureWithFormat:MTLPixelFormatBC1_RGBA width:RIBBON_ALBEDO_WIDTH height:RIBBON_ALBEDO_HEIGHT
+                                      bytes:blocks bytesPerRow:COLUMNS * 8 label:@"Ribbon albedo"];
+
+    MTLTextureDescriptor *descriptor = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm
+                                                                                          width:4
+                                                                                         height:4
+                                                                                      mipmapped:NO];
+    descriptor.storageMode = MTLStorageModePrivate;
+    _privateAlbedo = [_device newTextureWithDescriptor:descriptor];
+    _privateAlbedo.label = @"Private albedo";
+}
+
+- (id<MTLTexture>)textureWithFormat:(MTLPixelFormat)format
+                              width:(NSUInteger)width
+                             height:(NSUInteger)height
+                              bytes:(const void *)bytes
+                        bytesPerRow:(NSUInteger)bytesPerRow
+                              label:(NSString *)label
+{
+    MTLTextureDescriptor *descriptor = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:format
+                                                                                          width:width
+                                                                                         height:height
+                                                                                      mipmapped:NO];
+    descriptor.storageMode = MTLStorageModeShared;
+    id<MTLTexture> texture = [_device newTextureWithDescriptor:descriptor];
+    [texture replaceRegion:MTLRegionMake2D(0, 0, width, height) mipmapLevel:0 withBytes:bytes bytesPerRow:bytesPerRow];
+    texture.label = label;
+    return texture;
 }
 
 - (void)uploadLateMesh
@@ -342,16 +422,22 @@ int main(int argc, char **argv)
 {
     [encoder setRenderPipelineState:_interleaved];
     uniformsForNextDraw();
+    id<MTLTexture> cubeTextures[2] = { _cubeAlbedo, _normalMap };
+    [encoder setFragmentTextures:cubeTextures withRange:NSMakeRange(ALBEDO_SLOT, 2)];
     [encoder setVertexBuffer:_cubeVertices offset:0 atIndex:VERTEX_SLOT];
     [encoder drawIndexedPrimitives:MTLPrimitiveTypeTriangle indexCount:_cube.index_count indexType:MTLIndexTypeUInt16
                        indexBuffer:_cubeIndices indexBufferOffset:0];
     uniformsForNextDraw();
+    [encoder setFragmentTexture:_ribbonAlbedo atIndex:ALBEDO_SLOT];
     [encoder setVertexBuffer:_ribbonVertices offset:0 atIndex:VERTEX_SLOT];
     [encoder drawPrimitives:MTLPrimitiveTypeTriangleStrip vertexStart:0 vertexCount:_ribbon.vertex_count];
     uniformsForNextDraw();
+    [encoder setFragmentTexture:_privateAlbedo atIndex:ALBEDO_SLOT];
     [encoder setVertexBuffer:_privateVertices offset:0 atIndex:VERTEX_SLOT];
     [encoder drawIndexedPrimitives:MTLPrimitiveTypeTriangle indexCount:_privateCube.index_count indexType:MTLIndexTypeUInt16
                        indexBuffer:_privateIndices indexBufferOffset:0 instanceCount:1];
+    id<MTLTexture> unbound[2] = { nil, nil };
+    [encoder setFragmentTextures:unbound withRange:NSMakeRange(ALBEDO_SLOT, 2)];
 
     [encoder setRenderPipelineState:_splitStreams];
     uniformsForNextDraw();
@@ -407,11 +493,11 @@ int main(int argc, char **argv)
                        indexBuffer:_halfIndices indexBufferOffset:0];
 }
 
-- (id<MTLRenderPipelineState>)pipelineWithFunction:(NSString *)name layout:(MTLVertexDescriptor *)layout
+- (id<MTLRenderPipelineState>)pipelineWithFunction:(NSString *)name fragment:(NSString *)fragment layout:(MTLVertexDescriptor *)layout
 {
     MTLRenderPipelineDescriptor *descriptor = [MTLRenderPipelineDescriptor new];
     descriptor.vertexFunction = [_library newFunctionWithName:name];
-    descriptor.fragmentFunction = [_library newFunctionWithName:@"shade"];
+    descriptor.fragmentFunction = [_library newFunctionWithName:fragment];
     descriptor.vertexDescriptor = layout;
     descriptor.colorAttachments[0].pixelFormat = MTLPixelFormatBGRA8Unorm;
     descriptor.depthAttachmentPixelFormat = MTLPixelFormatDepth32Float;
@@ -432,6 +518,9 @@ int main(int argc, char **argv)
     layout.attributes[1].format = MTLVertexFormatFloat3;
     layout.attributes[1].offset = 12;
     layout.attributes[1].bufferIndex = VERTEX_SLOT;
+    layout.attributes[2].format = MTLVertexFormatFloat2;
+    layout.attributes[2].offset = 24;
+    layout.attributes[2].bufferIndex = VERTEX_SLOT;
     layout.layouts[VERTEX_SLOT].stride = sizeof(Vertex);
     return layout;
 }
@@ -497,6 +586,26 @@ static uint16_t half_of(float value)
 static void expect_absent(const Mesh *mesh, const char *how, uint32_t triangle_count)
 {
     record_expectation(mesh, how, triangle_count, CONTENTS_CPU_VISIBLE, PRESENCE_ABSENT);
+}
+
+static void expect_texture(const Mesh *mesh, uint32_t width, uint32_t height, const char *format, const uint8_t corners[4][4])
+{
+    uint32_t first = 0;
+    if (mesh->index_count != 0) {
+        first = UINT32_MAX;
+        for (uint32_t i = 0; i != mesh->index_count; i++) {
+            first = (mesh->indices[i] < first) ? mesh->indices[i] : first;
+        }
+    }
+    const float *a = mesh->vertices[first].uv, *b = mesh->vertices[first + 1].uv, *c = mesh->vertices[first + 2].uv;
+    size_t closing = strlen(mesh_finder_expectations) - 1;
+    snprintf(mesh_finder_expectations + closing, sizeof(mesh_finder_expectations) - closing,
+        ",\"texture\":{\"width\":%u,\"height\":%u,\"format\":\"%s\",\"corners\":[[%u,%u,%u,%u],[%u,%u,%u,%u],[%u,%u,%u,%u],[%u,%u,%u,%u]]},"
+        "\"texcoords\":[[%g,%g],[%g,%g],[%g,%g]]}",
+        width, height, format,
+        corners[0][0], corners[0][1], corners[0][2], corners[0][3], corners[1][0], corners[1][1], corners[1][2], corners[1][3],
+        corners[2][0], corners[2][1], corners[2][2], corners[2][3], corners[3][0], corners[3][1], corners[3][2], corners[3][3],
+        a[0], a[1], b[0], b[1], c[0], c[1]);
 }
 
 static double elapsedMilliseconds(uint64_t start)
