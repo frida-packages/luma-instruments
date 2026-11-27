@@ -259,6 +259,8 @@ function meshSpec({ vertices, layout }: Pairing, candidate: IndexCandidate): Mes
         vertexCount: usedVertices,
         firstVertex: candidate.firstVertex,
         indices: { bytes: candidate.bytes, format: candidate.format, placement: placementOf(candidate.buffer, 0) },
+        texcoords: null,
+        textures: [],
     };
 }
 
@@ -275,6 +277,8 @@ function pointCloudSpec(buffer: SnapshotBuffer, layout: GuessedLayout, vertexCou
         vertexCount,
         firstVertex: 0,
         indices: null,
+        texcoords: null,
+        textures: [],
     };
 }
 

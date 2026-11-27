@@ -213,6 +213,18 @@ guint64 gather_positions (const guint8 * data, guint64 count, guint64 stride, gu
   return non_finite;
 }
 
+void gather_texcoords (const guint8 * data, guint64 count, guint64 stride, guint32 type, float * out)
+{
+  guint32 size = component_sizes[type];
+  guint64 i;
+  for (i = 0; i != count; i++)
+  {
+    const guint8 * vertex = data + i * stride;
+    out[i * 2] = component_at (vertex, type);
+    out[i * 2 + 1] = component_at (vertex + size, type);
+  }
+}
+
 guint32 sample_positions (const guint8 * data, guint32 length, guint32 count, guint32 stride, guint32 offset, PositionSample * sample)
 {
   double steps[MOST_SAMPLED_POSITIONS];
@@ -403,6 +415,7 @@ const profile = new NativeFunction(kernels.profile_indices, "void", ["pointer", 
 const looksLikeMesh = new NativeFunction(kernels.looks_like_mesh_data, "uint32", ["pointer", "uint32"]);
 const gather = new NativeFunction(kernels.gather_positions, "uint64",
     ["pointer", "uint64", "uint64", "uint32", "uint32", "pointer", "pointer"]);
+const gatherUvs = new NativeFunction(kernels.gather_texcoords, "void", ["pointer", "uint64", "uint64", "uint32", "pointer"]);
 const sample = new NativeFunction(kernels.sample_positions, "uint32", ["pointer", "uint32", "uint32", "uint32", "uint32", "pointer"]);
 
 const RESTARTS_COUNTED = 0;
@@ -488,6 +501,12 @@ export function gatherPositions(vertices: ArrayBuffer, count: number, stride: nu
         max: [max[0], max[1], max[2]],
         nonFinite: nonFinite.toNumber(),
     };
+}
+
+export function gatherTexcoords(vertices: ArrayBuffer, count: number, stride: number, format: AttributeFormat): Float32Array {
+    const texcoords = new Float32Array(count * 2);
+    gatherUvs(vertices.unwrap(), count, stride, componentTypes.indexOf(format.component), texcoords.buffer.unwrap());
+    return texcoords;
 }
 
 function restartsOf(topology: Topology): number {

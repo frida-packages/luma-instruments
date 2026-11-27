@@ -1,5 +1,6 @@
-import { gatherPositions, sequentialIndices, triangleList } from "./geometry-kernels.js";
+import { gatherPositions, gatherTexcoords, sequentialIndices, triangleList } from "./geometry-kernels.js";
 import type { GpuBuffer, IndexFormat, Topology } from "./graphics-backend.js";
+import type { MeshTexture } from "./material.js";
 import { formatName, type AttributeFormat } from "./vertex-format.js";
 
 export type Evidence = "drawn" | "found";
@@ -20,6 +21,9 @@ export interface Mesh {
     topology: Topology;
     positions: Float32Array | null;
     indices: Uint32Array | null;
+    texcoords: Float32Array | null;
+    texcoordLayout: VertexLayout | null;
+    textures: MeshTexture[];
     vertexCount: number;
     triangleCount: number;
     bounds: Bounds | null;
@@ -62,6 +66,13 @@ export interface MeshSpec {
     vertexCount: number;
     firstVertex: number;
     indices: IndexSpec | null;
+    texcoords: TexcoordSpec | null;
+    textures: MeshTexture[];
+}
+
+export interface TexcoordSpec {
+    layout: VertexLayout;
+    bytes: ArrayBuffer;
 }
 
 export interface IndexSpec {
@@ -80,6 +91,7 @@ export interface UnreadableSpec {
     indexFormat: IndexFormat | null;
     vertexCount: number;
     primitiveCount: number;
+    textures: MeshTexture[];
 }
 
 export type UnnumberedMesh = Omit<Mesh, "id">;
@@ -100,6 +112,9 @@ export function buildMesh(spec: MeshSpec): UnnumberedMesh | null {
         topology: spec.topology,
         positions: gathered.positions,
         indices,
+        texcoords: (spec.texcoords !== null) ? texcoordsOf(spec.texcoords, spec.vertexCount) : null,
+        texcoordLayout: spec.texcoords?.layout ?? null,
+        textures: spec.textures,
         vertexCount: spec.vertexCount,
         triangleCount: (indices !== null) ? indices.length / 3 : 0,
         bounds: { min: gathered.min, max: gathered.max },
@@ -120,6 +135,9 @@ export function unreadableMesh(spec: UnreadableSpec): UnnumberedMesh {
         topology: spec.topology,
         positions: null,
         indices: null,
+        texcoords: null,
+        texcoordLayout: null,
+        textures: spec.textures,
         vertexCount: spec.vertexCount,
         triangleCount: spec.primitiveCount,
         bounds: null,
@@ -155,4 +173,8 @@ function triangleIndices(spec: MeshSpec): Uint32Array {
         return triangleList(spec.indices.bytes, spec.indices.format, spec.topology, spec.firstVertex);
     }
     return triangleList(sequentialIndices(spec.vertexCount), "uint32", spec.topology, 0);
+}
+
+function texcoordsOf(spec: TexcoordSpec, vertexCount: number): Float32Array {
+    return gatherTexcoords(spec.bytes, vertexCount, spec.layout.stride, spec.layout.format);
 }

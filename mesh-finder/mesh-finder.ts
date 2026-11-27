@@ -1,6 +1,7 @@
 import { indexRange, indexWidths } from "./geometry-kernels.js";
 import type { DrawCall, GeometryObserver, GpuBuffer, IndexBinding, AttributeLayout, VertexStream } from "./graphics-backend.js";
 import { guessDrawLayout, type VertexSpan } from "./layout-guess.js";
+import { texturesOf, type MeshTexture } from "./material.js";
 import {
     buildMesh,
     placementOf,
@@ -8,11 +9,13 @@ import {
     unreadableMesh,
     type Evidence,
     type MeshSpec,
+    type TexcoordSpec,
     type Unreadable,
     type VertexLayout,
 } from "./mesh.js";
 import { rankOf, type MeshCatalog } from "./mesh-catalog.js";
 import type { Settings } from "./settings.js";
+import type { TextureCatalog } from "./texture-catalog.js";
 import { analyzeUndrawnBuffers, snapshotCandidates } from "./undrawn-buffers.js";
 import { formatSize } from "./vertex-format.js";
 
@@ -32,6 +35,7 @@ const PAUSE_BETWEEN_SLICES_MS = 4;
 
 export class MeshFinder implements GeometryObserver {
     readonly #catalog: MeshCatalog;
+    readonly #textures: TextureCatalog;
     readonly #settings: Settings;
     readonly #progress: FinderProgress;
     readonly #work: Record<Evidence, Work[]> = { drawn: [], found: [] };
@@ -40,10 +44,12 @@ export class MeshFinder implements GeometryObserver {
 
     constructor(
         catalog: MeshCatalog,
+        textures: TextureCatalog,
         settings: Settings,
         progress: FinderProgress,
     ) {
         this.#catalog = catalog;
+        this.#textures = textures;
         this.#settings = settings;
         this.#progress = progress;
     }
@@ -100,7 +106,8 @@ export class MeshFinder implements GeometryObserver {
             this.#captureUnreadable(draw, positions.stream, span);
             return;
         }
-        this.#enqueue("drawn", this.#admitDrawn(drawnMeshSpec(draw, positions, span, indexBytes)));
+        const textures = this.#texturesOf(draw);
+        this.#enqueue("drawn", this.#admitDrawn(drawnMeshSpec(draw, positions, span, indexBytes, texcoordSpecOf(draw, span), textures)));
     }
 
     #guessedPositions(draw: DrawCall, span: VertexSpan): PlacedPositions | null {
@@ -135,7 +142,13 @@ export class MeshFinder implements GeometryObserver {
             indexFormat: draw.indices?.format ?? null,
             vertexCount: indexed ? 0 : span.last - span.first + 1,
             primitiveCount: primitiveCount(draw.topology, elementCount),
+            textures: this.#texturesOf(draw),
         }));
+    }
+
+    #texturesOf(draw: DrawCall): MeshTexture[] {
+        return texturesOf(draw.textures.map(binding => ({ slot: binding.slot, name: binding.name,
+            texture: this.#textures.capture(binding.texture) })));
     }
 
     *#admitDrawn(spec: MeshSpec): Work {
@@ -201,11 +214,12 @@ function declaredPositions(draw: DrawCall, declared: AttributeLayout): PlacedPos
     if (stream === undefined) {
         return null;
     }
-    return {
-        stream,
-        layout: { stride: stream.stride ?? declared.stride, offset: declared.offset, format: declared.format, knowledge: "declared",
-            confidence: 1, source: declared.source },
-    };
+    return { stream, layout: declaredLayout(stream, declared) };
+}
+
+function declaredLayout(stream: VertexStream, declared: AttributeLayout): VertexLayout {
+    return { stride: stream.stride ?? declared.stride, offset: declared.offset, format: declared.format, knowledge: "declared",
+        confidence: 1, source: declared.source };
 }
 
 function identityOf(draw: DrawCall, stream: VertexStream, span: VertexSpan): string {
@@ -236,8 +250,9 @@ function drawnMeshSpec(
     { stream, layout }: PlacedPositions,
     span: VertexSpan,
     indexBytes: ArrayBuffer | null,
+    texcoords: TexcoordSpec | null,
+    textures: MeshTexture[],
 ): MeshSpec {
-    const vertexCount = span.last - span.first + 1;
     return {
         identity: identityOf(draw, stream, span),
         api: draw.api,
@@ -245,12 +260,29 @@ function drawnMeshSpec(
         topology: draw.topology,
         layout,
         vertexBuffer: placementOf(stream.buffer, stream.offset),
-        vertexBytes: stream.buffer.read(stream.offset + span.first * layout.stride + layout.offset,
-            (vertexCount - 1) * layout.stride + formatSize(layout.format)),
-        vertexCount,
+        vertexBytes: spanBytes(stream, layout, span),
+        vertexCount: span.last - span.first + 1,
         firstVertex: span.first - ((draw.indices !== null) ? draw.baseVertex : 0),
         indices: (draw.indices !== null)
             ? { bytes: indexBytes!, format: draw.indices.format, placement: placementOf(draw.indices.buffer, draw.indices.offset) }
             : null,
+        texcoords,
+        textures,
     };
+}
+
+function texcoordSpecOf(draw: DrawCall, span: VertexSpan): TexcoordSpec | null {
+    const declared = draw.texcoord;
+    const stream = draw.streams.find(candidate => candidate.slot === declared?.slot);
+    if (declared === null || stream === undefined || stream.buffer.access !== "cpu-readable") {
+        return null;
+    }
+    const layout = declaredLayout(stream, declared);
+    return { layout, bytes: spanBytes(stream, layout, span) };
+}
+
+function spanBytes(stream: VertexStream, layout: VertexLayout, span: VertexSpan): ArrayBuffer {
+    const vertexCount = span.last - span.first + 1;
+    return stream.buffer.read(stream.offset + span.first * layout.stride + layout.offset,
+        (vertexCount - 1) * layout.stride + formatSize(layout.format));
 }
