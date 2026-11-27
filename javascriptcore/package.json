@@ -1,7 +1,7 @@
 {
   "name": "javascriptcore",
   "displayName": "JavaScriptCore",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "main": "main.ts",
   "engines": { "luma": ">=4.0.0" },
   "luma": {
