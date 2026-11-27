@@ -3,7 +3,7 @@
   "displayName": "Lua Hunter",
   "version": "1.1.1",
   "main": "main.ts",
-  "engines": { "luma": ">=4.0.0" },
+  "engines": { "luma": ">=4.1.0" },
   "luma": {
     "icon": { "kind": "file", "value": "icon.png" },
     "compatibility": { "platforms": ["windows", "darwin", "linux"] },
@@ -44,7 +44,8 @@
             { "id": "globals", "name": "Globals", "alignment": "leading" },
             { "id": "status", "name": "Status", "alignment": "leading" }
           ],
-          "rowActions": [{ "id": "show", "name": "Show" }],
+          "rowActions": [],
+          "rowActivation": { "id": "show", "name": "Show" },
           "maxRows": 256
         },
         "actions": [{ "id": "scan", "name": "Scan" }],

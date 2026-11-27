@@ -77,9 +77,10 @@ chunks are waiting for it, and whether it has been seen running, has not been
 seen running yet, was closed, or cannot run code. The table shows up to 6
 rows and then scrolls.
 
-Choose **Show** on a row to open that interpreter's page. **Scan**, in the
-table's header, does what `:scan` does; it is disabled while memory is being
-searched. `:scan` typed during a search asks for one more once it ends.
+Double-click a row, or select it and press Return, to open that interpreter's
+page. **Scan**, in the table's header, does what `:scan` does; it is disabled
+while memory is being searched. `:scan` typed during a search asks for one more
+once it ends.
 
 ## The consoles
 
