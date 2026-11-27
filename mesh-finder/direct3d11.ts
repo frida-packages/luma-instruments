@@ -1,6 +1,6 @@
 import { API, BufferDescriber, candidateBuffers, D3D11Buffer, releaseAll, type RetainedBuffer } from "./d3d11-buffers.js";
 import { ContextTap, type TappedDraw } from "./d3d11-context-tap.js";
-import { InputLayouts } from "./d3d11-input-layouts.js";
+import { InputLayouts, type DeclaredAttribute } from "./d3d11-input-layouts.js";
 import { LARGEST_PREFETCH, TurnReadback } from "./d3d11-readback.js";
 import { discoverRuntime, type D3D11Runtime } from "./d3d11-runtime.js";
 import type {
@@ -197,9 +197,9 @@ class Direct3D11Backend implements GraphicsBackend {
     }
 
     #onInputLayout(layout: NativePointer, elements: NativePointer, count: number): void {
-        const position = this.#layouts.learn(layout, elements, count);
+        const { position, texcoord } = this.#layouts.learn(layout, elements, count);
         if (position !== null) {
-            this.#tap.narrowLayout(layout, 1 << position.slot);
+            this.#tap.narrowLayout(layout, (1 << position.slot) | ((texcoord !== null) ? 1 << texcoord.slot : 0));
         }
     }
 
@@ -339,11 +339,8 @@ class Direct3D11Backend implements GraphicsBackend {
             offset: slot.offset,
             stride: (slot.stride !== 0) ? slot.stride : null,
         }));
-        const declared = draw.layout.isNull() ? undefined : this.#layouts.positionOf(draw.layout);
-        const positionStream = (declared != null) ? streams.find(stream => stream.slot === declared.slot) : undefined;
-        const position: AttributeLayout | null = (declared != null && positionStream !== undefined)
-            ? { ...declared, stride: positionStream.stride ?? 0 }
-            : null;
+        const declared = draw.layout.isNull() ? undefined : this.#layouts.attributesOf(draw.layout);
+        const position = attributeLayoutOf(declared?.position ?? null, streams);
         const tap = this.#tap;
         const call: DrawCall = {
             api: API,
@@ -351,7 +348,7 @@ class Direct3D11Backend implements GraphicsBackend {
             streams,
             bystanders: [],
             position,
-            texcoord: null,
+            texcoord: attributeLayoutOf(declared?.texcoord ?? null, streams),
             textures: [],
             indices: null,
             firstVertex: draw.startVertex,
@@ -391,6 +388,11 @@ class Direct3D11Backend implements GraphicsBackend {
 
 function contextsOf(runtime: D3D11Runtime): string {
     return `${runtime.liveContexts} live contexts, classes learned from a ${runtime.driver} device`;
+}
+
+function attributeLayoutOf(declared: DeclaredAttribute | null, streams: VertexStream[]): AttributeLayout | null {
+    const stream = (declared !== null) ? streams.find(candidate => candidate.slot === declared.slot) : undefined;
+    return (declared !== null && stream !== undefined) ? { ...declared, stride: stream.stride ?? 0 } : null;
 }
 
 function partitionByBudget(buffers: RetainedBuffer[], budget: number) {

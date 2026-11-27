@@ -1,7 +1,12 @@
 import { InputElementDesc } from "./d3d11-descriptions.pat";
 import { attributeFormat, type ComponentType, type AttributeFormat } from "./vertex-format.js";
 
-export interface DeclaredPosition {
+export interface DeclaredAttributes {
+    position: DeclaredAttribute | null;
+    texcoord: DeclaredAttribute | null;
+}
+
+export interface DeclaredAttribute {
     slot: number;
     offset: number;
     format: AttributeFormat;
@@ -17,16 +22,22 @@ interface InputElement {
     perVertex: boolean;
 }
 
+interface PlacedElement {
+    element: InputElement;
+    offset: number | null;
+}
+
 const APPEND_ALIGNED_ELEMENT = 0xffffffff;
 const PER_VERTEX_DATA = 0;
 const positionSemantics = /pos/i;
+const texcoordSemantic = /^texcoord$/i;
 
 const formatSizes = new Map<number, number>([
     ...range(1, 4, 16), ...range(5, 8, 12), ...range(9, 22, 8), ...range(23, 47, 4), ...range(48, 52, 2), ...range(53, 59, 2),
     ...range(60, 64, 1), ...range(87, 88, 4),
 ]);
 
-const positionFormats = new Map<number, [ComponentType, number]>([
+const attributeFormats = new Map<number, [ComponentType, number]>([
     [2, ["float32", 4]], [6, ["float32", 3]], [16, ["float32", 2]],
     [10, ["float16", 4]], [11, ["unorm16", 4]], [12, ["uint16", 4]], [13, ["snorm16", 4]], [14, ["sint16", 4]],
     [34, ["float16", 2]], [35, ["unorm16", 2]], [36, ["uint16", 2]], [37, ["snorm16", 2]], [38, ["sint16", 2]],
@@ -34,16 +45,16 @@ const positionFormats = new Map<number, [ComponentType, number]>([
 ]);
 
 export class InputLayouts {
-    readonly #positions = new Map<string, DeclaredPosition | null>();
+    readonly #attributes = new Map<string, DeclaredAttributes>();
 
-    learn(layout: NativePointer, elements: NativePointer, count: number): DeclaredPosition | null {
-        const position = declaredPosition(readElements(elements, count));
-        this.#positions.set(layout.toString(), position);
-        return position;
+    learn(layout: NativePointer, elements: NativePointer, count: number): DeclaredAttributes {
+        const attributes = declaredAttributes(readElements(elements, count));
+        this.#attributes.set(layout.toString(), attributes);
+        return attributes;
     }
 
-    positionOf(layout: NativePointer): DeclaredPosition | null | undefined {
-        return this.#positions.get(layout.toString());
+    attributesOf(layout: NativePointer): DeclaredAttributes | undefined {
+        return this.#attributes.get(layout.toString());
     }
 }
 
@@ -61,17 +72,22 @@ function readElements(elements: NativePointer, count: number): InputElement[] {
     });
 }
 
-function declaredPosition(elements: InputElement[]): DeclaredPosition | null {
+function declaredAttributes(elements: InputElement[]): DeclaredAttributes {
     const offsets = resolvedOffsets(elements);
-    const candidates = elements
+    const usable = elements
         .map((element, i) => ({ element, offset: offsets[i] }))
-        .filter(({ element, offset }) => element.perVertex && offset !== null && positionSemantics.test(element.semantic)
-            && positionFormats.has(element.format));
-    const chosen = candidates.find(({ element }) => element.semanticIndex === 0) ?? candidates[0];
+        .filter(({ element, offset }) => element.perVertex && offset !== null && attributeFormats.has(element.format));
+    const positions = usable.filter(({ element }) => positionSemantics.test(element.semantic));
+    const position = positions.find(({ element }) => element.semanticIndex === 0) ?? positions[0];
+    const texcoord = usable.find(({ element }) => texcoordSemantic.test(element.semantic) && element.semanticIndex === 0);
+    return { position: declaredAttribute(position), texcoord: declaredAttribute(texcoord) };
+}
+
+function declaredAttribute(chosen: PlacedElement | undefined): DeclaredAttribute | null {
     if (chosen === undefined) {
         return null;
     }
-    const [component, count] = positionFormats.get(chosen.element.format)!;
+    const [component, count] = attributeFormats.get(chosen.element.format)!;
     const { semantic, semanticIndex, slot } = chosen.element;
     return {
         slot,
