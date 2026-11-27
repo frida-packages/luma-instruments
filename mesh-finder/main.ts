@@ -36,14 +36,16 @@ export const instrument: CustomInstrument = {
                     apis.scan();
                     return;
                 }
-                const mesh = catalog.find(Number(item));
-                if (mesh === undefined) {
+                if (action === "obj") {
+                    const selected = display.selected;
+                    if (selected !== null) {
+                        offerObj(selected, { ...viewerReply, file: respond.file });
+                    }
                     return;
                 }
-                if (action === "show") {
+                const mesh = catalog.find(Number(item));
+                if (mesh !== undefined) {
                     display.showMesh(mesh);
-                } else {
-                    offerObj(mesh, { ...viewerReply, file: respond.file });
                 }
             },
             onConsoleInput({ text }, respond) {

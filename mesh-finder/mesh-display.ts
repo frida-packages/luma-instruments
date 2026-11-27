@@ -13,15 +13,24 @@ const BYTES_PER_TRIANGLE = 12;
 export class MeshDisplay {
     readonly #view: MeshView;
     readonly #console: Console;
+    #selected: Mesh | null = null;
 
     constructor(view: MeshView, console: Console) {
         this.#view = view;
         this.#console = console;
+        view.setActionEnabled("obj", false);
+    }
+
+    get selected(): Mesh | null {
+        return this.#selected;
     }
 
     showMesh(mesh: Mesh): void {
+        this.#selected = mesh;
+        this.#view.setActionEnabled("obj", true);
         const picture = this.#picture(mesh);
         if (picture.kind === "not-shown") {
+            this.#view.clear();
             this.#console.appendError(picture.reason);
         }
         this.#console.appendOutput(summaryOf(mesh, picture));

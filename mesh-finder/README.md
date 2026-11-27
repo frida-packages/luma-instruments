@@ -177,10 +177,12 @@ declared by the API comes with a confidence.
   because they are in GPU-only storage or, with Vulkan, were bound to memory
   before the instrument was added, have nothing to show, and meshes whose
   positions and indices exceed the 64 MiB a view can be handed are refused; the
-  console says which. In a narrow window the console goes below the view, the
+  view is then left empty and the console says which. In a narrow window the console goes below the view, the
   table shows 6 rows, and the page scrolls.
-- **Export OBJ** offers the mesh as a Wavefront OBJ file, ready to open in any
-  3D tool, and Luma asks where to save it. The file is named after the mesh as
+- **Export OBJ**, in the **Mesh** view's header, offers the selected mesh as a
+  Wavefront OBJ file, ready to open in any 3D tool, and Luma asks where to save
+  it. It is disabled until a mesh has been selected, and also works for a mesh
+  too large for the view. The file is named after the mesh as
   the table names it, such as `#3 Cube vertices.obj`, with characters a file
   name cannot have, such as `/` and `:`, made `-`. Point clouds are written as
   `p` elements. Meshes that would make more than 64 MiB of OBJ are refused,
@@ -194,7 +196,7 @@ thread that draws, the next time it does, and gives up after 3 seconds when
 it does not.
 
 The **Console** also takes commands: `show 3`, `obj 3`, which does what
-**Export OBJ** does, `list`, and `scan`, which does what **Scan** does, or says
+**Export OBJ** does for mesh 3, `list`, and `scan`, which does what **Scan** does, or says
 why it cannot.
 **Clear**, in its header, empties it.
 

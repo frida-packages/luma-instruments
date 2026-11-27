@@ -53,7 +53,7 @@
             { "id": "learned", "name": "Learned from", "alignment": "leading" },
             { "id": "buffers", "name": "Buffers", "alignment": "leading" }
           ],
-          "rowActions": [{ "id": "obj", "name": "Export OBJ" }],
+          "rowActions": [],
           "rowSelection": { "id": "show", "name": "Show" },
           "maxRows": 5000
         },
@@ -65,6 +65,7 @@
         "name": "Mesh",
         "kind": "view",
         "config": { "class": "MeshView", "height": 320 },
+        "actions": [{ "id": "obj", "name": "Export OBJ" }],
         "persistence": "session"
       },
       {

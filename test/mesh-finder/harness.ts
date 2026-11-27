@@ -390,7 +390,8 @@ function readOnlyDirect3D11(): Map<string, string> {
 
 function offeredObj(handle: CustomInstrumentHandle, row: Row): Offer | null {
     lastOffer = null;
-    handle.onAction!({ widget: "meshes", action: "obj", item: row.id }, respond);
+    handle.onAction!({ widget: "meshes", action: "show", item: row.id }, respond);
+    handle.onAction!({ widget: "mesh", action: "obj" }, respond);
     return lastOffer;
 }
 

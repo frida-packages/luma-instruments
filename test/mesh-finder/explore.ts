@@ -69,7 +69,8 @@ rpc.exports = {
             .slice(0, EXPORTED_MESHES);
         for (const row of largest) {
             lastOffer = null;
-            handle.onAction!({ widget: "meshes", action: "obj", item: row.id }, respond);
+            handle.onAction!({ widget: "meshes", action: "show", item: row.id }, respond);
+            handle.onAction!({ widget: "mesh", action: "obj" }, respond);
             const offer = lastOffer as Promise<string> | null;
             if (offer !== null) {
                 send({ type: "obj", path: `${out}/mesh${row.id}.obj`, text: await offer });
