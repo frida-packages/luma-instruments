@@ -41,13 +41,8 @@ MeshView >> openIn: aContext [
 	note := LumaText on: canvas addDrawable pointSize: 11.
 	buttons := self modes collect: [ :each | each -> (LumaText on: canvas addDrawable pointSize: 12) ].
 	mode := #shaded.
-	vertexCount := 0.
-	triangleCount := 0.
-	title := 'Mesh'.
-	remark := ''.
-	facts := #().
 	self reset.
-	self show
+	self forget
 ]
 
 { #category : 'receiving' }
@@ -181,7 +176,7 @@ MeshView >> pointCloud [
 MeshView >> forget [
 	vertexCount := 0.
 	triangleCount := 0.
-	title := 'Waiting for a mesh'.
+	title := 'Select a mesh in the table to see it here'.
 	remark := ''.
 	facts := #().
 	self show
