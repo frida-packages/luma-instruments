@@ -1,7 +1,7 @@
 {
   "name": "trainer",
   "displayName": "Trainer",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "main": "main.ts",
   "engines": { "luma": ">=4.0.0" },
   "luma": {
@@ -125,16 +125,33 @@
         "persistence": "none"
       }
     ],
-    "layout": { "column": [
-      { "row": [
-        { "widget": "console", "share": 40 },
-        { "column": ["candidates", { "widget": "list", "share": 1, "maxRows": 8 }], "share": 60 }
-      ], "share": 60 },
-      { "row": [
-        { "widget": "memory", "share": 40 },
-        { "column": [{ "widget": "locks", "maxRows": 4 }, { "widget": "writers", "maxRows": 4 }], "share": 60 }
-      ], "share": 40 }
-    ] },
+    "layout": {
+      "column": [
+        {
+          "row": [
+            { "widget": "console", "share": 40 },
+            {
+              "column": ["candidates", { "widget": "list", "share": 1, "maxRows": 8 }],
+              "share": 60
+            }
+          ],
+          "share": 60
+        },
+        {
+          "row": [
+            { "widget": "memory", "share": 40 },
+            {
+              "column": [
+                { "widget": "locks", "maxRows": 4 },
+                { "widget": "writers", "maxRows": 4 }
+              ],
+              "share": 60
+            }
+          ],
+          "share": 40
+        }
+      ]
+    },
     "store": {
       "summary": "Find where a game keeps a value such as your health by typing what you see as it changes, then change it, or lock it and see the code that tries to write it.",
       "category": "runtime",
