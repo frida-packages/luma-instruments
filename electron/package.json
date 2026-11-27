@@ -1,7 +1,7 @@
 {
   "name": "electron",
   "displayName": "Electron",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "main": "main.ts",
   "engines": { "luma": ">=4.0.0" },
   "dependencies": { "frida-electron-bridge": "^1.0.1" },
@@ -78,7 +78,10 @@
             { "id": "preload", "name": "Preload", "alignment": "leading" },
             { "id": "guards", "name": "Guards", "alignment": "leading" }
           ],
-          "rowActions": [{ "id": "show", "name": "Show" }, { "id": "devtools", "name": "DevTools" }],
+          "rowActions": [
+            { "id": "show", "name": "Show" },
+            { "id": "devtools", "name": "DevTools" }
+          ],
           "maxRows": 256
         },
         "persistence": "none"
@@ -102,7 +105,11 @@
           "rowActions": [{ "id": "inspect", "name": "Inspect" }],
           "maxRows": 1000
         },
-        "actions": [{ "id": "pause", "name": "Pause" }, { "id": "resume", "name": "Resume" }, { "id": "clear", "name": "Clear" }],
+        "actions": [
+          { "id": "pause", "name": "Pause" },
+          { "id": "resume", "name": "Resume" },
+          { "id": "clear", "name": "Clear" }
+        ],
         "persistence": "none"
       },
       {
@@ -148,13 +155,28 @@
         "persistence": "none"
       }
     ],
-    "layout": { "column": [
-      "status",
-      { "widget": "contents", "maxRows": 4 },
-      { "row": [{ "widget": "facts", "share": 50, "maxRows": 6 }, { "widget": "files", "share": 50, "maxRows": 6 }], "foldBelow": 900 },
-      { "row": [{ "widget": "ipc", "share": 62, "maxRows": 10 }, { "widget": "message", "share": 38 }], "share": 60, "foldBelow": 900 },
-      { "widget": "console", "share": 40 }
-    ] },
+    "layout": {
+      "column": [
+        "status",
+        { "widget": "contents", "maxRows": 4 },
+        {
+          "row": [
+            { "widget": "facts", "share": 50, "maxRows": 6 },
+            { "widget": "files", "share": 50, "maxRows": 6 }
+          ],
+          "foldBelow": 900
+        },
+        {
+          "row": [
+            { "widget": "ipc", "share": 62, "maxRows": 10 },
+            { "widget": "message", "share": 38 }
+          ],
+          "share": 60,
+          "foldBelow": 900
+        },
+        { "widget": "console", "share": 40 }
+      ]
+    },
     "children": [
       {
         "id": "contents",
@@ -189,7 +211,12 @@
             "persistence": "none"
           }
         ],
-        "layout": { "column": [{ "widget": "preferences", "maxRows": 6 }, { "widget": "console", "share": 1 }] }
+        "layout": {
+          "column": [
+            { "widget": "preferences", "maxRows": 6 },
+            { "widget": "console", "share": 1 }
+          ]
+        }
       }
     ],
     "store": {
