@@ -27,7 +27,7 @@ def scoped_declarations(manifest):
         sections.append(setting_map(settings))
     if widgets:
         sections.append(widget_map(widgets))
-    acting = [widget for widget in widgets if widget.get("actions") or widget["config"].get("rowActions")]
+    acting = [widget for widget in widgets if widget.get("actions") or row_invocations(widget)]
     if acting:
         sections.append(action_map(acting))
     persistent = [widget for widget in widgets if widget.get("persistence") == "session"]
@@ -95,7 +95,7 @@ def child_maps(templates):
     lines += ["}", "", "declare interface CustomInstrumentChildActionMap {"]
     for template in templates:
         for widget in template["widgets"]:
-            if widget.get("actions") or widget["config"].get("rowActions"):
+            if widget.get("actions") or row_invocations(widget):
                 target = f"child: {{ template: {literal(template['id'])}; id: string }}; widget: {literal(widget['id'])}"
                 variants = " | ".join(action_variants(widget, target, ""))
                 lines.append(f"    {literal(template['id'] + '/' + widget['id'])}: {variants};")
@@ -188,10 +188,15 @@ def action_variants(widget, target, unchilded):
     variants = []
     if widget.get("actions"):
         variants.append(f"{{ {target}; action: {union(a['id'] for a in widget['actions'])}; item?: undefined{unchilded} }}")
-    row_actions = widget["config"].get("rowActions", [])
+    row_actions = row_invocations(widget)
     if row_actions:
         variants.append(f"{{ {target}; action: {union(a['id'] for a in row_actions)}; item: string{unchilded} }}")
     return variants
+
+
+def row_invocations(widget):
+    config = widget["config"]
+    return config.get("rowActions", []) + [config[key] for key in ("rowActivation", "rowSelection") if key in config]
 
 
 def union(ids):

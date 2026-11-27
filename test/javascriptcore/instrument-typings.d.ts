@@ -245,7 +245,7 @@ declare interface CustomInstrumentWidgetMap {
 }
 
 declare interface CustomInstrumentActionMap {
-    contexts: { widget: "contexts"; action: "scan"; item?: undefined; child?: undefined } | { widget: "contexts"; action: "show" | "inspect" | "uninspect"; item: string; child?: undefined };
+    contexts: { widget: "contexts"; action: "scan"; item?: undefined; child?: undefined } | { widget: "contexts"; action: "inspect" | "uninspect" | "show"; item: string; child?: undefined };
     vms: { widget: "vms"; action: "refresh"; item?: undefined; child?: undefined } | { widget: "vms"; action: "heap" | "profile" | "unprofile"; item: string; child?: undefined };
     scripts: { widget: "scripts"; action: "clear"; item?: undefined; child?: undefined } | { widget: "scripts"; action: "export"; item: string; child?: undefined };
     profile: { widget: "profile"; action: "clear"; item?: undefined; child?: undefined };
