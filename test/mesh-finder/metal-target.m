@@ -38,12 +38,14 @@ static volatile sig_atomic_t late_upload_requested;
 enum {
     UNIFORM_SLOT = 0, VERTEX_SLOT = 1, ATTRIBUTE_SLOT = 2, UNIFORM_STRIDE = 256, SCRATCH_LENGTH = 4 * 1024 * 1024, SCRATCH_COUNT = 2,
     SPHERE_OFFSET = 256, CUBE_ALBEDO_WIDTH = 8, CUBE_ALBEDO_HEIGHT = 4, RIBBON_ALBEDO_WIDTH = 16, RIBBON_ALBEDO_HEIGHT = 8,
-    ALBEDO_SLOT = 0, NORMAL_MAP_SLOT = 1,
+    ALBEDO_SLOT = 0, NORMAL_MAP_SLOT = 1, UNITY_STRIDE = 40, UNITY_TEXTURE_SIZE = 4, UNITY_DIFFUSE_SLOT = 2,
 };
 
 static const TextureExpectation cubeAlbedoExpectation = { CUBE_ALBEDO_WIDTH, CUBE_ALBEDO_HEIGHT, "bgra8unorm",
     { { 255, 0, 0, 255 }, { 0, 255, 0, 255 }, { 0, 0, 255, 255 }, { 255, 255, 255, 128 } } };
 static const uint16_t ribbonAlbedoCorners565[4] = { 0xf800, 0x07e0, 0x001f, 0xffe0 };
+static const TextureExpectation unityDiffuseExpectation = { UNITY_TEXTURE_SIZE, UNITY_TEXTURE_SIZE, "rgba8unorm",
+    { { 255, 0, 255, 255 }, { 0, 255, 255, 255 }, { 255, 128, 0, 255 }, { 64, 64, 64, 255 } } };
 static const TextureExpectation ribbonAlbedoExpectation = { RIBBON_ALBEDO_WIDTH, RIBBON_ALBEDO_HEIGHT, "bc1",
     { { 255, 0, 0, 255 }, { 0, 255, 0, 255 }, { 0, 0, 255, 255 }, { 255, 255, 0, 255 } } };
 
@@ -61,6 +63,7 @@ static const TextureExpectation ribbonAlbedoExpectation = { RIBBON_ALBEDO_WIDTH,
 @property (nonatomic, strong) id<MTLRenderPipelineState> packedPositions;
 @property (nonatomic, strong) id<MTLRenderPipelineState> batched;
 @property (nonatomic, strong) id<MTLRenderPipelineState> halfPositions;
+@property (nonatomic, strong) id<MTLRenderPipelineState> unityLike;
 @property (nonatomic, strong) NSArray<id<MTLBuffer>> *scratches;
 @property (nonatomic, strong) id<MTLBuffer> cubeVertices, cubeIndices;
 @property (nonatomic, strong) id<MTLBuffer> spherePositions, sphereAttributes, sphereIndices;
@@ -69,10 +72,12 @@ static const TextureExpectation ribbonAlbedoExpectation = { RIBBON_ALBEDO_WIDTH,
 @property (nonatomic, strong) id<MTLBuffer> octahedronVertices;
 @property (nonatomic, strong) id<MTLBuffer> batchVertices;
 @property (nonatomic, strong) id<MTLBuffer> halfVertices, halfIndices;
+@property (nonatomic, strong) id<MTLBuffer> unityVertices, unityIndices;
 @property (nonatomic, strong) id<MTLBuffer> privateVertices, privateIndices;
 @property (nonatomic, strong) id<MTLBuffer> hiddenVertices, hiddenIndices;
 @property (nonatomic, strong) id<MTLBuffer> lateVertices, lateIndices;
 @property (nonatomic, strong) id<MTLTexture> cubeAlbedo, normalMap, ribbonAlbedo, privateAlbedo;
+@property (nonatomic, strong) id<MTLTexture> unityProbe, unityLightmap, unityDiffuse, unityNormals;
 - (instancetype)initWithRepeats:(int)repeats;
 - (double)renderFrame;
 @end
@@ -80,6 +85,7 @@ static const TextureExpectation ribbonAlbedoExpectation = { RIBBON_ALBEDO_WIDTH,
 static void request_late_upload(int signal);
 static uint16_t *batched_indices16(const Mesh *first, const Mesh *second);
 static uint16_t *half_positions(const Mesh *mesh);
+static uint8_t *unity_vertices(const Mesh *mesh);
 static uint16_t half_of(float value);
 static void expect_absent(const Mesh *mesh, const char *how, uint32_t triangle_count);
 static double elapsedMilliseconds(uint64_t start);
@@ -90,7 +96,7 @@ int main(int argc, char **argv)
         int repeats = (argc > 1) ? atoi(argv[1]) : 1;
         Scene *scene = [[Scene alloc] initWithRepeats:repeats];
         signal(SIGUSR1, request_late_upload);
-        printf("pid %d ready, %d draws per frame\n", getpid(), repeats * 11);
+        printf("pid %d ready, %d draws per frame\n", getpid(), repeats * 12);
         fflush(stdout);
         double total = 0, worst = 0, encoding = 0;
         int frames = 0;
@@ -116,7 +122,7 @@ int main(int argc, char **argv)
 @implementation Scene {
     int _repeats;
     Mesh _cube, _sphere, _torus, _ribbon, _octahedron, _pyramid, _privateCube, _hidden, _late;
-    Mesh _batchedSphere, _batchedTorus, _halfSphere;
+    Mesh _batchedSphere, _batchedTorus, _halfSphere, _unitySphere;
     uint16_t *_batchIndices;
     void *_pyramidPositions;
     uint64_t _frame;
@@ -244,6 +250,7 @@ int main(int argc, char **argv)
     MTLVertexDescriptor *half = [self positionLayoutWithStride:8];
     half.attributes[0].format = MTLVertexFormatHalf3;
     _halfPositions = [self pipelineWithFunction:@"position_vertex" fragment:@"shade" layout:half];
+    _unityLike = [self pipelineWithFunction:@"position_vertex" fragment:@"shade" layout:[self positionLayoutWithStride:UNITY_STRIDE]];
 }
 
 - (void)uploadMeshes
@@ -260,6 +267,7 @@ int main(int argc, char **argv)
     _batchedSphere = make_sphere("batched-sphere", 8, 0, 0, 1.0f, 12, 24);
     _batchedTorus = make_torus("batched-torus", 8, 4, 0, 1.0f, 0.3f, 32, 12);
     _halfSphere = make_sphere("half-float-sphere", -8, 0, 0, 1.0f, 12, 24);
+    _unitySphere = make_sphere("unity-sphere", 0, -8, 0, 1.0f, 8, 16);
 
     _cubeVertices = [self bufferWithBytes:_cube.vertices length:_cube.vertex_count * sizeof(Vertex) label:@"Cube vertices"];
     uint16_t *cubeIndices = indices16(&_cube);
@@ -291,6 +299,10 @@ int main(int argc, char **argv)
     _halfVertices = [self bufferWithBytes:halfPositions length:_halfSphere.vertex_count * 8 label:@"Half floats"];
     uint16_t *halfIndices = indices16(&_halfSphere);
     _halfIndices = [self bufferWithBytes:halfIndices length:_halfSphere.index_count * 2 label:nil];
+    uint8_t *unityVertices = unity_vertices(&_unitySphere);
+    _unityVertices = [self bufferWithBytes:unityVertices length:_unitySphere.vertex_count * UNITY_STRIDE label:@"Combined Mesh"];
+    uint16_t *unityIndices = indices16(&_unitySphere);
+    _unityIndices = [self bufferWithBytes:unityIndices length:_unitySphere.index_count * 2 label:nil];
 
     id<MTLBuffer> stagingVertices = [self bufferWithBytes:_privateCube.vertices
                                                    length:_privateCube.vertex_count * sizeof(Vertex)
@@ -329,6 +341,8 @@ int main(int argc, char **argv)
     free(hiddenIndices);
     free(halfPositions);
     free(halfIndices);
+    free(unityVertices);
+    free(unityIndices);
 
     expect(&_cube, "interleaved position, normal and uv; 16-bit indices; vertex descriptor; BGRA8 sRGB albedo and a normal map", 12, 1);
     expect_texture(&_cube, &cubeAlbedoExpectation);
@@ -346,6 +360,9 @@ int main(int argc, char **argv)
     expect(&_batchedTorus, "second of two meshes in one vertex buffer, indices rewritten every frame; pipeline made before attach",
         _batchedTorus.index_count / 3, 1);
     expect_absent(&_halfSphere, "half-float positions; pipeline made before attach", _halfSphere.index_count / 3);
+    expect(&_unitySphere, "Unity's vertex layout, half normals and tangents, half uvs then float lightmap uvs; "
+        "textures labeled as Unity labels them; pipeline made before attach", _unitySphere.index_count / 3, 1);
+    expect_texture(&_unitySphere, &unityDiffuseExpectation);
 }
 
 - (void)uploadTextures
@@ -389,6 +406,29 @@ int main(int argc, char **argv)
     descriptor.storageMode = MTLStorageModePrivate;
     _privateAlbedo = [_device newTextureWithDescriptor:descriptor];
     _privateAlbedo.label = @"Private albedo";
+
+    uint8_t unityTexels[UNITY_TEXTURE_SIZE][UNITY_TEXTURE_SIZE][4];
+    for (int y = 0; y != UNITY_TEXTURE_SIZE; y++) {
+        for (int x = 0; x != UNITY_TEXTURE_SIZE; x++) {
+            int corner = (x == UNITY_TEXTURE_SIZE - 1) + 2 * (y == UNITY_TEXTURE_SIZE - 1);
+            BOOL isCorner = (x == 0 || x == UNITY_TEXTURE_SIZE - 1) && (y == 0 || y == UNITY_TEXTURE_SIZE - 1);
+            const uint8_t gray[4] = { 128, 128, 128, 255 };
+            memcpy(unityTexels[y][x], isCorner ? unityDiffuseExpectation.corners[corner] : gray, 4);
+        }
+    }
+    uint16_t halfTexels[UNITY_TEXTURE_SIZE * UNITY_TEXTURE_SIZE * 4];
+    for (int i = 0; i != UNITY_TEXTURE_SIZE * UNITY_TEXTURE_SIZE * 4; i++) {
+        halfTexels[i] = half_of(0.5f);
+    }
+    _unityProbe = [self textureWithFormat:MTLPixelFormatRGBA16Float width:UNITY_TEXTURE_SIZE height:UNITY_TEXTURE_SIZE
+                                    bytes:halfTexels bytesPerRow:UNITY_TEXTURE_SIZE * 8 label:@"ReflectionProbe-0"];
+    _unityLightmap = [self textureWithFormat:MTLPixelFormatRGBA8Unorm width:4 height:4 bytes:flatNormals bytesPerRow:16
+                                       label:@"Lightmap-0_comp_light"];
+    _unityDiffuse = [self textureWithFormat:MTLPixelFormatRGBA8Unorm width:UNITY_TEXTURE_SIZE height:UNITY_TEXTURE_SIZE
+                                      bytes:unityTexels bytesPerRow:UNITY_TEXTURE_SIZE * 4
+                                      label:@"zone1_rock_splatmap_texture_array_diff"];
+    _unityNormals = [self textureWithFormat:MTLPixelFormatRGBA8Unorm width:4 height:4 bytes:flatNormals bytesPerRow:16
+                                      label:@"zone1_rock_splatmap_texture_array_norm"];
 }
 
 - (id<MTLTexture>)textureWithFormat:(MTLPixelFormat)format
@@ -492,6 +532,16 @@ int main(int argc, char **argv)
     [encoder setVertexBuffer:_halfVertices offset:0 atIndex:VERTEX_SLOT];
     [encoder drawIndexedPrimitives:MTLPrimitiveTypeTriangle indexCount:_halfSphere.index_count indexType:MTLIndexTypeUInt16
                        indexBuffer:_halfIndices indexBufferOffset:0];
+
+    [encoder setRenderPipelineState:_unityLike];
+    uniformsForNextDraw();
+    [encoder setVertexBuffer:_unityVertices offset:0 atIndex:VERTEX_SLOT];
+    id<MTLTexture> unityTextures[4] = { _unityProbe, _unityLightmap, _unityDiffuse, _unityNormals };
+    [encoder setFragmentTextures:unityTextures withRange:NSMakeRange(0, 4)];
+    [encoder drawIndexedPrimitives:MTLPrimitiveTypeTriangle indexCount:_unitySphere.index_count indexType:MTLIndexTypeUInt16
+                       indexBuffer:_unityIndices indexBufferOffset:0];
+    id<MTLTexture> none[4] = { nil, nil, nil, nil };
+    [encoder setFragmentTextures:none withRange:NSMakeRange(0, 4)];
 }
 
 - (id<MTLRenderPipelineState>)pipelineWithFunction:(NSString *)name fragment:(NSString *)fragment layout:(MTLVertexDescriptor *)layout
@@ -568,6 +618,27 @@ static uint16_t *half_positions(const Mesh *mesh)
         for (int k = 0; k != 3; k++) {
             packed[i * 4 + k] = half_of(mesh->vertices[i].position[k]);
         }
+    }
+    return packed;
+}
+
+static uint8_t *unity_vertices(const Mesh *mesh)
+{
+    uint8_t *packed = calloc(mesh->vertex_count, UNITY_STRIDE);
+    for (uint32_t i = 0; i != mesh->vertex_count; i++) {
+        const Vertex *v = &mesh->vertices[i];
+        uint8_t *out = packed + i * UNITY_STRIDE;
+        float length = sqrtf(v->normal[0] * v->normal[0] + v->normal[2] * v->normal[2]);
+        float tangent[3] = { (length != 0) ? -v->normal[2] / length : 1, 0, (length != 0) ? v->normal[0] / length : 0 };
+        uint16_t halves[10] = {
+            half_of(v->normal[0]), half_of(v->normal[1]), half_of(v->normal[2]), 0,
+            half_of(tangent[0]), half_of(tangent[1]), half_of(tangent[2]), half_of(-1),
+            half_of(v->uv[0]), half_of(v->uv[1]),
+        };
+        float lightmap[2] = { 0.25f + v->uv[0] * 0.5f, 0.25f + v->uv[1] * 0.5f };
+        memcpy(out, v->position, 12);
+        memcpy(out + 12, halves, sizeof(halves));
+        memcpy(out + 32, lightmap, sizeof(lightmap));
     }
     return packed;
 }

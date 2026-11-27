@@ -33,7 +33,12 @@ Two ways, and both run at once:
 
 A mesh seen drawn also comes with the textures its draw samples, and with its
 UVs where the API says which vertex attribute holds them, as it does for
-positions. UVs are not guessed. Each texture is read once, at its first level
+positions. Where it does not, as for a pipeline or input layout made before
+the instrument was added, and the draw samples textures, the UVs are guessed
+from the vertex the positions are in: the first pair of floats or half floats
+after the positions, and after any normals and tangents, which read as unit
+vectors, whose values look like texture coordinates. Engines put a mesh's
+first UVs before its lightmap UVs, as Unity does. Each texture is read once, at its first level
 of detail, the first time a mesh is seen drawn with it, and textures larger
 than 64 MiB are left unread. Whether a mesh drawn later with other textures
 is looked at again depends on the API, as said below; when it is, those
@@ -41,7 +46,10 @@ textures take the place of the first ones, unless fewer of them can be read.
 Which texture is the mesh's base color is told
 by the name the shader gives it, such as `albedo`, `diffuse` or
 `baseColorTexture`, rather than one such as `normalMap` or `shadowMap`, or,
-where there are no names, by its being the first one with color in it.
+where the shader's names are not known, by the texture's own label, such as
+Unity's `rock_diff` rather than `rock_norm`, `Lightmap-0_comp_light` or
+`ReflectionProbe-0`. Failing that, it is the first one with color in it
+that is not floating-point.
 Textures are decoded from every block-compressed format the four APIs share:
 BC1 to BC7, ETC2 and EAC, and ASTC at every block size. Floating-point ones
 are clamped to the range of a PNG. Which textures are found for each API, and
@@ -111,7 +119,8 @@ the function's reflection. A draw's textures are those bound with
 `setFragmentTexture:atIndex:` and `setFragmentTextures:withRange:`, in slots 0
 to 31, of which those the fragment function declares are taken. For a pipeline
 made before the instrument was added, every texture bound at the draw is
-taken, without names, and there are no UVs. A mesh keeps the textures it was
+taken, without names, labeled as the game labeled them, and the UVs are
+guessed. A mesh keeps the textures it was
 first seen drawn with.
 
 Textures in shared or managed storage are read with `getBytes`, on the thread
@@ -351,7 +360,7 @@ of them are meshes took about 20 s.
   batched geometry, particles and most user interfaces are.
 - Direct3D 11 draws whose input layout was made before the instrument was
   added have their layout guessed, since an input layout keeps no names,
-  and no UVs. Textures bound to stages other than the pixel shader, and
+  and their UVs guessed too. Textures bound to stages other than the pixel shader, and
   textures that are not plain 2D textures, are not followed.
   Draws that fetch their own vertices from shader resources, stream output
   (`DrawAuto`), and meshes generated on the GPU are not followed.

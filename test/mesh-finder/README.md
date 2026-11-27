@@ -16,6 +16,7 @@ way each:
 | pyramid | half-float positions, `DrawInstanced` | `setVertexBytes` | the shared VAO re-pointed between draws |
 | cube | — | in private storage, with an `albedo` in private storage | — |
 | sphere and torus | — | sharing one vertex buffer, their indices rewritten into scratch every frame | — |
+| sphere | — | Unity's 40-byte vertex: float positions, half normals and tangents, half uvs, then float lightmap uvs; a pipeline made before attach, with four textures labeled as Unity labels them, the `_diff` one in slot 2 | — |
 | quad | — | vertices and indices rewritten into scratch every frame, expected not to be listed | — |
 | sphere | — | half-float positions, expected not to be listed | — |
 | torus | uploaded, never drawn | uploaded, never drawn | the same |

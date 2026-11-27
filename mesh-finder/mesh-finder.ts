@@ -15,6 +15,7 @@ import {
 } from "./mesh.js";
 import { rankOf, type MeshCatalog } from "./mesh-catalog.js";
 import type { Settings } from "./settings.js";
+import { guessTexcoords } from "./texcoord-guess.js";
 import type { TextureCatalog } from "./texture-catalog.js";
 import { analyzeUndrawnBuffers, snapshotCandidates } from "./undrawn-buffers.js";
 import { formatSize } from "./vertex-format.js";
@@ -108,7 +109,7 @@ export class MeshFinder implements GeometryObserver {
             return;
         }
         const textures = this.#texturesOf(draw);
-        this.#enqueue("drawn", this.#admitDrawn(drawnMeshSpec(draw, positions, span, indexBytes, texcoordSpecOf(draw, span), textures)));
+        this.#enqueue("drawn", this.#admitDrawn(drawnMeshSpec(draw, positions, span, indexBytes, texcoordSpecOf(draw, positions, span), textures)));
     }
 
     #guessedPositions(draw: DrawCall, span: VertexSpan): PlacedPositions | null {
@@ -272,14 +273,22 @@ function drawnMeshSpec(
     };
 }
 
-function texcoordSpecOf(draw: DrawCall, span: VertexSpan): TexcoordSpec | null {
+function texcoordSpecOf(draw: DrawCall, positions: PlacedPositions, span: VertexSpan): TexcoordSpec | null {
     const declared = draw.texcoord;
-    const stream = draw.streams.find(candidate => candidate.slot === declared?.slot);
-    if (declared === null || stream === undefined || stream.buffer.access !== "cpu-readable") {
+    if (declared === null) {
+        return (draw.textures.length !== 0) ? guessedTexcoordSpecOf(positions, span) : null;
+    }
+    const stream = draw.streams.find(candidate => candidate.slot === declared.slot);
+    if (stream === undefined || stream.buffer.access !== "cpu-readable") {
         return null;
     }
     const layout = declaredLayout(stream, declared);
     return { layout, bytes: spanBytes(stream, layout, span) };
+}
+
+function guessedTexcoordSpecOf({ stream, layout: positions }: PlacedPositions, span: VertexSpan): TexcoordSpec | null {
+    const layout = guessTexcoords(stream, positions, span);
+    return (layout !== null) ? { layout, bytes: spanBytes(stream, layout, span) } : null;
 }
 
 function spanBytes(stream: VertexStream, layout: VertexLayout, span: VertexSpan): ArrayBuffer {
