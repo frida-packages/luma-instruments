@@ -69,9 +69,9 @@ with its state. The page has:
   runs as a script of its own, and its value is copied out the way Electron
   copies it, so a DOM node comes back empty.
 
-**Show** on a row opens the page. **DevTools** opens DevTools for it in a
-window of its own, without taking focus. A destroyed page's page stays for a
-minute.
+Double-clicking a row, or selecting it and pressing Return, opens the page.
+**DevTools** opens DevTools for it in a window of its own, without taking focus.
+A destroyed page's page stays for a minute.
 
 ## IPC
 
@@ -85,7 +85,7 @@ they happen:
   `postMessage`, and the same on a `WebFrameMain`, going the other way.
 
 Each row says which web contents and frame the message came from or went to,
-with its arguments and result in short form. **Inspect** puts the whole
+with its arguments and result in short form. Selecting a row puts the whole
 message, decoded, in the **Message** console, and so does typing its number
 there. Bytes, dates, maps, sets, errors and class instances keep their shape.
 

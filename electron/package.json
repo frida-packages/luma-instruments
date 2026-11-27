@@ -3,7 +3,7 @@
   "displayName": "Electron",
   "version": "1.0.1",
   "main": "main.ts",
-  "engines": { "luma": ">=4.0.0" },
+  "engines": { "luma": ">=4.1.0" },
   "dependencies": { "frida-electron-bridge": "^1.0.1" },
   "luma": {
     "icon": { "kind": "file", "value": "icon.png" },
@@ -78,10 +78,8 @@
             { "id": "preload", "name": "Preload", "alignment": "leading" },
             { "id": "guards", "name": "Guards", "alignment": "leading" }
           ],
-          "rowActions": [
-            { "id": "show", "name": "Show" },
-            { "id": "devtools", "name": "DevTools" }
-          ],
+          "rowActions": [{ "id": "devtools", "name": "DevTools" }],
+          "rowActivation": { "id": "show", "name": "Show" },
           "maxRows": 256
         },
         "persistence": "none"
@@ -102,7 +100,8 @@
             { "id": "result", "name": "Result", "alignment": "leading" },
             { "id": "duration", "name": "ms", "alignment": "trailing" }
           ],
-          "rowActions": [{ "id": "inspect", "name": "Inspect" }],
+          "rowActions": [],
+          "rowSelection": { "id": "inspect", "name": "Inspect" },
           "maxRows": 1000
         },
         "actions": [
