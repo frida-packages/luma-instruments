@@ -14,6 +14,7 @@ export interface EncodedDraw {
     indirectBuffer: NativePointer;
     indirectOffset: number;
     slots: EncodedSlot[];
+    textures: EncodedTexture[];
 }
 
 export interface EncodedSlot {
@@ -29,6 +30,11 @@ export interface EncodedSlot {
 
 export type SlotRole = "may-hold-vertices" | "bystander";
 
+export interface EncodedTexture {
+    slot: number;
+    texture: NativePointer;
+}
+
 const STATIC_STRIDE = uint64("0xffffffffffffffff");
 const TAP_STATE_SIZE = 4 * 1048576;
 
@@ -38,6 +44,7 @@ const source = `
 #include <string.h>
 
 #define SLOT_COUNT 31
+#define TEXTURE_SLOT_COUNT 32
 #define STATE_COUNT 64
 #define BYTES_CAPACITY 4096
 #define SEEN_BUCKETS 8192
@@ -71,6 +78,8 @@ enum
   SET_BYTES,
   SET_BYTES_WITH_STRIDE,
   SET_PIPELINE,
+  SET_FRAGMENT_TEXTURE,
+  SET_FRAGMENT_TEXTURES,
   DRAW,
   DRAW_INSTANCED,
   DRAW_INSTANCED_FROM,
@@ -118,6 +127,8 @@ typedef struct
   WatchedBuffer * watched_indices;
   WatchedBuffer * watched[SLOT_COUNT];
   Slot slots[SLOT_COUNT];
+  guint32 textures_bound;
+  gpointer textures[TEXTURE_SLOT_COUNT];
 } EncoderState;
 
 typedef struct
@@ -136,7 +147,9 @@ typedef struct
   guint64 indirect_offset;
   guint64 bound;
   guint64 may_hold_vertices;
+  guint64 textures_bound;
   Slot slots[SLOT_COUNT];
+  gpointer textures[TEXTURE_SLOT_COUNT];
 } Draw;
 
 typedef struct
@@ -198,6 +211,7 @@ static void bind_buffer (EncoderState * state, guint64 index, gpointer buffer, g
 static void move_buffer (EncoderState * state, guint64 index, guint64 offset, guint64 stride);
 static void bind_bytes (EncoderState * state, guint64 index, gconstpointer bytes, guint64 length, guint64 stride);
 static guint64 digest_of (const guint8 * bytes, guint64 length);
+static void bind_texture (EncoderState * state, guint64 index, gpointer texture);
 static void record_draw (EncoderState * state, Draw * draw);
 static guint64 indices_of (EncoderState * state, const Draw * draw, gboolean * settled);
 static guint64 fingerprint_of (const guint8 * data, guint64 length);
@@ -245,7 +259,7 @@ void on_encoder_call (GumInvocationContext * ic)
   EncoderState * state;
   Draw draw;
   guint64 i, first, count;
-  gpointer * buffers;
+  gpointer * buffers, * textures;
   guint64 * offsets, * strides;
 
 #define ARG(n) ((guint64) gum_invocation_context_get_nth_argument (ic, n))
@@ -295,9 +309,19 @@ void on_encoder_call (GumInvocationContext * ic)
     case SET_PIPELINE:
       state->pipeline = POINTER_ARG (2);
       return;
+    case SET_FRAGMENT_TEXTURE:
+      bind_texture (state, ARG (3), POINTER_ARG (2));
+      return;
+    case SET_FRAGMENT_TEXTURES:
+      textures = POINTER_ARG (2);
+      first = ARG (3);
+      count = ARG (4);
+      for (i = 0; i != count; i++)
+        bind_texture (state, first + i, textures[i]);
+      return;
   }
 
-  memset (&draw, 0, sizeof (draw) - sizeof (draw.slots));
+  memset (&draw, 0, sizeof (draw) - sizeof (draw.slots) - sizeof (draw.textures));
   draw.primitive = ARG (2);
   draw.instance_count = 1;
   switch (call)
@@ -433,6 +457,7 @@ static EncoderState * state_of (gpointer encoder)
     state->draws_made = 0;
     state->began_at = tap.draws_seen;
     state->indices = NULL;
+    state->textures_bound = 0;
     tap.passes_begun++;
   }
   g_mutex_unlock (&tap.lock);
@@ -503,6 +528,17 @@ static guint64 digest_of (const guint8 * bytes, guint64 length)
   return digest;
 }
 
+static void bind_texture (EncoderState * state, guint64 index, gpointer texture)
+{
+  if (index >= TEXTURE_SLOT_COUNT)
+    return;
+  state->textures[index] = texture;
+  if (texture != NULL)
+    state->textures_bound |= 1u << index;
+  else
+    state->textures_bound &= ~(1u << index);
+}
+
 static void record_draw (EncoderState * state, Draw * draw)
 {
   guint64 key;
@@ -550,7 +586,9 @@ static void record_draw (EncoderState * state, Draw * draw)
   draw->pipeline = state->pipeline;
   draw->bound = state->bound;
   draw->may_hold_vertices = relevant;
+  draw->textures_bound = state->textures_bound;
   memcpy (draw->slots, state->slots, sizeof (state->slots));
+  memcpy (draw->textures, state->textures, sizeof (state->textures));
   on_new_draw (draw);
 }
 
@@ -863,15 +901,17 @@ const encoderCalls: [string, number][] = [
     ["setVertexBytes:length:atIndex:", 7],
     ["setVertexBytes:length:attributeStride:atIndex:", 8],
     ["setRenderPipelineState:", 9],
-    ["drawPrimitives:vertexStart:vertexCount:", 10],
-    ["drawPrimitives:vertexStart:vertexCount:instanceCount:", 11],
-    ["drawPrimitives:vertexStart:vertexCount:instanceCount:baseInstance:", 12],
-    ["drawPrimitives:indirectBuffer:indirectBufferOffset:", 13],
-    ["drawIndexedPrimitives:indexCount:indexType:indexBuffer:indexBufferOffset:", 14],
-    ["drawIndexedPrimitives:indexCount:indexType:indexBuffer:indexBufferOffset:instanceCount:", 15],
-    ["drawIndexedPrimitives:indexCount:indexType:indexBuffer:indexBufferOffset:instanceCount:baseVertex:baseInstance:", 16],
-    ["drawIndexedPrimitives:indexType:indexBuffer:indexBufferOffset:indirectBuffer:indirectBufferOffset:", 17],
-    ["endEncoding", 18],
+    ["setFragmentTexture:atIndex:", 10],
+    ["setFragmentTextures:withRange:", 11],
+    ["drawPrimitives:vertexStart:vertexCount:", 12],
+    ["drawPrimitives:vertexStart:vertexCount:instanceCount:", 13],
+    ["drawPrimitives:vertexStart:vertexCount:instanceCount:baseInstance:", 14],
+    ["drawPrimitives:indirectBuffer:indirectBufferOffset:", 15],
+    ["drawIndexedPrimitives:indexCount:indexType:indexBuffer:indexBufferOffset:", 16],
+    ["drawIndexedPrimitives:indexCount:indexType:indexBuffer:indexBufferOffset:instanceCount:", 17],
+    ["drawIndexedPrimitives:indexCount:indexType:indexBuffer:indexBufferOffset:instanceCount:baseVertex:baseInstance:", 18],
+    ["drawIndexedPrimitives:indexType:indexBuffer:indexBufferOffset:indirectBuffer:indirectBufferOffset:", 19],
+    ["endEncoding", 20],
 ];
 
 export class EncoderTap {
@@ -939,7 +979,7 @@ export class EncoderTap {
 }
 
 function encodedDrawOf(draw: Draw): EncodedDraw {
-    const { bound, mayHoldVertices } = draw;
+    const { bound, mayHoldVertices, texturesBound } = draw;
     const slots: EncodedSlot[] = [];
     draw.slots.forEach((slot, index) => {
         if ((bound & (1 << index)) === 0) {
@@ -970,5 +1010,8 @@ function encodedDrawOf(draw: Draw): EncodedDraw {
         indirectBuffer: draw.indirectBuffer,
         indirectOffset: draw.indirectOffset.toNumber(),
         slots,
+        textures: draw.textures
+            .map(({ texture }, slot) => ({ slot, texture }))
+            .filter(({ slot }) => (texturesBound & (1 << slot)) !== 0),
     };
 }

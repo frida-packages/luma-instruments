@@ -8,6 +8,10 @@ struct Slot {
     u64 boundAfterDraws;
 };
 
+struct BoundTexture {
+    u8 *texture : u64;
+};
+
 struct Draw {
     u8 *pipeline : u64;
     u64 primitive;
@@ -25,5 +29,8 @@ struct Draw {
     padding[4];
     u32 mayHoldVertices;
     padding[4];
+    u32 texturesBound;
+    padding[4];
     Slot slots[31];
+    BoundTexture textures[32];
 };

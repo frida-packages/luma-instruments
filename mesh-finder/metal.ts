@@ -6,6 +6,7 @@ import type {
     GraphicsBackend,
     GraphicsBackendFactory,
     IndexBinding,
+    TextureBinding,
     Topology,
     VertexStream,
 } from "./graphics-backend.js";
@@ -13,6 +14,7 @@ import { metalLibraries } from "./graphics-libraries.js";
 import { BytesBuffer, findMetalBuffers, metalBufferId, MetalBufferDescriber } from "./metal-buffers.js";
 import { EncoderTap, type EncodedDraw, type EncodedSlot } from "./metal-encoder-tap.js";
 import { PipelineWatch } from "./metal-pipelines.js";
+import { metalTextureOf } from "./metal-textures.js";
 import { classesConformingTo, type DriverClasses } from "./objc.js";
 
 export const metal: GraphicsBackendFactory = {
@@ -50,9 +52,9 @@ class MetalBackend implements GraphicsBackend {
     watchDraws(): void {
         const encoders = new EncoderTap(draw => this.#onDraw(draw), buffer => this.#observer.observeScratchBuffer(metalBufferId(buffer)));
         this.#encoders = encoders;
-        this.#pipelines = new PipelineWatch(this.#classes[PIPELINE_PROTOCOL], (pipeline, layout) => {
-            if (layout !== "no-vertex-descriptor") {
-                encoders.narrowPipeline(pipeline, 1 << layout.slot);
+        this.#pipelines = new PipelineWatch(this.#classes[PIPELINE_PROTOCOL], (pipeline, { position, texcoord }) => {
+            if (position !== "no-vertex-descriptor") {
+                encoders.narrowPipeline(pipeline, (1 << position.slot) | ((texcoord !== null) ? 1 << texcoord.slot : 0));
             }
         });
         this.#translationLayers = Process.attachModuleObserver({
@@ -107,7 +109,8 @@ class MetalBackend implements GraphicsBackend {
         if (topology === null) {
             return null;
         }
-        const layout = this.#pipelines!.layoutOf(draw.pipeline);
+        const description = this.#pipelines!.descriptionOf(draw.pipeline);
+        const layout = description?.position;
         const encoders = this.#encoders!;
         const call: DrawCall = {
             api: this.api,
@@ -115,8 +118,8 @@ class MetalBackend implements GraphicsBackend {
             streams: draw.slots.filter(slot => slot.role === "may-hold-vertices").flatMap(slot => this.#streamsOf(slot)),
             bystanders: draw.slots.filter(slot => slot.role === "bystander").flatMap(slot => this.#buffersOf(slot)),
             position: (layout !== undefined && layout !== "no-vertex-descriptor") ? layout : null,
-            texcoord: null,
-            textures: [],
+            texcoord: description?.texcoord ?? null,
+            textures: texturesOf(draw, description?.fragmentTextures ?? null),
             indices: null,
             firstVertex: draw.vertexStart,
             vertexCount: draw.vertexCount,
@@ -182,4 +185,9 @@ class MetalBackend implements GraphicsBackend {
         const size = draw.indexBuffer.isNull() ? INDIRECT_ARGUMENTS_SIZE : INDEXED_INDIRECT_ARGUMENTS_SIZE;
         return new DataView(buffer.read(draw.indirectOffset, size));
     }
+}
+
+function texturesOf(draw: EncodedDraw, names: Map<number, string> | null): TextureBinding[] {
+    const sampled = (names !== null) ? draw.textures.filter(({ slot }) => names.has(slot)) : draw.textures;
+    return sampled.map(({ slot, texture }) => ({ slot, name: names?.get(slot) ?? null, texture: metalTextureOf(texture) }));
 }
