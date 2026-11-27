@@ -445,6 +445,23 @@ its column into sight. Closing the last column takes the strip away and gives
 the view the whole widget again. Luma 3.0.0 opens the object in a separate
 inspector instead: a sheet on macOS and iOS, a window on Linux.
 
+A column shows its object as it was when the column opened; the view's
+`changed` does not reach it. An object that learns more later, such as one
+the agent fills in through an event after its row was opened, sends itself
+`lumaChanged`, and every column showing it collects its views again. Unity's
+scene view opens a GameObject at once and asks the agent for its components'
+fields as it does; the event that brings them sends `lumaChanged` to the
+GameObject and its components:
+
+```smalltalk
+{ #category : 'inspecting' }
+SceneObject >> takeComponents: someComponents shortened: isShortened [
+	…
+	self lumaChanged.
+	self components do: [ :each | each lumaChanged ]
+]
+```
+
 A `forward` view shows the view that the method `view:` names builds for the
 object `object:` gives, or its block answers. When that method raises or
 answers no view, the view stops naming both methods: `views: gtForwardFor:
