@@ -55,8 +55,12 @@ of seconds and exports the five largest meshes. `export-check.ts` needs no
 target: it exports meshes made up on the spot and checks the offered files
 byte for byte, a name cut to 255 bytes, and that a mesh with no contents and
 one whose OBJ would exceed 64 MiB are refused in the console with no file
-offered. `python3 test/mesh-finder/run.py --export` runs it in Frida's system
-session.
+offered, and that a textured mesh is offered as a ZIP of its OBJ, MTL and
+PNGs. `python3 test/mesh-finder/run.py --export` runs it in Frida's system
+session. `draw-probe.ts` starts the backends on their own and prints every
+distinct draw they deliver, with where its positions and UVs are and the
+first bytes of each texture it samples:
+`python3 test/mesh-finder/run.py --probe <pid> <seconds>`.
 
 Luma compiles instruments against its own frida-gum typings, which have
 `Memory.findPointers`; the `frida` CLI's built-in ones may not. Link Luma's
@@ -218,7 +222,9 @@ done
 A number after the variant, `/tmp/egl-target gles proc-address 300`, draws the
 scene that many times a frame.
 
-Both Linux targets are built with `-rdynamic`, which exports
+On an x86_64 host with Linux 7.2, the `frida` 17.25.0 Python module crashed
+on attaching to any process; 17.28.0 did not. Both Linux targets are built
+with `-rdynamic`, which exports
 `mesh_finder_expectations` for the harness. Mesa keeps a shader cache in
 `~/.cache` unless `MESA_SHADER_CACHE_DIR` says otherwise. On Linux the
 harness resolves the Vulkan driver's and OpenGL's functions the way the

@@ -390,7 +390,11 @@ It was tested on macOS 27 on Apple Silicon; on x86_64 Linux with Mesa 26
 on Intel graphics: Vulkan, and desktop OpenGL and OpenGL ES through EGL, both
 in test programs and in Chromium drawing WebGL through ANGLE's Vulkan and
 OpenGL backends; and on Windows 11 25H2, 64-bit and 32-bit, with the WARP
-software rasterizer and the Microsoft Basic Render Driver. It has not been
-tried on Intel Macs, iOS, other versions of Windows or Android, with GLX,
-with a GPU vendor's Direct3D driver, with the Direct3D debug layer, or with
-other drivers.
+software rasterizer and the Microsoft Basic Render Driver, and on Windows 11
+25H2 on ARM64, in a native ARM64 process, with WARP and the Parallels Display
+Adapter. Textures were tested in the test programs, on macOS, on Linux with
+Mesa and on Windows on ARM64, but not in Chromium or on Windows on x86. An
+x64 process on ARM64 Windows cannot be followed, since its `d3d11.dll` is
+ARM64EC code. It has not been tried on Intel Macs, iOS, other versions of
+Windows or Android, with GLX, with a GPU vendor's Direct3D driver, with the
+Direct3D debug layer, or with other drivers.
