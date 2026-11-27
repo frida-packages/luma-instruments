@@ -169,16 +169,16 @@ extent of its bounding box), how its positions are laid out, what that was
 learned from, and the buffers it lives in. A layout worked out rather than
 declared by the API comes with a confidence.
 
-- **Show** puts the mesh in the **Mesh** view below the table, beside the
+- Selecting a row puts its mesh in the **Mesh** view below the table, beside the
   console: drag to orbit, scroll or pinch to zoom, and pick Shaded, Wire or
   Points. A line under its title says what its layout was learned from. The
   console gets the details the picture does not show: its exact bounds and
   center, the layout and why, and the buffers. Meshes with no CPU contents,
   because they are in GPU-only storage or, with Vulkan, were bound to memory
   before the instrument was added, have nothing to show, and meshes whose
-  positions and indices exceed the 64 MiB a view can be handed are refused;
-  the console says which. In a narrow window the console goes below the
-  view, the table shows 6 rows, and the page scrolls.
+  positions and indices exceed the 64 MiB a view can be handed are refused; the
+  console says which. In a narrow window the console goes below the view, the
+  table shows 6 rows, and the page scrolls.
 - **Export OBJ** offers the mesh as a Wavefront OBJ file, ready to open in any
   3D tool, and Luma asks where to save it. The file is named after the mesh as
   the table names it, such as `#3 Cube vertices.obj`, with characters a file

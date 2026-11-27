@@ -3,7 +3,7 @@
   "displayName": "Mesh Finder",
   "version": "1.1.1",
   "main": "main.ts",
-  "engines": { "luma": ">=4.0.0" },
+  "engines": { "luma": ">=4.1.0" },
   "luma": {
     "icon": { "kind": "file", "value": "icon.png" },
     "compatibility": { "platforms": ["windows", "darwin", "linux"] },
@@ -53,10 +53,8 @@
             { "id": "learned", "name": "Learned from", "alignment": "leading" },
             { "id": "buffers", "name": "Buffers", "alignment": "leading" }
           ],
-          "rowActions": [
-            { "id": "show", "name": "Show" },
-            { "id": "obj", "name": "Export OBJ" }
-          ],
+          "rowActions": [{ "id": "obj", "name": "Export OBJ" }],
+          "rowSelection": { "id": "show", "name": "Show" },
           "maxRows": 5000
         },
         "actions": [{ "id": "scan", "name": "Scan" }],
