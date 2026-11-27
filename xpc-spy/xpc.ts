@@ -65,6 +65,8 @@ export const xpc = {
     uuidGetBytes: new NativeFunction(exported("xpc_uuid_get_bytes"), "pointer", ["pointer"]),
 };
 
+export const ANONYMOUS_SERVICE = "(anonymous)";
+
 export function connectionName(connection: NativePointer): string | null {
     const name = xpc.connectionGetName(connection);
     return name.isNull() ? null : name.readCString();

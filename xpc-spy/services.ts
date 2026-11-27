@@ -36,26 +36,35 @@ export class ServiceBoard {
         }
     }
 
+    list(service: string, pid: number): void {
+        this.#rowOf(service, "", pid);
+    }
+
     note(event: MessageEvent, gist: string, seen: string): void {
         this.count({ service: event.service, direction: event.direction, pid: event.pid ?? 0 }, seen).last = gist;
     }
 
     count(sighting: Sighting, seen: string): ServiceRow {
-        let row = this.#rows.get(sighting.service);
-        if (row === undefined) {
-            row = { peer: "", sent: 0, received: 0, seen, last: "" };
-            this.#rows.set(sighting.service, row);
-        }
+        const row = this.#rowOf(sighting.service, seen, sighting.pid);
         if (sighting.direction === "sent") {
             row.sent++;
         } else {
             row.received++;
         }
-        if (sighting.pid !== 0) {
-            row.peer = String(sighting.pid);
-        }
         row.seen = seen;
-        this.#changed.add(sighting.service);
+        return row;
+    }
+
+    #rowOf(service: string, seen: string, pid: number): ServiceRow {
+        let row = this.#rows.get(service);
+        if (row === undefined) {
+            row = { peer: "", sent: 0, received: 0, seen, last: "" };
+            this.#rows.set(service, row);
+        }
+        if (pid !== 0) {
+            row.peer = String(pid);
+        }
+        this.#changed.add(service);
         return row;
     }
 

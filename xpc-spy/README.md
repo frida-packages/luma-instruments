@@ -62,7 +62,9 @@ bytes; the arguments are not decoded.
 
 The **Services** table has a row per service with the last peer pid, how many
 messages were sent and received, and when the last one was seen and what it
-was. The counts survive a reload of the instrument. **Clear**, in the
+was. The services of the connections found when the instrument started are
+listed right away, before any of their messages are seen. The counts survive
+a reload of the instrument. **Clear**, in the
 table's header, empties it and starts the counts again.
 
 The **Recent messages** console starts with the line about the connections

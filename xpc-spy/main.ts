@@ -10,7 +10,11 @@ export const instrument: CustomInstrument = {
         const services = new ServiceBoard(ctx.widget("services"), restored.services);
         const recorder = new Recorder(ctx, settings, services);
         const tap = new XpcTap(settings, capture => recorder.record(capture));
-        announce(ctx.widget("messages"), tap.start());
+        const existing = tap.start();
+        if (!(existing instanceof Error)) {
+            listServices(services, settings, existing);
+        }
+        announce(ctx.widget("messages"), existing);
 
         return {
             updateConfig(next) {
@@ -39,6 +43,15 @@ export const instrument: CustomInstrument = {
         };
     }
 };
+
+function listServices(services: ServiceBoard, settings: Settings, { connections }: ExistingTraffic): void {
+    for (const { service, pid } of connections) {
+        if (settings.wants(service)) {
+            services.list(service, pid);
+        }
+    }
+    services.publish();
+}
 
 function announce(log: CustomInstrumentWidgetMap["messages"], existing: ExistingTraffic | Error): void {
     if (existing instanceof Error) {

@@ -1,4 +1,4 @@
-import { connectionName } from "./xpc.js";
+import { ANONYMOUS_SERVICE, connectionName, xpc } from "./xpc.js";
 import { type BlockHandler, releaseSnapshot, type RetainedConnection, snapshotHeap } from "./xpc-heap.js";
 import type { XpcLayout } from "./xpc-layout.js";
 
@@ -10,7 +10,8 @@ export interface ExistingTraffic {
 
 export interface ExistingConnection {
     connection: NativePointer;
-    name: string | null;
+    service: string;
+    pid: number;
     isPeer: boolean;
     eventHandler: BlockHandler | null;
 }
@@ -32,7 +33,8 @@ function describeConnection({ connection, eventHandler }: RetainedConnection, la
     const isPeer = live.has(listener.toString());
     return {
         connection,
-        name: connectionName((isPeer) ? listener : connection),
+        service: connectionName((isPeer) ? listener : connection) ?? ANONYMOUS_SERVICE,
+        pid: xpc.connectionGetPid(connection),
         isPeer,
         eventHandler,
     };

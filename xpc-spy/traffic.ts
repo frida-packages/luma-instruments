@@ -1,6 +1,6 @@
 import { blocks } from "./block.js";
 import { type ExistingTraffic, findExistingTraffic } from "./existing-traffic.js";
-import { connectionName, isOfType, xpc, xpcEntryPoints, xpcTypes } from "./xpc.js";
+import { ANONYMOUS_SERVICE, connectionName, isOfType, xpc, xpcEntryPoints, xpcTypes } from "./xpc.js";
 import { xpcLayout } from "./xpc-layout.js";
 
 export type Direction = "sent" | "received";
@@ -38,7 +38,6 @@ type UndeliveredCapture = Omit<Capture, "seq">;
 
 type HandlerRole = "event" | "reply";
 
-const ANONYMOUS_SERVICE = "(anonymous)";
 const REMEMBERED_CONNECTIONS = 4096;
 const CLOCK_UPTIME_RAW = 8;
 
@@ -158,8 +157,7 @@ export class XpcTap {
 
     #adoptExistingTraffic(existing: ExistingTraffic): ExistingTraffic {
         const { connections, pendingReplies } = existing;
-        for (const { connection, name, isPeer, eventHandler } of connections) {
-            const service = name ?? ANONYMOUS_SERVICE;
+        for (const { connection, service, isPeer, eventHandler } of connections) {
             if (isPeer) {
                 remember(this.#peerServices, connection.toString(), service);
             }
