@@ -1,7 +1,7 @@
 {
   "name": "react-native",
   "displayName": "React Native",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "main": "main.ts",
   "engines": { "luma": ">=4.0.0" },
   "luma": {
@@ -146,18 +146,28 @@
         "persistence": "none"
       }
     ],
-    "layout": { "column": [
-      "status",
-      { "widget": "runtimes", "maxRows": 4 },
-      { "row": [
-        { "widget": "traffic", "share": 70, "maxRows": 10 },
-        { "widget": "detail", "share": 30 }
-      ], "share": 65, "foldBelow": 900 },
-      { "row": [
-        { "widget": "modules", "share": 55, "maxRows": 6 },
-        { "widget": "bundles", "share": 45, "maxRows": 6 }
-      ], "share": 35, "foldBelow": 900 }
-    ] },
+    "layout": {
+      "column": [
+        "status",
+        { "widget": "runtimes", "maxRows": 4 },
+        {
+          "row": [
+            { "widget": "traffic", "share": 70, "maxRows": 10 },
+            { "widget": "detail", "share": 30 }
+          ],
+          "share": 65,
+          "foldBelow": 900
+        },
+        {
+          "row": [
+            { "widget": "modules", "share": 55, "maxRows": 6 },
+            { "widget": "bundles", "share": 45, "maxRows": 6 }
+          ],
+          "share": 35,
+          "foldBelow": 900
+        }
+      ]
+    },
     "children": [
       {
         "id": "runtime",
