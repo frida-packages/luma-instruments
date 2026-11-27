@@ -2,7 +2,7 @@ import type { BufferAccess, GpuTexture, TextureBinding } from "./graphics-backen
 import { internalFormatOf, sizedFormatOf, type GLInternalFormat } from "./gl-texture-formats.js";
 import type { GLTap, GLTapPlatform, GLTextureFacts, GLTextureUpload } from "./gl-tap.js";
 import type { GLFlavor } from "./opengl.js";
-import { textureByteLength, type TextureFormat } from "./texture-format.js";
+import { textureByteLength, textureFootprint, type TextureFormat } from "./texture-format.js";
 
 export interface GLProfile {
     api: string;
@@ -43,11 +43,6 @@ interface TextureShadow {
     width: number;
     format: TextureFormat;
     bytes: ArrayBuffer;
-}
-
-interface BlockSize {
-    width: number;
-    height: number;
 }
 
 const GL_TEXTURE_2D = 0x0de1;
@@ -401,25 +396,16 @@ function shadowKey(shareGroup: NativePointer, texture: number): string {
 }
 
 function patchBlocks(shadow: TextureShadow, upload: GLTextureUpload): void {
-    const block = blockSizeOf(shadow.format);
-    const blockBytes = textureByteLength(shadow.format, 1, 1);
-    const rowBytes = Math.ceil(upload.width / block.width) * blockBytes;
+    const block = textureFootprint(shadow.format);
+    const rowBytes = Math.ceil(upload.width / block.width) * block.bytes;
     const rows = Math.ceil(upload.height / block.height);
-    const shadowRowBytes = Math.ceil(shadow.width / block.width) * blockBytes;
+    const shadowRowBytes = Math.ceil(shadow.width / block.width) * block.bytes;
     const source = new Uint8Array(upload.data.readByteArray(Math.min(upload.size, rowBytes * rows))!);
     const target = new Uint8Array(shadow.bytes);
-    const left = (upload.x / block.width) * blockBytes;
+    const left = (upload.x / block.width) * block.bytes;
     for (let row = 0; row !== rows; row++) {
         target.set(source.subarray(row * rowBytes, (row + 1) * rowBytes), (upload.y / block.height + row) * shadowRowBytes + left);
     }
-}
-
-function blockSizeOf(format: TextureFormat): BlockSize {
-    if (format.startsWith("astc")) {
-        const [width, height] = format.slice(4).split("x").map(Number);
-        return { width, height };
-    }
-    return { width: 4, height: 4 };
 }
 
 function levelOf(facts: GLTextureFacts): LevelFacts {
