@@ -133,12 +133,13 @@ function texturesCell(mesh: Mesh): string {
     }
     const shown = baseColorTexture(mesh.textures) ?? mesh.textures[0];
     const others = (mesh.textures.length > 1) ? `, +${mesh.textures.length - 1}` : "";
-    return `${textureText(shown)} ${shown.texture.format ?? shown.texture.formatName}${others}`;
+    const format = (shown.texture.width !== 0) ? ` ${shown.texture.format ?? shown.texture.formatName}` : "";
+    return `${textureText(shown)}${format}${others}`;
 }
 
 export function textureText({ slot, name, texture }: MeshTexture): string {
     const called = (name !== null) ? `"${name}"` : `slot ${slot}`;
-    return `${called} ${texture.width} × ${texture.height}`;
+    return (texture.width !== 0) ? `${called} ${texture.width} × ${texture.height}` : `${called}, made before Mesh Finder was added`;
 }
 
 export function compact(value: number): string {
