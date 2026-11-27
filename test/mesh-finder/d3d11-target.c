@@ -12,7 +12,26 @@ enum {
     STATS_FRAMES = 120,
     FRAMES_AFTER_FINISH = 2 * STATS_FRAMES,
     TARGET_SIZE = 256,
+    ALBEDO_WIDTH = 8,
+    ALBEDO_HEIGHT = 4,
+    NORMALS_SIZE = 4,
+    BC1_WIDTH = 16,
+    BC1_HEIGHT = 8,
 };
+
+typedef struct {
+    uint32_t width, height;
+    const char *format;
+    const uint8_t (*corners)[4];
+} ExpectedTexture;
+
+static const uint8_t albedo_fill[4] = { 128, 128, 128, 255 };
+static const uint8_t albedo_corners[4][4] = { { 255, 0, 0, 255 }, { 0, 255, 0, 255 }, { 0, 0, 255, 255 }, { 255, 255, 0, 255 } };
+static const uint8_t normals_fill[4] = { 128, 128, 255, 255 };
+static const uint16_t bc1_fill = 0x8410;
+static const uint16_t bc1_corners[4] = { 0xf800, 0x07e0, 0x001f, 0xffff };
+static const uint8_t bc1_decoded_corners[4][4] = { { 255, 0, 0, 255 }, { 0, 255, 0, 255 }, { 0, 0, 255, 255 }, { 255, 255, 255, 255 } };
+static const GUID debug_object_name = { 0x429b8c22, 0x9188, 0x4b0c, { 0x87, 0x42, 0xac, 0xb0, 0xbf, 0x85, 0xc2, 0x00 } };
 
 static const char shader_source[] =
     "cbuffer Uniforms : register(b0) { float4x4 mvp; };\n"
@@ -23,7 +42,18 @@ static const char shader_source[] =
     "Out position_vertex(float4 position : POSITION) {\n"
     "    Out o; o.position = mul(mvp, float4(position.xyz, 1)); o.color = 1; return o;\n"
     "}\n"
-    "float4 shade(Out i) : SV_Target { return float4(i.color, 1); }\n";
+    "float4 shade(Out i) : SV_Target { return float4(i.color, 1); }\n"
+    "Texture2D albedo : register(t0);\n"
+    "Texture2D normalMap : register(t1);\n"
+    "SamplerState nearest : register(s0);\n"
+    "struct Textured { float4 position : SV_Position; float3 color : COLOR; float2 uv : TEXCOORD; };\n"
+    "Textured textured_vertex(float3 position : POSITION, float3 normal : NORMAL, float2 uv : TEXCOORD) {\n"
+    "    Textured o; o.position = mul(mvp, float4(position, 1)); o.color = normal * 0.5 + 0.5; o.uv = uv; return o;\n"
+    "}\n"
+    "float4 shade_textured(Textured i) : SV_Target {\n"
+    "    float3 normal = normalMap.Sample(nearest, i.uv).xyz * 2 - 1;\n"
+    "    return albedo.Sample(nearest, i.uv) * float4(i.color * saturate(normal.z), 1);\n"
+    "}\n";
 
 volatile LONG mesh_finder_late_upload_requested;
 volatile LONG mesh_finder_finish_requested;
@@ -38,9 +68,11 @@ typedef struct {
     ID3D11DeviceContext *deferred;
     ID3D11RenderTargetView *target;
     ID3D11DepthStencilView *depth;
-    ID3D11VertexShader *described_vertex, *position_vertex;
-    ID3D11PixelShader *shade;
-    ID3DBlob *described_code, *position_code;
+    ID3D11VertexShader *described_vertex, *position_vertex, *textured_vertex;
+    ID3D11PixelShader *shade, *shade_textured;
+    ID3DBlob *described_code, *position_code, *textured_code, *shade_textured_code;
+    ID3D11SamplerState *nearest;
+    ID3D11ShaderResourceView *cube_albedo, *cube_normals, *sphere_albedo;
     ID3D11InputLayout *interleaved, *split, *pulled, *positions4, *cube_layout, *half4;
     ID3D11Buffer *uniforms;
     ID3D11Buffer *cube_vertices, *cube_indices;
@@ -60,9 +92,15 @@ static const D3D11_INPUT_ELEMENT_DESC interleaved_elements[] = {
     { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 },
     { "NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA, 0 },
 };
+static const D3D11_INPUT_ELEMENT_DESC textured_elements[] = {
+    { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 },
+    { "NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA, 0 },
+    { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA, 0 },
+};
 static const D3D11_INPUT_ELEMENT_DESC split_elements[] = {
     { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 },
     { "NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 1, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 },
+    { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 1, 12, D3D11_INPUT_PER_VERTEX_DATA, 0 },
 };
 static const D3D11_INPUT_ELEMENT_DESC positions4_elements[] = {
     { "POSITION", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 },
@@ -74,13 +112,20 @@ static const D3D11_INPUT_ELEMENT_DESC half4_elements[] = {
 static void create_device(Scene *scene, const char *driver);
 static void build_pipelines(Scene *scene);
 static void upload_meshes(Scene *scene);
+static void make_textures(Scene *scene);
 static void render_frame(Scene *scene);
 static double milliseconds_since(LARGE_INTEGER start);
 static ID3DBlob *compile(const char *entry, const char *profile);
 static ID3D11Buffer *mapped_buffer(Scene *scene, UINT bind, const void *data, UINT length);
 static uint16_t *half_positions(const Mesh *mesh);
+static void expect_textured(const Mesh *mesh, const char *how, uint32_t triangle_count, const ExpectedTexture *texture);
 static void expect_absent(const Mesh *mesh, const char *how, uint32_t triangle_count);
+static uint8_t *rgba_texels(uint32_t width, uint32_t height, const uint8_t fill[4], const uint8_t (*corners)[4]);
+static ID3D11ShaderResourceView *texture_view(Scene *scene, DXGI_FORMAT format, UINT width, UINT height, const void *texels, UINT pitch,
+    const char *name);
+static uint16_t *bc1_blocks(uint32_t width, uint32_t height, uint16_t fill, const uint16_t corners[4]);
 static void upload_late(Scene *scene);
+static void rebuild_pixel_shader(Scene *scene);
 static void rebuild_layouts(Scene *scene);
 static void update_uniforms(Scene *scene);
 static void draw_scene(Scene *scene);
@@ -103,6 +148,7 @@ int main(int argc, char **argv)
     create_device(&scene, driver);
     build_pipelines(&scene);
     upload_meshes(&scene);
+    make_textures(&scene);
     render_frame(&scene);
     fclose(fopen("ready.txt", "w"));
     printf("pid %lu ready, %d draws per frame\n", GetCurrentProcessId(), scene.repeats * 6);
@@ -170,18 +216,27 @@ static void build_pipelines(Scene *scene)
 {
     scene->described_code = compile("described_vertex", "vs_4_0");
     scene->position_code = compile("position_vertex", "vs_4_0");
+    scene->textured_code = compile("textured_vertex", "vs_4_0");
+    scene->shade_textured_code = compile("shade_textured", "ps_4_0");
     ID3DBlob *shade = compile("shade", "ps_4_0");
     check(ID3D11Device_CreateVertexShader(scene->device, ID3D10Blob_GetBufferPointer(scene->described_code),
         ID3D10Blob_GetBufferSize(scene->described_code), NULL, &scene->described_vertex), "CreateVertexShader");
     check(ID3D11Device_CreateVertexShader(scene->device, ID3D10Blob_GetBufferPointer(scene->position_code),
         ID3D10Blob_GetBufferSize(scene->position_code), NULL, &scene->position_vertex), "CreateVertexShader");
+    check(ID3D11Device_CreateVertexShader(scene->device, ID3D10Blob_GetBufferPointer(scene->textured_code),
+        ID3D10Blob_GetBufferSize(scene->textured_code), NULL, &scene->textured_vertex), "CreateVertexShader");
     check(ID3D11Device_CreatePixelShader(scene->device, ID3D10Blob_GetBufferPointer(shade), ID3D10Blob_GetBufferSize(shade), NULL,
         &scene->shade), "CreatePixelShader");
     ID3D10Blob_Release(shade);
+    check(ID3D11Device_CreatePixelShader(scene->device, ID3D10Blob_GetBufferPointer(scene->shade_textured_code),
+        ID3D10Blob_GetBufferSize(scene->shade_textured_code), NULL, &scene->shade_textured), "CreatePixelShader");
+    D3D11_SAMPLER_DESC nearest = { D3D11_FILTER_MIN_MAG_MIP_POINT, D3D11_TEXTURE_ADDRESS_WRAP, D3D11_TEXTURE_ADDRESS_WRAP,
+        D3D11_TEXTURE_ADDRESS_WRAP, 0, 1, D3D11_COMPARISON_NEVER, { 0, 0, 0, 0 }, 0, D3D11_FLOAT32_MAX };
+    check(ID3D11Device_CreateSamplerState(scene->device, &nearest, &scene->nearest), "CreateSamplerState");
 
     scene->interleaved = layout_with(scene, interleaved_elements, 2, scene->described_code);
-    scene->cube_layout = layout_with(scene, interleaved_elements, 2, scene->described_code);
-    scene->split = layout_with(scene, split_elements, 2, scene->described_code);
+    scene->cube_layout = layout_with(scene, textured_elements, 3, scene->textured_code);
+    scene->split = layout_with(scene, split_elements, 3, scene->textured_code);
     scene->pulled = layout_with(scene, interleaved_elements, 2, scene->described_code);
     scene->positions4 = layout_with(scene, positions4_elements, 1, scene->position_code);
     scene->half4 = layout_with(scene, half4_elements, 1, scene->position_code);
@@ -256,9 +311,12 @@ static void upload_meshes(Scene *scene)
     free(pyramid);
     free(hidden_indices);
 
-    expect(&scene->cube, "immutable, interleaved position, normal and uv; 16-bit indices; DrawIndexed", 12, CONTENTS_CPU_VISIBLE);
-    expect(&scene->sphere, "UpdateSubresource; positions alone at an offset, normals in a second stream; 32-bit indices at an offset",
-        scene->sphere.index_count / 3, CONTENTS_CPU_VISIBLE);
+    ExpectedTexture cube_texture = { ALBEDO_WIDTH, ALBEDO_HEIGHT, "rgba8unorm", albedo_corners };
+    ExpectedTexture sphere_texture = { BC1_WIDTH, BC1_HEIGHT, "bc1", bc1_decoded_corners };
+    expect_textured(&scene->cube, "immutable, interleaved position, normal and uv; 16-bit indices; DrawIndexed; "
+        "an RGBA8 albedo and a normal map", 12, &cube_texture);
+    expect_textured(&scene->sphere, "UpdateSubresource; positions alone at an offset, normals and uvs in a second stream; "
+        "32-bit indices at an offset; a BC1 albedo", scene->sphere.index_count / 3, &sphere_texture);
     expect(&scene->torus, "dynamic, filled with Map; base vertex; DrawIndexedInstancedIndirect", scene->torus.index_count / 3,
         CONTENTS_CPU_VISIBLE);
     expect(&scene->ribbon, "triangle strip, Draw", scene->ribbon.vertex_count - 2, CONTENTS_CPU_VISIBLE);
@@ -269,6 +327,22 @@ static void upload_meshes(Scene *scene)
     expect_absent(&scene->released, "released before attach", scene->released.index_count / 3);
 }
 
+static void make_textures(Scene *scene)
+{
+    uint8_t *albedo = rgba_texels(ALBEDO_WIDTH, ALBEDO_HEIGHT, albedo_fill, albedo_corners);
+    scene->cube_albedo = texture_view(scene, DXGI_FORMAT_R8G8B8A8_UNORM, ALBEDO_WIDTH, ALBEDO_HEIGHT, albedo, ALBEDO_WIDTH * 4,
+        "cube albedo");
+    uint8_t *normals = rgba_texels(NORMALS_SIZE, NORMALS_SIZE, normals_fill, NULL);
+    scene->cube_normals = texture_view(scene, DXGI_FORMAT_R8G8B8A8_UNORM, NORMALS_SIZE, NORMALS_SIZE, normals, NORMALS_SIZE * 4,
+        "cube normals");
+    uint16_t *blocks = bc1_blocks(BC1_WIDTH, BC1_HEIGHT, bc1_fill, bc1_corners);
+    scene->sphere_albedo = texture_view(scene, DXGI_FORMAT_BC1_UNORM, BC1_WIDTH, BC1_HEIGHT, blocks, BC1_WIDTH / 4 * 8,
+        "sphere albedo");
+    free(albedo);
+    free(normals);
+    free(blocks);
+}
+
 static void render_frame(Scene *scene)
 {
     static const float black[4] = { 0, 0, 0, 1 };
@@ -277,6 +351,7 @@ static void render_frame(Scene *scene)
         upload_late(scene);
     }
     if (scene->frame % LAYOUT_LIFETIME == LAYOUT_LIFETIME - 1) {
+        rebuild_pixel_shader(scene);
         rebuild_layouts(scene);
     }
     update_uniforms(scene);
@@ -332,9 +407,69 @@ static uint16_t *half_positions(const Mesh *mesh)
     return packed;
 }
 
+static void expect_textured(const Mesh *mesh, const char *how, uint32_t triangle_count, const ExpectedTexture *texture)
+{
+    expect(mesh, how, triangle_count, CONTENTS_CPU_VISIBLE);
+    uint32_t first = (mesh->index_count != 0) ? UINT32_MAX : 0;
+    for (uint32_t i = 0; i != mesh->index_count; i++) {
+        first = (mesh->indices[i] < first) ? mesh->indices[i] : first;
+    }
+    const float *a = mesh->vertices[first].uv, *b = mesh->vertices[first + 1].uv, *c = mesh->vertices[first + 2].uv;
+    const uint8_t (*k)[4] = texture->corners;
+    size_t used = strlen(mesh_finder_expectations) - 1;
+    snprintf(mesh_finder_expectations + used, sizeof(mesh_finder_expectations) - used,
+        ",\"texture\":{\"width\":%u,\"height\":%u,\"format\":\"%s\",\"corners\":[[%u,%u,%u,%u],[%u,%u,%u,%u],[%u,%u,%u,%u],[%u,%u,%u,%u]]},"
+        "\"texcoords\":[[%g,%g],[%g,%g],[%g,%g]]}",
+        texture->width, texture->height, texture->format, k[0][0], k[0][1], k[0][2], k[0][3], k[1][0], k[1][1], k[1][2], k[1][3],
+        k[2][0], k[2][1], k[2][2], k[2][3], k[3][0], k[3][1], k[3][2], k[3][3], a[0], a[1], b[0], b[1], c[0], c[1]);
+}
+
 static void expect_absent(const Mesh *mesh, const char *how, uint32_t triangle_count)
 {
     record_expectation(mesh, how, triangle_count, CONTENTS_CPU_VISIBLE, PRESENCE_ABSENT);
+}
+
+static uint8_t *rgba_texels(uint32_t width, uint32_t height, const uint8_t fill[4], const uint8_t (*corners)[4])
+{
+    uint8_t *texels = calloc(width * height, 4);
+    for (uint32_t i = 0; i != width * height; i++) {
+        memcpy(&texels[i * 4], fill, 4);
+    }
+    if (corners != NULL) {
+        uint32_t places[4] = { 0, width - 1, (height - 1) * width, height * width - 1 };
+        for (int k = 0; k != 4; k++) {
+            memcpy(&texels[places[k] * 4], corners[k], 4);
+        }
+    }
+    return texels;
+}
+
+static ID3D11ShaderResourceView *texture_view(Scene *scene, DXGI_FORMAT format, UINT width, UINT height, const void *texels, UINT pitch,
+    const char *name)
+{
+    D3D11_TEXTURE2D_DESC description = { width, height, 1, 1, format, { 1, 0 }, D3D11_USAGE_IMMUTABLE, D3D11_BIND_SHADER_RESOURCE, 0, 0 };
+    D3D11_SUBRESOURCE_DATA initial = { texels, pitch, 0 };
+    ID3D11Texture2D *texture;
+    ID3D11ShaderResourceView *view;
+    check(ID3D11Device_CreateTexture2D(scene->device, &description, &initial, &texture), "CreateTexture2D");
+    check(ID3D11Texture2D_SetPrivateData(texture, &debug_object_name, (UINT) strlen(name), name), "SetPrivateData");
+    check(ID3D11Device_CreateShaderResourceView(scene->device, (ID3D11Resource *) texture, NULL, &view), "CreateShaderResourceView");
+    ID3D11Texture2D_Release(texture);
+    return view;
+}
+
+static uint16_t *bc1_blocks(uint32_t width, uint32_t height, uint16_t fill, const uint16_t corners[4])
+{
+    uint32_t columns = width / 4, rows = height / 4;
+    uint16_t *blocks = calloc(columns * rows, 8);
+    uint32_t places[4] = { 0, columns - 1, (rows - 1) * columns, rows * columns - 1 };
+    for (uint32_t i = 0; i != columns * rows; i++) {
+        blocks[i * 4] = fill;
+    }
+    for (int k = 0; k != 4; k++) {
+        blocks[places[k] * 4] = corners[k];
+    }
+    return blocks;
 }
 
 static void upload_late(Scene *scene)
@@ -347,11 +482,21 @@ static void upload_late(Scene *scene)
     fflush(stdout);
 }
 
+static void rebuild_pixel_shader(Scene *scene)
+{
+    ID3D11PixelShader *previous = scene->shade_textured;
+    check(ID3D11Device_CreatePixelShader(scene->device, ID3D10Blob_GetBufferPointer(scene->shade_textured_code),
+        ID3D10Blob_GetBufferSize(scene->shade_textured_code), NULL, &scene->shade_textured), "CreatePixelShader");
+    ID3D11PixelShader_Release(previous);
+}
+
 static void rebuild_layouts(Scene *scene)
 {
     ID3D11InputLayout_Release(scene->cube_layout);
+    ID3D11InputLayout_Release(scene->split);
     ID3D11InputLayout_Release(scene->half4);
-    scene->cube_layout = layout_with(scene, interleaved_elements, 2, scene->described_code);
+    scene->cube_layout = layout_with(scene, textured_elements, 3, scene->textured_code);
+    scene->split = layout_with(scene, split_elements, 3, scene->textured_code);
     scene->half4 = layout_with(scene, half4_elements, 1, scene->position_code);
 }
 
@@ -373,20 +518,30 @@ static void update_uniforms(Scene *scene)
 static void draw_scene(Scene *scene)
 {
     ID3D11DeviceContext *context = scene->immediate;
+    ID3D11ShaderResourceView *cube_views[2] = { scene->cube_albedo, scene->cube_normals };
+    ID3D11ShaderResourceView *sphere_views[2] = { scene->sphere_albedo, NULL };
+    ID3D11ShaderResourceView *no_views[2] = { NULL, NULL };
     ID3D11DeviceContext_IASetPrimitiveTopology(context, D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-    ID3D11DeviceContext_VSSetShader(context, scene->described_vertex, NULL, 0);
+    ID3D11DeviceContext_VSSetShader(context, scene->textured_vertex, NULL, 0);
+    ID3D11DeviceContext_PSSetShader(context, scene->shade_textured, NULL, 0);
+    ID3D11DeviceContext_PSSetSamplers(context, 0, 1, &scene->nearest);
 
     ID3D11DeviceContext_IASetInputLayout(context, scene->cube_layout);
     bind_vertices(context, 0, scene->cube_vertices, sizeof(Vertex), 0);
     ID3D11DeviceContext_IASetIndexBuffer(context, scene->cube_indices, DXGI_FORMAT_R16_UINT, 0);
+    ID3D11DeviceContext_PSSetShaderResources(context, 0, 2, cube_views);
     ID3D11DeviceContext_DrawIndexed(context, scene->cube.index_count, 0, 0);
 
     ID3D11DeviceContext_IASetInputLayout(context, scene->split);
     bind_vertices(context, 0, scene->sphere_positions, 12, SPHERE_OFFSET);
     bind_vertices(context, 1, scene->sphere_attributes, sizeof(Vertex), 12);
     ID3D11DeviceContext_IASetIndexBuffer(context, scene->sphere_indices, DXGI_FORMAT_R32_UINT, SPHERE_INDEX_OFFSET);
+    ID3D11DeviceContext_PSSetShaderResources(context, 0, 2, sphere_views);
     ID3D11DeviceContext_DrawIndexed(context, scene->sphere.index_count, 0, 0);
     bind_vertices(context, 1, NULL, 0, 0);
+    ID3D11DeviceContext_PSSetShaderResources(context, 0, 2, no_views);
+    ID3D11DeviceContext_VSSetShader(context, scene->described_vertex, NULL, 0);
+    ID3D11DeviceContext_PSSetShader(context, scene->shade, NULL, 0);
 
     ID3D11DeviceContext_IASetInputLayout(context, scene->pulled);
     bind_vertices(context, 0, scene->torus_vertices, 24, 0);

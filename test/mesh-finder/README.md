@@ -8,8 +8,8 @@ way each:
 
 | Mesh | Direct3D 11 | Metal | OpenGL |
 | --- | --- | --- | --- |
-| cube | immutable, interleaved position, normal and uv, 16-bit indices, `DrawIndexed` | interleaved position, normal and uv, 16-bit indices | the same, `glDrawElements` |
-| sphere | `UpdateSubresource`, positions alone at an offset, normals in a second stream, 32-bit indices at an offset | positions alone, at an offset in their buffer, 32-bit indices | the same, with the indices at an offset too |
+| cube | immutable, interleaved position, normal and uv, 16-bit indices, `DrawIndexed`, an RGBA8 albedo and a normal map | interleaved position, normal and uv, 16-bit indices | the same, `glDrawElements` |
+| sphere | `UpdateSubresource`, positions alone at an offset, normals and uvs in a second stream, 32-bit indices at an offset, a BC1 albedo | positions alone, at an offset in their buffer, 32-bit indices | the same, with the indices at an offset too |
 | torus | dynamic, filled with `Map`, base vertex 7, `DrawIndexedInstancedIndirect` | pulled by the shader, no vertex descriptor | interleaved, `glDrawRangeElements` |
 | ribbon | triangle strip, `Draw` | triangle strip, not indexed | the same, `glDrawArrays` |
 | octahedron | four floats per position, drawn on a deferred context | not indexed, four floats per position | the same, in a VAO it shares |
@@ -26,8 +26,10 @@ target binds its uniforms the way a game engine does: in slot 0, below the
 vertices, from two 4 MiB scratch buffers of plausible floats that take turns,
 each filled from its start again when its turn comes. It leaves the sphere's
 second stream bound for the draws that follow, too. It rebuilds the cube's pipeline every two seconds, so a vertex
-descriptor is seen too, and the Direct3D 11 target rebuilds the cube's and
-the pyramid's input layouts every second for the same reason. The Direct3D 11
+descriptor is seen too, and the Direct3D 11 target rebuilds the cube's, the
+sphere's and the pyramid's input layouts, and the pixel shader that samples
+the cube's and the sphere's textures, every second for the same reason, and
+unbinds those textures before it draws the other meshes. The Direct3D 11
 target also makes a sphere and lets it go before the harness attaches, and
 the harness checks that it is not listed. Each target exports
 `mesh_finder_expectations`, a JSON list of what should be found.
