@@ -115,6 +115,8 @@ class MetalBackend implements GraphicsBackend {
             streams: draw.slots.filter(slot => slot.role === "may-hold-vertices").flatMap(slot => this.#streamsOf(slot)),
             bystanders: draw.slots.filter(slot => slot.role === "bystander").flatMap(slot => this.#buffersOf(slot)),
             position: (layout !== undefined && layout !== "no-vertex-descriptor") ? layout : null,
+            texcoord: null,
+            textures: [],
             indices: null,
             firstVertex: draw.vertexStart,
             vertexCount: draw.vertexCount,

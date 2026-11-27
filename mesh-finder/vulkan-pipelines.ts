@@ -1,7 +1,7 @@
-import type { PositionLayout } from "./graphics-backend.js";
-import { positionAttribute } from "./position-attribute.js";
+import type { AttributeLayout } from "./graphics-backend.js";
+import { positionAttribute } from "./vertex-attributes.js";
 import { vertexInputNames, type InputNames, type VertexInputNames } from "./spirv-inputs.js";
-import { positionFormat, type ComponentType, type PositionFormat } from "./vertex-format.js";
+import { attributeFormat, type ComponentType, type AttributeFormat } from "./vertex-format.js";
 import type { VulkanDriver } from "./vulkan-driver.js";
 import {
     BaseInStructure,
@@ -28,7 +28,7 @@ export interface VertexBindingInfo {
 export interface VertexAttributeInfo {
     location: number;
     binding: number;
-    format: PositionFormat | null;
+    format: AttributeFormat | null;
     offset: number;
 }
 
@@ -188,7 +188,7 @@ export function dynamicVertexInputOf(bindings: NativePointer, bindingCount: numb
     };
 }
 
-export function positionLayoutOf(input: VertexInputInfo, names: InputNames | null, origin: string): PositionLayout | null {
+export function positionLayoutOf(input: VertexInputInfo, names: InputNames | null, origin: string): AttributeLayout | null {
     const perVertex = input.attributes.filter(attribute =>
         input.bindings.find(binding => binding.binding === attribute.binding)?.rate === "per-vertex");
     const chosen = positionAttribute(perVertex, names ?? new Map());
@@ -265,7 +265,7 @@ function rateOf(rate: number): InputRate {
     return (rate === PER_VERTEX) ? "per-vertex" : "per-instance";
 }
 
-function formatOf(format: number): PositionFormat | null {
+function formatOf(format: number): AttributeFormat | null {
     const known = vulkanFormats.get(format);
-    return (known !== undefined) ? positionFormat(known[0], known[1]) : null;
+    return (known !== undefined) ? attributeFormat(known[0], known[1]) : null;
 }

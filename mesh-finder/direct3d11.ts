@@ -11,7 +11,7 @@ import type {
     GraphicsBackendFactory,
     IndexBinding,
     IndexFormat,
-    PositionLayout,
+    AttributeLayout,
     Topology,
     VertexStream,
 } from "./graphics-backend.js";
@@ -341,7 +341,7 @@ class Direct3D11Backend implements GraphicsBackend {
         }));
         const declared = draw.layout.isNull() ? undefined : this.#layouts.positionOf(draw.layout);
         const positionStream = (declared != null) ? streams.find(stream => stream.slot === declared.slot) : undefined;
-        const position: PositionLayout | null = (declared != null && positionStream !== undefined)
+        const position: AttributeLayout | null = (declared != null && positionStream !== undefined)
             ? { ...declared, stride: positionStream.stride ?? 0 }
             : null;
         const tap = this.#tap;
@@ -351,6 +351,8 @@ class Direct3D11Backend implements GraphicsBackend {
             streams,
             bystanders: [],
             position,
+            texcoord: null,
+            textures: [],
             indices: null,
             firstVertex: draw.startVertex,
             vertexCount: draw.vertexCount,

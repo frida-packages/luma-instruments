@@ -1,5 +1,5 @@
 import { indexRange, indexWidths } from "./geometry-kernels.js";
-import type { DrawCall, GeometryObserver, GpuBuffer, IndexBinding, PositionLayout, VertexStream } from "./graphics-backend.js";
+import type { DrawCall, GeometryObserver, GpuBuffer, IndexBinding, AttributeLayout, VertexStream } from "./graphics-backend.js";
 import { guessDrawLayout, type VertexSpan } from "./layout-guess.js";
 import {
     buildMesh,
@@ -196,7 +196,7 @@ function vertexSpanOf(draw: DrawCall, indexBytes: ArrayBuffer | null): VertexSpa
     return (range !== null) ? { first: range.min + draw.baseVertex, last: range.max + draw.baseVertex } : null;
 }
 
-function declaredPositions(draw: DrawCall, declared: PositionLayout): PlacedPositions | null {
+function declaredPositions(draw: DrawCall, declared: AttributeLayout): PlacedPositions | null {
     const stream = draw.streams.find(candidate => candidate.slot === declared.slot);
     if (stream === undefined) {
         return null;

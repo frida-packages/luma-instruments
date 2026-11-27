@@ -1,6 +1,6 @@
 export type ComponentType = "float32" | "float16" | "snorm16" | "unorm16" | "sint16" | "uint16" | "snorm8" | "unorm8";
 
-export interface PositionFormat {
+export interface AttributeFormat {
     component: ComponentType;
     count: number;
 }
@@ -18,17 +18,17 @@ const componentSizes: Record<ComponentType, number> = {
     unorm8: 1,
 };
 
-export const float32x3: PositionFormat = { component: "float32", count: 3 };
-export const float32x4: PositionFormat = { component: "float32", count: 4 };
+export const float32x3: AttributeFormat = { component: "float32", count: 3 };
+export const float32x4: AttributeFormat = { component: "float32", count: 4 };
 
-export function positionFormat(component: ComponentType, count: number): PositionFormat | null {
+export function attributeFormat(component: ComponentType, count: number): AttributeFormat | null {
     return (count >= 2 && count <= 4) ? { component, count } : null;
 }
 
-export function formatSize(format: PositionFormat): number {
+export function formatSize(format: AttributeFormat): number {
     return componentSizes[format.component] * format.count;
 }
 
-export function formatName(format: PositionFormat): string {
+export function formatName(format: AttributeFormat): string {
     return `${format.component}x${format.count}`;
 }

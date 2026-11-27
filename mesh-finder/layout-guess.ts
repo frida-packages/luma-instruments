@@ -1,12 +1,12 @@
 import { mostSampledPositions, samplePositions, type PositionSample } from "./geometry-kernels.js";
 import type { GpuBuffer, VertexStream } from "./graphics-backend.js";
-import { float32x3, float32x4, type PositionFormat } from "./vertex-format.js";
+import { float32x3, float32x4, type AttributeFormat } from "./vertex-format.js";
 
 export interface GuessedLayout {
     slot: number;
     stride: number;
     offset: number;
-    format: PositionFormat;
+    format: AttributeFormat;
     confidence: number;
     reason: string;
 }

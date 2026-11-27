@@ -159,6 +159,8 @@ class VulkanBackend implements GraphicsBackend {
             streams,
             bystanders: [],
             position,
+            texcoord: null,
+            textures: [],
             indices: null,
             firstVertex: 0,
             vertexCount: 0,

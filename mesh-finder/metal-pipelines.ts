@@ -1,12 +1,12 @@
-import type { PositionLayout } from "./graphics-backend.js";
+import type { AttributeLayout } from "./graphics-backend.js";
 import { implementationOf, objcSend, selector, stringFrom } from "./objc.js";
-import { positionFormat, type ComponentType, type PositionFormat } from "./vertex-format.js";
+import { attributeFormat, type ComponentType, type AttributeFormat } from "./vertex-format.js";
 
-export type PipelineLayout = PositionLayout | "no-vertex-descriptor";
+export type PipelineLayout = AttributeLayout | "no-vertex-descriptor";
 
 interface DescribedAttribute {
     index: number;
-    format: PositionFormat;
+    format: AttributeFormat;
     offset: number;
     bufferIndex: number;
 }
@@ -105,7 +105,7 @@ function describedAttributes(vertexDescriptor: NativePointer): DescribedAttribut
         }
         described.push({
             index,
-            format: positionFormat(known[0], known[1])!,
+            format: attributeFormat(known[0], known[1])!,
             offset: objcSend.uint64(attribute, selectors().offset).toNumber(),
             bufferIndex: objcSend.uint64(attribute, selectors().bufferIndex).toNumber(),
         });

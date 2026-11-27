@@ -1,6 +1,6 @@
 import { gatherPositions, sequentialIndices, triangleList } from "./geometry-kernels.js";
 import type { GpuBuffer, IndexFormat, Topology } from "./graphics-backend.js";
-import { formatName, type PositionFormat } from "./vertex-format.js";
+import { formatName, type AttributeFormat } from "./vertex-format.js";
 
 export type Evidence = "drawn" | "found";
 
@@ -37,7 +37,7 @@ export interface Bounds {
 export interface VertexLayout {
     stride: number;
     offset: number;
-    format: PositionFormat;
+    format: AttributeFormat;
     knowledge: LayoutKnowledge;
     confidence: number;
     source: string;

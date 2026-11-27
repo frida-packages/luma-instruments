@@ -6,13 +6,13 @@ import type {
     GpuBuffer,
     GraphicsBackend,
     IndexFormat,
-    PositionLayout,
+    AttributeLayout,
     Topology,
     VertexStream,
 } from "./graphics-backend.js";
 import { GLTap, type GLDraw, type GLTapPlatform, type GLUpload } from "./gl-tap.js";
-import { positionAttribute } from "./position-attribute.js";
-import { positionFormat, type ComponentType, type PositionFormat } from "./vertex-format.js";
+import { positionAttribute } from "./vertex-attributes.js";
+import { attributeFormat, type ComponentType, type AttributeFormat } from "./vertex-format.js";
 
 export type GLFlavor = "desktop" | "es";
 
@@ -27,7 +27,7 @@ interface Attribute {
     buffer: number;
     offset: number;
     stride: number;
-    format: PositionFormat | null;
+    format: AttributeFormat | null;
 }
 
 type ShadowReport = "unreported" | "reported";
@@ -153,6 +153,8 @@ export class GLBackend implements GraphicsBackend {
             streams,
             bystanders: [],
             position: positionLayoutOf(attributes, this.#gl.attributeNames(draw.program)),
+            texcoord: null,
+            textures: [],
             indices: (indexFormat !== undefined)
                 ? { buffer: indexBuffer!, offset: draw.indices, format: indexFormat, count: draw.count }
                 : null,
@@ -434,7 +436,7 @@ function shadowKey(shareGroup: NativePointer, buffer: number): string {
     return `${shareGroup}:${buffer}`;
 }
 
-function positionLayoutOf(attributes: Attribute[], names: Map<number, string>): PositionLayout | null {
+function positionLayoutOf(attributes: Attribute[], names: Map<number, string>): AttributeLayout | null {
     const chosen = positionAttribute(attributes, names);
     if (chosen === undefined) {
         return null;
@@ -449,7 +451,7 @@ function positionLayoutOf(attributes: Attribute[], names: Map<number, string>): 
     };
 }
 
-function glFormat(type: number, size: number, normalized: boolean): PositionFormat | null {
+function glFormat(type: number, size: number, normalized: boolean): AttributeFormat | null {
     const component: ComponentType | undefined = {
         0x1400: normalized ? "snorm8" : undefined,
         0x1401: normalized ? "unorm8" : undefined,
@@ -458,5 +460,5 @@ function glFormat(type: number, size: number, normalized: boolean): PositionForm
         0x1406: "float32",
         0x140b: "float16",
     }[type] as ComponentType | undefined;
-    return (component !== undefined) ? positionFormat(component, size) : null;
+    return (component !== undefined) ? attributeFormat(component, size) : null;
 }

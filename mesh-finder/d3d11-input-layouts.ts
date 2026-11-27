@@ -1,10 +1,10 @@
 import { InputElementDesc } from "./d3d11-descriptions.pat";
-import { positionFormat, type ComponentType, type PositionFormat } from "./vertex-format.js";
+import { attributeFormat, type ComponentType, type AttributeFormat } from "./vertex-format.js";
 
 export interface DeclaredPosition {
     slot: number;
     offset: number;
-    format: PositionFormat;
+    format: AttributeFormat;
     source: string;
 }
 
@@ -76,7 +76,7 @@ function declaredPosition(elements: InputElement[]): DeclaredPosition | null {
     return {
         slot,
         offset: chosen.offset!,
-        format: positionFormat(component, count)!,
+        format: attributeFormat(component, count)!,
         source: `input layout element ${semantic}${(semanticIndex !== 0) ? semanticIndex : ""}`,
     };
 }

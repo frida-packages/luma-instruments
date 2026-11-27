@@ -1,6 +1,6 @@
 import * as measures from "./geometry-measures.pat";
 import type { IndexFormat, Topology } from "./graphics-backend.js";
-import { componentTypes, type PositionFormat } from "./vertex-format.js";
+import { componentTypes, type AttributeFormat } from "./vertex-format.js";
 
 export interface IndexRange {
     min: number;
@@ -476,7 +476,7 @@ export function samplePositions(vertices: ArrayBuffer, count: number, stride: nu
     };
 }
 
-export function gatherPositions(vertices: ArrayBuffer, count: number, stride: number, format: PositionFormat): GatheredPositions {
+export function gatherPositions(vertices: ArrayBuffer, count: number, stride: number, format: AttributeFormat): GatheredPositions {
     const positions = new Float32Array(count * 3);
     const bounds = measures.Bounds.at(Memory.alloc(measures.Bounds.size));
     const nonFinite = gather(vertices.unwrap(), count, stride, componentTypes.indexOf(format.component), format.count,

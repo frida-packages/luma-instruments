@@ -1,4 +1,5 @@
-import type { PositionFormat } from "./vertex-format.js";
+import type { TextureFormat } from "./texture-format.js";
+import type { AttributeFormat } from "./vertex-format.js";
 
 export interface GraphicsBackendFactory {
     readonly api: string;
@@ -50,7 +51,9 @@ export interface DrawCall {
     topology: Topology;
     streams: VertexStream[];
     bystanders: GpuBuffer[];
-    position: PositionLayout | null;
+    position: AttributeLayout | null;
+    texcoord: AttributeLayout | null;
+    textures: TextureBinding[];
     indices: IndexBinding | null;
     firstVertex: number;
     vertexCount: number;
@@ -65,11 +68,30 @@ export interface VertexStream {
     stride: number | null;
 }
 
-export interface PositionLayout {
+export interface TextureBinding {
+    slot: number;
+    name: string | null;
+    texture: GpuTexture;
+}
+
+export interface GpuTexture {
+    readonly api: string;
+    readonly id: string;
+    readonly address: string;
+    readonly label: string | null;
+    readonly width: number;
+    readonly height: number;
+    readonly format: TextureFormat | null;
+    readonly formatName: string;
+    readonly access: BufferAccess;
+    read(): ArrayBuffer;
+}
+
+export interface AttributeLayout {
     slot: number;
     stride: number;
     offset: number;
-    format: PositionFormat;
+    format: AttributeFormat;
     source: string;
 }
 
