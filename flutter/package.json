@@ -1,7 +1,7 @@
 {
   "name": "flutter",
   "displayName": "Flutter",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "main": "main.ts",
   "engines": { "luma": ">=4.0.0" },
   "luma": {
@@ -136,12 +136,27 @@
         "persistence": "none"
       }
     ],
-    "layout": { "column": [
-      "status",
-      { "row": [{ "widget": "facts", "share": 60, "maxRows": 6 }, { "widget": "files", "share": 40, "maxRows": 6 }], "foldBelow": 760 },
-      { "row": [{ "widget": "channels", "share": 66, "maxRows": 6 }, { "widget": "console", "share": 34 }], "share": 40, "foldBelow": 1000 },
-      { "widget": "messages", "share": 60, "maxRows": 10 }
-    ] },
+    "layout": {
+      "column": [
+        "status",
+        {
+          "row": [
+            { "widget": "facts", "share": 60, "maxRows": 6 },
+            { "widget": "files", "share": 40, "maxRows": 6 }
+          ],
+          "foldBelow": 760
+        },
+        {
+          "row": [
+            { "widget": "channels", "share": 66, "maxRows": 6 },
+            { "widget": "console", "share": 34 }
+          ],
+          "share": 40,
+          "foldBelow": 1000
+        },
+        { "widget": "messages", "share": 60, "maxRows": 10 }
+      ]
+    },
     "children": [
       {
         "id": "channel",
@@ -183,7 +198,12 @@
             "persistence": "none"
           }
         ],
-        "layout": { "column": [{ "widget": "messages", "share": 55, "maxRows": 10 }, { "widget": "console", "share": 45 }] }
+        "layout": {
+          "column": [
+            { "widget": "messages", "share": 55, "maxRows": 10 },
+            { "widget": "console", "share": 45 }
+          ]
+        }
       }
     ],
     "store": {
