@@ -96,7 +96,7 @@
       ]
     },
     "store": {
-      "summary": "Find the 3D meshes a game or app holds in its Direct3D 11, Metal, Vulkan and OpenGL buffers, with exact layouts learned from its draw calls, and export any of them as OBJ, with the textures they are drawn with.",
+      "summary": "Find the 3D meshes a game or app holds in its Direct3D 11, Metal, Vulkan and OpenGL buffers, with layouts learned from its draw calls, and export them as OBJ with the textures they are drawn with.",
       "category": "ui",
       "access": { "kind": "free" }
     }
