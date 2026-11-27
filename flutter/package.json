@@ -3,7 +3,7 @@
   "displayName": "Flutter",
   "version": "1.0.1",
   "main": "main.ts",
-  "engines": { "luma": ">=4.0.0" },
+  "engines": { "luma": ">=4.1.0" },
   "luma": {
     "icon": { "kind": "file", "value": "icon.png" },
     "compatibility": { "osIDs": ["macos"], "archs": ["x64", "arm64"] },
@@ -95,7 +95,8 @@
             { "id": "method", "name": "Last method", "alignment": "leading" },
             { "id": "active", "name": "Last active", "alignment": "trailing" }
           ],
-          "rowActions": [{ "id": "show", "name": "Show" }],
+          "rowActions": [],
+          "rowActivation": { "id": "show", "name": "Show" },
           "maxRows": 1000
         },
         "persistence": "none"
@@ -116,7 +117,8 @@
             { "id": "size", "name": "Size", "alignment": "trailing" },
             { "id": "latency", "name": "Latency", "alignment": "trailing" }
           ],
-          "rowActions": [{ "id": "inspect", "name": "Inspect" }],
+          "rowActions": [],
+          "rowSelection": { "id": "inspect", "name": "Inspect" },
           "maxRows": 1000
         },
         "actions": [{ "id": "clear", "name": "Clear" }],
@@ -178,7 +180,8 @@
                 { "id": "size", "name": "Size", "alignment": "trailing" },
                 { "id": "latency", "name": "Latency", "alignment": "trailing" }
               ],
-              "rowActions": [{ "id": "inspect", "name": "Inspect" }],
+              "rowActions": [],
+              "rowSelection": { "id": "inspect", "name": "Inspect" },
               "maxRows": 1000
             },
             "actions": [{ "id": "clear", "name": "Clear" }],

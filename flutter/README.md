@@ -85,15 +85,16 @@ it.
   `kernel_blob.bin` in a debug build, the asset manifests and the licenses.
   **Save** offers one for saving, streamed from disk; a file is at most
   64 MiB.
-- **Channels**: a row per channel, with its kind (method, event or basic
-  message channel, learned from its traffic), its codec, the messages each
-  way, the bytes, the last method called and when it was last active.
-  **Show** gives the channel a page of its own, under the instrument in the
-  sidebar, with only its messages, from the last 2000 on.
+- **Channels**: a row per channel, with its kind (method, event or basic message
+  channel, learned from its traffic), its codec, the messages each way, the
+  bytes, the last method called and when it was last active. Double-clicking a
+  row, or selecting it and pressing Return, gives the channel a page of its own,
+  under the instrument in the sidebar, with only its messages, from the last
+  2000 on.
 - **Messages**: a row per message, newest last, with its direction, channel,
-  kind (call, event, event error or message), a summary of what it carries
-  and of its reply, its size and how long the reply took. **Inspect** decodes
-  it in full in the console, as values to expand. **Clear** empties the
+  kind (call, event, event error or message), a summary of what it carries and
+  of its reply, its size and how long the reply took. Selecting a row decodes
+  its message in full in the console, as values to expand. **Clear** empties the
   table.
 - **Console**: `inspect N`, `packages`, `channels` (the names in the
   snapshot), `strings REGEX` (the snapshot's strings), `libraries [REGEX]`
