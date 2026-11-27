@@ -21,10 +21,19 @@ interface Expectation {
     min: number[];
     max: number[];
     first: number[][];
+    texture?: ExpectedTexture;
+    texcoords?: number[][];
+}
+
+interface ExpectedTexture {
+    width: number;
+    height: number;
+    format: string;
+    corners: number[][];
 }
 
 interface ViewState {
-    value: { vertices: number; triangles: number; title: string; unshown?: string };
+    value: { vertices: number; triangles: number; title: string; texture: { width: number; height: number } | null; unshown?: string };
     data: ArrayBuffer | undefined;
 }
 
@@ -47,13 +56,15 @@ interface Row {
 interface Offer {
     name: string;
     mediaType: string;
-    text: Promise<string>;
+    bytes: Promise<Buffer>;
 }
 
 interface ParsedObj {
     vertices: number[][];
+    texcoords: number[][];
     faces: number;
     text: string;
+    archive: Map<string, Buffer> | null;
 }
 
 const SETTLE_MS = 5000;
@@ -61,6 +72,10 @@ const SIGUSR1 = (Process.platform === "darwin") ? 30 : 10;
 const COMPARED_BYTES = 16;
 const LATE_UPLOAD_MS = 500;
 const TOLERANCE = 1e-4;
+const TEXEL_TOLERANCE = 1;
+const LARGEST_VIEW_TEXTURE_SIDE = 1024;
+const PNG_SIGNATURE = "89504e470d0a1a0a";
+const ZIP_LOCAL_HEADER = 0x04034b50;
 const MOST_STRAYS_NAMED = 8;
 const LEFT_BY_EARLIER_INSTANCE = "left-by-an-earlier-instance";
 const phases: Record<Phase, number> = { attached: 1, disposed: 2 };
@@ -111,8 +126,8 @@ const respond: CustomInstrumentActionResponder = {
                 callback();
             },
         });
-        const text = new Promise<string>(resolve => stream.on("finish", () => resolve(Buffer.concat(chunks).toString())));
-        lastOffer = { name: header.name, mediaType: header.mediaType, text };
+        const bytes = new Promise<Buffer>(resolve => stream.on("finish", () => resolve(Buffer.concat(chunks))));
+        lastOffer = { name: header.name, mediaType: header.mediaType, bytes };
         return stream;
     }) as CustomInstrumentOfferFile,
     show() {
@@ -264,11 +279,11 @@ async function check(handle: CustomInstrumentHandle, expectations: Expectation[]
     for (const row of rows.values()) {
         console.log(`  ${Object.values(row.cells).join(" | ")}`);
         const offer = offeredObj(handle, row);
-        if (offer !== null && (offer.name !== `${row.cells.mesh}.obj` || offer.mediaType !== "model/obj")) {
+        if (offer !== null && !isOfferedAsExpected(offer, row)) {
             failures++;
             console.log(`FAIL ${row.cells.mesh} was offered as ${JSON.stringify(offer.name)}, ${offer.mediaType}`);
         }
-        exported.set(row.id, (offer !== null) ? parseObj(await offer.text) : null);
+        exported.set(row.id, (offer !== null) ? parseExport(offer, await offer.bytes) : null);
     }
 
     if (rows.has(LEFT_BY_EARLIER_INSTANCE)) {
@@ -299,6 +314,12 @@ async function check(handle: CustomInstrumentHandle, expectations: Expectation[]
         if (listings !== 1) {
             failures++;
             console.log(`FAIL ${expected.name} (${expected.how}) is listed ${listings} times`);
+            continue;
+        }
+        const textureProblem = problemWithTexture(expected, match, obj);
+        if (textureProblem !== null) {
+            failures++;
+            console.log(`FAIL ${expected.name} (${expected.how}) as ${match.cells.mesh}: ${textureProblem}`);
             continue;
         }
         const viewProblem = problemShowing(handle, expected, match);
@@ -395,17 +416,48 @@ function offeredObj(handle: CustomInstrumentHandle, row: Row): Offer | null {
     return lastOffer;
 }
 
-function parseObj(text: string): ParsedObj {
+function isOfferedAsExpected(offer: Offer, row: Row): boolean {
+    return (offer.name === `${row.cells.mesh}.obj` && offer.mediaType === "model/obj")
+        || (offer.name === `${row.cells.mesh}.zip` && offer.mediaType === "application/zip");
+}
+
+function parseExport(offer: Offer, bytes: Buffer): ParsedObj {
+    if (offer.mediaType !== "application/zip") {
+        return parseObj(bytes.toString(), null);
+    }
+    const archive = storedEntries(bytes);
+    const objName = [...archive.keys()].find(name => name.endsWith(".obj"));
+    return parseObj((objName !== undefined) ? archive.get(objName)!.toString() : "", archive);
+}
+
+function storedEntries(zip: Buffer): Map<string, Buffer> {
+    const entries = new Map<string, Buffer>();
+    let offset = 0;
+    while (offset + 30 <= zip.byteLength && zip.readUInt32LE(offset) === ZIP_LOCAL_HEADER) {
+        const size = zip.readUInt32LE(offset + 18);
+        const nameLength = zip.readUInt16LE(offset + 26);
+        const extraLength = zip.readUInt16LE(offset + 28);
+        const start = offset + 30 + nameLength + extraLength;
+        entries.set(zip.subarray(offset + 30, offset + 30 + nameLength).toString(), zip.subarray(start, start + size));
+        offset = start + size;
+    }
+    return entries;
+}
+
+function parseObj(text: string, archive: Map<string, Buffer> | null): ParsedObj {
     const vertices: number[][] = [];
+    const texcoords: number[][] = [];
     let faces = 0;
     for (const line of text.split("\n")) {
         if (line.startsWith("v ")) {
             vertices.push(line.slice(2).split(" ").map(Number));
+        } else if (line.startsWith("vt ")) {
+            texcoords.push(line.slice(3).split(" ").map(Number));
         } else if (line.startsWith("f ")) {
             faces++;
         }
     }
-    return { vertices, faces, text };
+    return { vertices, texcoords, faces, text, archive };
 }
 
 function spans(expected: Expectation, obj: ParsedObj | null): boolean {
@@ -426,6 +478,35 @@ function matches(expected: Expectation, row: Row, obj: ParsedObj | null): boolea
     }
     const [min, max] = boundsOf(obj);
     return close(min, expected.min) && close(max, expected.max) && expected.first.every((vertex, i) => close(obj.vertices[i], vertex));
+}
+
+function problemWithTexture(expected: Expectation, row: Row, obj: ParsedObj | null): string | null {
+    if (expected.texture === undefined || obj === null) {
+        return null;
+    }
+    if (!row.cells.textures.includes(` ${expected.texture.format}`)) {
+        return `its Textures cell says ${JSON.stringify(row.cells.textures)}, not ${expected.texture.format}`;
+    }
+    if (obj.archive === null) {
+        return "it was offered as a plain OBJ, without its texture";
+    }
+    if (expected.texcoords !== undefined) {
+        const flipped = expected.texcoords.map(([u, v]) => [u, 1 - v]);
+        if (obj.texcoords.length !== expected.vertices || !flipped.every((uv, i) => close(obj.texcoords[i], uv))) {
+            return `its OBJ has ${obj.texcoords.length} vt lines, the first ${JSON.stringify(obj.texcoords.slice(0, flipped.length))}`;
+        }
+    }
+    const mtlName = [...obj.archive.keys()].find(name => name.endsWith(".mtl"));
+    const mapped = (mtlName !== undefined) ? /^map_Kd (.+)$/m.exec(obj.archive.get(mtlName)!.toString())?.[1] : undefined;
+    const png = (mapped !== undefined) ? obj.archive.get(mapped) : undefined;
+    if (png === undefined) {
+        return `its archive holds ${JSON.stringify([...obj.archive.keys()])} and no PNG its MTL names as map_Kd`;
+    }
+    const { width, height } = expected.texture;
+    if (png.subarray(0, 8).toString("hex") !== PNG_SIGNATURE || png.readUInt32BE(16) !== width || png.readUInt32BE(20) !== height) {
+        return `its map_Kd ${mapped} is not a ${width} × ${height} PNG`;
+    }
+    return null;
 }
 
 function problemShowing(handle: CustomInstrumentHandle, expected: Expectation, row: Row): string | null {
@@ -449,7 +530,10 @@ function problemShowing(handle: CustomInstrumentHandle, expected: Expectation, r
     if (shown.data === undefined) {
         return "the viewer was handed no data";
     }
-    if (shown.data.byteLength !== (vertices + triangles) * 12) {
+    const plainSize = (vertices + triangles) * 12;
+    const texture = shown.value.texture;
+    const skinSize = (texture !== null) ? vertices * 20 + texture.width * texture.height * 4 : 0;
+    if (shown.data.byteLength !== plainSize + skinSize) {
         return `the viewer was handed ${shown.data.byteLength} bytes for ${vertices} vertices and ${triangles} triangles`;
     }
     const positions = new Float32Array(shown.data, 0, vertices * 3);
@@ -460,7 +544,39 @@ function problemShowing(handle: CustomInstrumentHandle, expected: Expectation, r
     if (new Uint32Array(shown.data, vertices * 12, triangles * 3).some(index => index >= vertices)) {
         return "the viewer was handed an index out of range";
     }
-    return null;
+    return problemWithSkin(expected, shown.value, shown.data, plainSize);
+}
+
+function problemWithSkin(expected: Expectation, shown: ViewState["value"], data: ArrayBuffer, offset: number): string | null {
+    const texture = shown.texture;
+    if (expected.texture === undefined) {
+        return (texture === null) ? null : "the viewer was handed a texture for a mesh drawn with none";
+    }
+    if (texture === null) {
+        return "the viewer was handed no texture";
+    }
+    const { width, height, corners } = expected.texture;
+    const fits = Math.max(width, height) <= LARGEST_VIEW_TEXTURE_SIDE;
+    if (fits && (texture.width !== width || texture.height !== height)) {
+        return `the viewer was handed a ${texture.width} × ${texture.height} texture`;
+    }
+    const vertices = shown.vertices;
+    const interleaved = new Float32Array(data, offset, vertices * 5);
+    const shownTexcoords = (expected.texcoords ?? []).map((_, i) => Array.from(interleaved.subarray(i * 5 + 3, i * 5 + 5)));
+    if (!(expected.texcoords ?? []).every((uv, i) => close(shownTexcoords[i], uv))) {
+        return `the viewer's first UVs are ${JSON.stringify(shownTexcoords)}`;
+    }
+    if (!fits) {
+        return null;
+    }
+    const words = new Uint32Array(data, offset + vertices * 20, width * height);
+    const at = (x: number, y: number) => {
+        const word = words[y * width + x];
+        return [(word >>> 16) & 0xff, (word >>> 8) & 0xff, word & 0xff, word >>> 24];
+    };
+    const shownCorners = [at(0, 0), at(width - 1, 0), at(0, height - 1), at(width - 1, height - 1)];
+    const same = corners.every((texel, i) => texel.every((value, k) => Math.abs(value - shownCorners[i][k]) <= TEXEL_TOLERANCE));
+    return same ? null : `the viewer's texture corners are ${JSON.stringify(shownCorners)}, not ${JSON.stringify(corners)}`;
 }
 
 function hexOf(bytes: ArrayBuffer): string {
