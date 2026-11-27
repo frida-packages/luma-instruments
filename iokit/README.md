@@ -77,12 +77,12 @@ holds a C string is shown as that string, as in `<8 bytes: "Mac17,2">`.
 
 ## Exploring
 
-The **Services with user clients** table lists the services in the registry
-that a process can try to open: those that name an `IOUserClientClass`, and
-those that have user clients open right now, by any process, with how many.
-Each row has **Properties**, which shows the service's properties in the
-explorer, and **Open**, which opens a connection to it with type 0. The table
-is filled when the instrument starts; **Rescan** fills it again.
+The **Services with user clients** table lists the services in the registry that
+a process can try to open: those that name an `IOUserClientClass`, and those
+that have user clients open right now, by any process, with how many. Selecting
+a row shows the service's properties in the explorer, and **Open** on a row
+opens a connection to it with type 0. The table is filled when the instrument
+starts; **Rescan** fills it again.
 
 The **Explorer** console runs JavaScript in the process, with `io` in scope.
 `:help` lists what it offers:

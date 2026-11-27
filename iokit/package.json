@@ -3,7 +3,7 @@
   "displayName": "IOKit",
   "version": "1.0.1",
   "main": "main.ts",
-  "engines": { "luma": ">=4.0.0" },
+  "engines": { "luma": ">=4.1.0" },
   "luma": {
     "icon": { "kind": "file", "value": "icon.png" },
     "compatibility": { "platforms": ["darwin"] },
@@ -120,10 +120,8 @@
             { "id": "userClients", "name": "User client classes", "alignment": "leading" },
             { "id": "clients", "name": "Open now", "alignment": "trailing" }
           ],
-          "rowActions": [
-            { "id": "showProperties", "name": "Properties" },
-            { "id": "open", "name": "Open" }
-          ],
+          "rowActions": [{ "id": "open", "name": "Open" }],
+          "rowSelection": { "id": "showProperties", "name": "Properties" },
           "maxRows": 4000
         },
         "actions": [{ "id": "rescan", "name": "Rescan" }],
