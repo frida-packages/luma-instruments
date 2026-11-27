@@ -17,6 +17,8 @@ export const objcSend = {
     pointer: (self: NativePointer, op: NativePointer) => runtime().send.pointer(self, op),
     uint64: (self: NativePointer, op: NativePointer) => runtime().send.uint64(self, op),
     pointerAtIndex: (self: NativePointer, op: NativePointer, index: number) => runtime().send.pointerAtIndex(self, op, index),
+    pointerWithOptions: (self: NativePointer, op: NativePointer, options: number) => runtime().send.pointerAtIndex(self, op, options),
+    flag: (self: NativePointer, op: NativePointer) => runtime().send.uint8(self, op) !== 0,
 };
 
 export function isaBits(): IsaBits {
@@ -50,6 +52,11 @@ export function implementationOf(cls: NativePointer, selectorName: string): Nati
     const objc = runtime();
     const method = objc.instanceMethod(cls, selector(selectorName));
     return method.isNull() ? null : objc.implementationOfMethod(method);
+}
+
+export function respondsTo(object: NativePointer, selectorName: string): boolean {
+    const objc = runtime();
+    return objc.classRespondsToSelector(objc.classOf(object), selector(selectorName)) !== 0;
 }
 
 export function stringFrom(object: NativePointer): string | null {
@@ -96,6 +103,8 @@ class ObjCRuntime {
     readonly imageOfClass = new NativeFunction(this.#export("class_getImageName"), "pointer", ["pointer"]);
     readonly instanceMethod = new NativeFunction(this.#export("class_getInstanceMethod"), "pointer", ["pointer", "pointer"]);
     readonly implementationOfMethod = new NativeFunction(this.#export("method_getImplementation"), "pointer", ["pointer"]);
+    readonly classOf = new NativeFunction(this.#export("object_getClass"), "pointer", ["pointer"]);
+    readonly classRespondsToSelector = new NativeFunction(this.#export("class_respondsToSelector"), "bool", ["pointer", "pointer"]);
     readonly registerSelector = new NativeFunction(this.#export("sel_registerName"), "pointer", ["pointer"]);
     readonly freeMemory = new NativeFunction(this.#export("free"), "void", ["pointer"]);
     readonly stringIntoBuffer = new NativeFunction(this.#export("CFStringGetCString"), "bool", ["pointer", "pointer", "long", "uint32"]);
@@ -107,6 +116,7 @@ class ObjCRuntime {
     readonly send = {
         pointer: new NativeFunction(this.#export("objc_msgSend"), "pointer", ["pointer", "pointer"]),
         uint64: new NativeFunction(this.#export("objc_msgSend"), "uint64", ["pointer", "pointer"]),
+        uint8: new NativeFunction(this.#export("objc_msgSend"), "uint8", ["pointer", "pointer"]),
         pointerAtIndex: new NativeFunction(this.#export("objc_msgSend"), "pointer", ["pointer", "pointer", "uint64"]),
     };
 }
