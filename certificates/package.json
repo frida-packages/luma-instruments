@@ -1,7 +1,7 @@
 {
   "name": "certificates",
   "displayName": "Certificates",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "main": "main.ts",
   "engines": { "luma": ">=4.0.0" },
   "luma": {
@@ -70,11 +70,19 @@
         "persistence": "none"
       }
     ],
-    "layout": { "column": [
-      "scan",
-      { "widget": "certificates", "share": 55, "maxRows": 8 },
-      { "row": [{ "widget": "details", "share": 60 }, { "widget": "der", "share": 40 }], "share": 45 }
-    ] },
+    "layout": {
+      "column": [
+        "scan",
+        { "widget": "certificates", "share": 55, "maxRows": 8 },
+        {
+          "row": [
+            { "widget": "details", "share": 60 },
+            { "widget": "der", "share": 40 }
+          ],
+          "share": 45
+        }
+      ]
+    },
     "store": {
       "summary": "Find the X.509 certificates a process holds: live SecCertificate and OpenSSL X509 objects in moments, then DER and PEM anywhere in memory, each with its subject, issuer, expiry, key and location.",
       "category": "cryptography",
