@@ -2,7 +2,7 @@
 
 Finds the 3D meshes a game or app holds in its graphics buffers, so you can
 browse them, turn them around in a 3D view, and take any of them home as an
-OBJ file. Attach to a running game, add the instrument, and the meshes it has
+OBJ file, with the textures it is drawn with. Attach to a running game, add the instrument, and the meshes it has
 loaded show up in a table: characters, props, level geometry, along with
 whatever else the game draws.
 
@@ -30,6 +30,22 @@ Two ways, and both run at once:
   buffers left over are looked at as point clouds, so that a process with
   thousands of buffers is sorted through in seconds; until it is, the
   console says every two seconds how many buffers are left.
+
+A mesh seen drawn also comes with the textures its draw samples, and with its
+UVs where the API says which vertex attribute holds them, as it does for
+positions. UVs are not guessed. Each texture is read once, at its first level
+of detail, the first time a mesh is seen drawn with it, and textures larger
+than 64 MiB are left unread. Whether a mesh drawn later with other textures
+is looked at again depends on the API, as said below; when it is, those
+textures take the place of the first ones, unless fewer of them can be read.
+Which texture is the mesh's base color is told
+by the name the shader gives it, such as `albedo`, `diffuse` or
+`baseColorTexture`, rather than one such as `normalMap` or `shadowMap`, or,
+where there are no names, by its being the first one with color in it.
+Textures are decoded from every block-compressed format the four APIs share:
+BC1 to BC7, ETC2 and EAC, and ASTC at every block size. Floating-point ones
+are clamped to the range of a PNG. Which textures are found for each API, and
+when, is said below.
 
 ### Direct3D 11
 
@@ -166,28 +182,38 @@ saw mapped.
 
 **Meshes** has a row per mesh: its vertex and triangle counts, its size (the
 extent of its bounding box), how its positions are laid out, what that was
-learned from, and the buffers it lives in. A layout worked out rather than
-declared by the API comes with a confidence.
+learned from, its textures, and the buffers it lives in. A layout worked out
+rather than declared by the API comes with a confidence. Textures shows the
+base color texture, its size and format, and how many others the mesh was
+drawn with.
 
 - Selecting a row puts its mesh in the **Mesh** view below the table, beside the
-  console: drag to orbit, scroll or pinch to zoom, and pick Shaded, Wire or
-  Points. A line under its title says what its layout was learned from. Its
+  console: drag to orbit, scroll or pinch to zoom, and pick Textured, Shaded,
+  Wire or Points. Textured is offered, and chosen, for a mesh with UVs and a
+  base color texture, which the view is handed at no more than 1024 texels a
+  side. A line under its title says what its layout was learned from. Its
   **Details** tab lists what the picture does not show: whether the mesh was
-  seen drawn, what it holds, its exact bounds and center, the layout and why,
-  and the buffers. Meshes with no CPU contents, because they are in GPU-only
-  storage or, with Vulkan, were bound to memory before the instrument was added,
-  have nothing to show, and meshes whose positions and indices exceed the 64 MiB
-  a view can be handed are refused; the view is then left empty and says why. In
-  a narrow window the console goes below the view, the table shows 6 rows, and
-  the page scrolls.
+  seen drawn, what it holds, its exact bounds and center, the layout of its
+  positions and UVs and why, the buffers, and each texture, with its format and
+  whether it could be read. Meshes with no CPU contents, because they are in
+  GPU-only storage or, with Vulkan, were bound to memory before the instrument
+  was added, have nothing to show, and meshes whose positions and indices exceed
+  the 64 MiB a view can be handed are refused; the view is then left empty and
+  says why. In a narrow window the console goes below the view, the table shows
+  6 rows, and the page scrolls.
 - **Export OBJ**, in the **Mesh** view's header, offers the selected mesh as a
   Wavefront OBJ file, ready to open in any 3D tool, and Luma asks where to save
   it. It is disabled until a mesh has been selected, and also works for a mesh
   too large for the view. The file is named after the mesh as the table names
   it, such as `#3 Cube vertices.obj`, with characters a file name cannot have,
-  such as `/` and `:`, made `-`. Point clouds are written as `p` elements.
-  Meshes that would make more than 64 MiB of OBJ are refused, and the console
-  says so.
+  such as `/` and `:`, made `-`. Point clouds are written as `p` elements, and
+  UVs as `vt` elements, flipped so that the first row of a texture is at its
+  top. A mesh drawn with textures that could be read is offered as a ZIP archive
+  instead, such as `#3 Cube vertices.zip`, holding the OBJ, an MTL file that
+  names its base color texture as `map_Kd` and a normal map as `norm` and
+  `map_Bump`, and a PNG of each texture, named after the name the shader gives
+  it. Meshes that would make more than 64 MiB of OBJ or archive are refused, and
+  the console says so.
 
 **Scan**, in the table's header, looks for buffers again, such as after a new
 level has loaded. It is disabled while a search is under way, and while
@@ -196,9 +222,10 @@ learned from draws. An OpenGL or Direct3D 11 search reads the buffers on the
 thread that draws, the next time it does, and gives up after 3 seconds when
 it does not.
 
-The **Console** also takes commands: `show 3`, `obj 3`, which does what
-**Export OBJ** does for mesh 3, `list`, and `scan`, which does what **Scan** does, or says
-why it cannot.
+The **Console** also takes commands: `show 3`, `obj 3`, which does what **Export
+OBJ** does for mesh 3, `png 3`, which offers the base color texture of mesh 3 as
+a PNG file, and `png 3 1` the one in slot 1, `list`, and `scan`, which does what
+**Scan** does, or says why it cannot.
 **Clear**, in its header, empties it.
 
 The view keeps the last mesh shown with the session, so it is still there
