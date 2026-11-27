@@ -42,16 +42,16 @@ the runtime's page says so.
 
 ## The page
 
-A status line says what the last scan found. **Runtimes** has a row per
-runtime: its engine and version (for Hermes, its release and bytecode
-version), React Native's version, the architecture, whether the bundle is a
-production or a development one, the bundle's name, the thread and the
-status. **Show** opens the runtime's page; **Export Bundle** offers its
-bundle. **Scan** looks again and **Stop Scan** ends a scan early; a scan also
-ends by itself after a minute and keeps what it found. Under the status line
-are how much memory the scan searched, how much it skipped because the app had
-let go of it, how many pointers it skipped because they were not at the start
-of a live object, and why it stopped early, if it did.
+A status line says what the last scan found. **Runtimes** has a row per runtime:
+its engine and version (for Hermes, its release and bytecode version), React
+Native's version, the architecture, whether the bundle is a production or a
+development one, the bundle's name, the thread and the status. Double-clicking a
+row, or selecting it and pressing Return, opens the runtime's page; **Export
+Bundle** offers its bundle. **Scan** looks again and **Stop Scan** ends a scan
+early; a scan also ends by itself after a minute and keeps what it found. Under
+the status line are how much memory the scan searched, how much it skipped
+because the app had let go of it, how many pointers it skipped because they were
+not at the start of a live object, and why it stopped early, if it did.
 
 **Bundles** lists the bundles found: files mapped into the process whose
 names end in `.jsbundle`, `.bundle` or `.hbc`, the file a runtime says it
@@ -62,11 +62,11 @@ or from memory; a bundle larger than 64 MiB cannot be offered.
 
 **Traffic** has a row per call: when, in which runtime, its direction
 (JavaScript to native, native to JavaScript, or an event), the call as
-`Module.method`, its arguments, and its outcome when it has one: returned, resolved,
-rejected, called back or threw, with how long it took. **Show** prints the
-call in full in the **Call** console beside it, as a value you can expand;
-`show 1:42` there does the same by row id, and `stats` counts what was seen.
-**Clear** empties the table.
+`Module.method`, its arguments, and its outcome when it has one: returned,
+resolved, rejected, called back or threw, with how long it took. Selecting a row
+prints its call in full in the **Call** console beside it, as a value you can
+expand; `show 1:42` there does the same by row id, and `stats` counts what was
+seen. **Clear** empties the table.
 
 **Modules** lists the app's native modules, TurboModules, view managers and
 Fabric component views, as their classes register them, with how many

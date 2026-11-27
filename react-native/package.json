@@ -3,7 +3,7 @@
   "displayName": "React Native",
   "version": "1.0.1",
   "main": "main.ts",
-  "engines": { "luma": ">=4.0.0" },
+  "engines": { "luma": ">=4.1.0" },
   "luma": {
     "icon": { "kind": "file", "value": "icon.png" },
     "compatibility": { "platforms": ["darwin"], "archs": ["arm64"] },
@@ -66,10 +66,8 @@
             { "id": "thread", "name": "Thread", "alignment": "leading" },
             { "id": "status", "name": "Status", "alignment": "leading" }
           ],
-          "rowActions": [
-            { "id": "show", "name": "Show" },
-            { "id": "bundle", "name": "Export Bundle" }
-          ],
+          "rowActions": [{ "id": "bundle", "name": "Export Bundle" }],
+          "rowActivation": { "id": "show", "name": "Show" },
           "maxRows": 256
         },
         "actions": [
@@ -109,7 +107,8 @@
             { "id": "outcome", "name": "Outcome", "alignment": "leading" },
             { "id": "ms", "name": "ms", "alignment": "trailing" }
           ],
-          "rowActions": [{ "id": "show", "name": "Show" }],
+          "rowActions": [],
+          "rowSelection": { "id": "show", "name": "Show" },
           "maxRows": 2000
         },
         "actions": [{ "id": "clear", "name": "Clear" }],
