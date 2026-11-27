@@ -1,0 +1,171 @@
+{
+  "name": "javascriptcore",
+  "displayName": "JavaScriptCore",
+  "version": "1.0.0",
+  "main": "main.ts",
+  "engines": { "luma": ">=4.0.0" },
+  "luma": {
+    "icon": { "kind": "symbolic", "value": "cpu" },
+    "compatibility": { "platforms": ["darwin"], "archs": ["arm64"] },
+    "settings": [
+      {
+        "id": "logScripts",
+        "name": "Log the scripts the app evaluates",
+        "schema": { "kind": "boolean", "default": true },
+        "optional": false,
+        "enabledByDefault": true
+      },
+      {
+        "id": "sourceMegabytes",
+        "name": "Megabytes of script source kept for Export",
+        "schema": { "kind": "uint", "default": 64, "min": 1, "max": 1024 },
+        "optional": false,
+        "enabledByDefault": true
+      }
+    ],
+    "widgets": [
+      {
+        "id": "status",
+        "kind": "list",
+        "config": { "rowActions": [], "maxItems": 1 },
+        "persistence": "none"
+      },
+      {
+        "id": "contexts",
+        "name": "Contexts",
+        "kind": "table",
+        "config": {
+          "columns": [
+            { "id": "number", "name": "#", "alignment": "trailing" },
+            { "id": "kind", "name": "Kind", "alignment": "leading" },
+            { "id": "name", "name": "Name", "alignment": "leading" },
+            { "id": "className", "name": "Class", "alignment": "leading" },
+            { "id": "vm", "name": "VM", "alignment": "trailing" },
+            { "id": "runsOn", "name": "Evaluates on", "alignment": "leading" },
+            { "id": "inspectable", "name": "Inspectable", "alignment": "leading" },
+            { "id": "status", "name": "Status", "alignment": "leading" }
+          ],
+          "rowActions": [
+            { "id": "show", "name": "Show" },
+            { "id": "inspect", "name": "Allow Web Inspector" },
+            { "id": "uninspect", "name": "Disallow Web Inspector" }
+          ],
+          "maxRows": 512
+        },
+        "actions": [{ "id": "scan", "name": "Scan" }],
+        "persistence": "none"
+      },
+      {
+        "id": "vms",
+        "name": "VMs",
+        "kind": "table",
+        "config": {
+          "columns": [
+            { "id": "number", "name": "#", "alignment": "trailing" },
+            { "id": "contexts", "name": "Contexts", "alignment": "trailing" },
+            { "id": "heap", "name": "Heap", "alignment": "trailing" },
+            { "id": "objects", "name": "Objects", "alignment": "trailing" },
+            { "id": "globals", "name": "Global objects", "alignment": "trailing" },
+            { "id": "profiler", "name": "Profiler", "alignment": "leading" },
+            { "id": "samples", "name": "Samples", "alignment": "trailing" }
+          ],
+          "rowActions": [
+            { "id": "heap", "name": "Heap Counts" },
+            { "id": "profile", "name": "Start Profiling" },
+            { "id": "unprofile", "name": "Stop Profiling" }
+          ],
+          "maxRows": 256
+        },
+        "actions": [{ "id": "refresh", "name": "Refresh" }],
+        "persistence": "none"
+      },
+      {
+        "id": "heap",
+        "name": "Heap objects",
+        "kind": "histogram",
+        "config": { "maxBuckets": 40 },
+        "persistence": "none"
+      },
+      {
+        "id": "scripts",
+        "name": "Scripts",
+        "kind": "table",
+        "config": {
+          "columns": [
+            { "id": "number", "name": "#", "alignment": "trailing" },
+            { "id": "time", "name": "First run", "alignment": "trailing" },
+            { "id": "context", "name": "Context", "alignment": "trailing" },
+            { "id": "via", "name": "Via", "alignment": "leading" },
+            { "id": "url", "name": "Source URL", "alignment": "leading" },
+            { "id": "size", "name": "Size", "alignment": "trailing" },
+            { "id": "lines", "name": "Lines", "alignment": "trailing" },
+            { "id": "runs", "name": "Runs", "alignment": "trailing" },
+            { "id": "outcome", "name": "Last outcome", "alignment": "leading" },
+            { "id": "ms", "name": "ms", "alignment": "trailing" }
+          ],
+          "rowActions": [{ "id": "export", "name": "Export" }],
+          "maxRows": 1000
+        },
+        "actions": [{ "id": "clear", "name": "Clear" }],
+        "persistence": "none"
+      },
+      {
+        "id": "profile",
+        "name": "Hot functions",
+        "kind": "histogram",
+        "config": { "maxBuckets": 40 },
+        "actions": [{ "id": "clear", "name": "Clear" }],
+        "persistence": "none"
+      }
+    ],
+    "layout": {
+      "column": [
+        "status",
+        { "widget": "contexts", "maxRows": 6 },
+        {
+          "row": [
+            { "widget": "vms", "share": 55, "maxRows": 4 },
+            { "widget": "heap", "share": 45 }
+          ],
+          "foldBelow": 900
+        },
+        {
+          "row": [
+            { "widget": "scripts", "share": 60, "maxRows": 8 },
+            { "widget": "profile", "share": 40 }
+          ],
+          "share": 1,
+          "foldBelow": 900
+        }
+      ]
+    },
+    "children": [
+      {
+        "id": "context",
+        "name": "Contexts",
+        "icon": { "kind": "symbolic", "value": "cpu" },
+        "widgets": [
+          {
+            "id": "console",
+            "name": "JavaScript",
+            "kind": "console",
+            "config": {
+              "maxEntries": 1000,
+              "prompt": ">",
+              "placeholder": "JavaScript to evaluate in this context, or :help",
+              "runButtonLabel": "Run"
+            },
+            "actions": [{ "id": "clear", "name": "Clear" }],
+            "persistence": "none"
+          }
+        ],
+        "layout": { "column": [{ "widget": "console", "share": 1 }] }
+      }
+    ],
+    "store": {
+      "summary": "Find every JavaScriptCore context in an Apple app, evaluate JavaScript in any of them, open them to Safari's Web Inspector, profile them, count their heaps, and export the scripts they run.",
+      "category": "runtime",
+      "access": { "kind": "free" }
+    }
+  }
+}
