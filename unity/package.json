@@ -6,7 +6,7 @@
   "engines": { "luma": ">=4.0.0" },
   "dependencies": { "frida-il2cpp-bridge": "0.14.0" },
   "luma": {
-    "icon": { "kind": "symbolic", "value": "puzzle" },
+    "icon": { "kind": "file", "value": "icon.png" },
     "compatibility": { "platforms": ["windows", "darwin", "linux"] },
     "settings": [
       {

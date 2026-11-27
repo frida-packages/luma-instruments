@@ -5,7 +5,7 @@
   "main": "main.ts",
   "engines": { "luma": ">=4.0.0" },
   "luma": {
-    "icon": { "kind": "symbolic", "value": "cpu" },
+    "icon": { "kind": "file", "value": "icon.png" },
     "compatibility": { "platforms": ["darwin"], "archs": ["arm64"] },
     "settings": [
       {

@@ -6,7 +6,7 @@
   "engines": { "luma": ">=4.0.0" },
   "dependencies": { "frida-electron-bridge": "^1.0.1" },
   "luma": {
-    "icon": { "kind": "symbolic", "value": "bolt" },
+    "icon": { "kind": "file", "value": "icon.png" },
     "compatibility": { "platforms": ["darwin", "linux"] },
     "settings": [
       {

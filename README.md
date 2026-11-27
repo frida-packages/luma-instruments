@@ -22,6 +22,9 @@ Each folder is one instrument: TypeScript sources beside a `package.json`
 whose `luma` object carries its icon, compatibility, settings, widgets and
 store listing. Its `README.md` is its description in the store.
 
+Icons are drawn as SVG in [icons](icons); `icons/render.sh` renders each into
+its instrument's `icon.png` with `rsvg-convert`.
+
 ## Writing one
 
 [docs/instruments.md](docs/instruments.md) describes the folder, its
