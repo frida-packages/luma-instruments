@@ -104,6 +104,26 @@ descriptor, the layout is worked out from the bound buffers: their size, the
 number of vertices the draw needs, and which bytes read as plausible
 coordinates. The table says which of these it was.
 
+The same pipeline state tells where the UVs are, from the vertex descriptor
+attribute whose input is named like `uv` or `texCoord`, and what its fragment
+function calls the textures it samples, such as `albedo` and `normalMap`, from
+the function's reflection. A draw's textures are those bound with
+`setFragmentTexture:atIndex:` and `setFragmentTextures:withRange:`, in slots 0
+to 31, of which those the fragment function declares are taken. For a pipeline
+made before the instrument was added, every texture bound at the draw is
+taken, without names, and there are no UVs. A mesh keeps the textures it was
+first seen drawn with.
+
+Textures in shared or managed storage are read with `getBytes`, on the thread
+that encodes the draw, the first time a draw uses them; on Apple Silicon
+managed storage is the same memory as shared. Textures made from a buffer are
+read the same way. This does not wait for the GPU, so a texture it is still
+drawing into is read as the last finished work left it, and a texture whose
+contents are replaced later keeps what was read first. Textures in private or
+memoryless storage, framebuffer-only ones and multisampled ones have no
+contents the CPU can read: they are listed with their size and format, and
+the mesh is shown and exported without them.
+
 Metal binds a draw's vertices and its uniforms through the same table, and
 for such a pipeline nothing says which is which. A game typically writes its
 uniforms, and often the indices and vertices of what it batches, into scratch
@@ -266,8 +286,8 @@ buffer with others comes out on its own.
 
 ## Cost
 
-The hooks on the drawing thread do no more than remember which buffers are
-bound and check whether a draw has been seen before. Only a draw not seen
+The hooks on the drawing thread do no more than remember what is bound and
+check whether a draw has been seen before. Only a draw not seen
 before is looked at closely, once. In a test on an Apple Silicon Mac, 2100
 Metal draws a frame took about 0.7 ms longer to encode with the instrument
 than without, and 1800 OpenGL draws a frame about 3.4 ms longer to submit,
@@ -302,6 +322,8 @@ of them are meshes took about 20 s.
   (`DrawAuto`), and meshes generated on the GPU are not followed.
 - Direct3D 9, 10 and 12, and Direct3D 11 running on top of 12 through
   `D3D11On12`.
+- Metal textures reached through argument buffers or resource IDs, textures
+  bound in fragment slots above 31, and the textures of vertex shaders.
 - Draws through Metal 4's `MTL4RenderCommandEncoder`, indirect command
   buffers and mesh shaders. Indirect draws are followed when their arguments
   are in CPU-visible memory, though this has not been tried.
