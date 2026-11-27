@@ -45,12 +45,13 @@ is being read.
 - A status line at the top: whether GStreamer is loaded, its version and
   library, how much memory was searched and how long that took, and how many
   bins there are.
-- **Pipelines**: a row per top-level bin, with its name, its type, whether it
-  is a pipeline or a bare bin, its state, how many elements it holds at every
-  depth, its address, and whether it was found by the memory scan or by a
-  state change. **Show** opens its page. **Rescan memory**, in the table's
-  header, searches again. It is disabled until GStreamer is loaded, and while
-  a search is under way. The table shows up to 10 rows and then scrolls.
+- **Pipelines**: a row per top-level bin, with its name, its type, whether it is
+  a pipeline or a bare bin, its state, how many elements it holds at every
+  depth, its address, and whether it was found by the memory scan or by a state
+  change. Double-clicking a row, or selecting it and pressing Return, opens its
+  page. **Rescan memory**, in the table's header, searches again. It is disabled
+  until GStreamer is loaded, and while a search is under way. The table shows up
+  to 10 rows and then scrolls.
 - **Bins**, under the instrument in the sidebar: a page per top-level bin,
   named after it, with its type, element count and address beside the name
   and its state as a badge, green while playing and amber while paused or
