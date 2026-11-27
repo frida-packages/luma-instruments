@@ -5,6 +5,7 @@ Class {
 		'context',
 		'canvas',
 		'surface',
+		'skin',
 		'wire',
 		'points',
 		'heading',
@@ -20,6 +21,7 @@ Class {
 		'high',
 		'vertexCount',
 		'triangleCount',
+		'textured',
 		'title',
 		'remark',
 		'facts',
@@ -35,6 +37,7 @@ MeshView >> openIn: aContext [
 	context := aContext.
 	canvas := aContext canvas.
 	surface := self drawableFragment: self surfaceFragment.
+	skin := self skinDrawable.
 	wire := self drawableFragment: self wireFragment.
 	points := self pointCloud.
 	heading := LumaText on: canvas addDrawable pointSize: 13.
@@ -53,7 +56,8 @@ MeshView >> state: aValue data: someBytes [
 	title := aValue at: 'title' ifAbsent: [ 'Mesh' ].
 	remark := aValue at: 'unshown' ifAbsent: [ '' ].
 	facts := (aValue at: 'details' ifAbsent: [ #() ]) collect: [ :each | each first -> each last ].
-	vertexCount > 0 ifTrue: [ self take: someBytes ].
+	textured := false.
+	vertexCount > 0 ifTrue: [ self take: someBytes texture: (aValue at: 'texture' ifAbsent: [ nil ]) ].
 	self reset.
 	self show
 ]
@@ -101,6 +105,7 @@ MeshView >> gtDetailsFor: aView [
 MeshView >> details [
 	^ { 'Title' -> title. 'Vertices' -> vertexCount printString. 'Triangles' -> triangleCount printString } , facts , {
 		'Mode' -> mode.
+		'Textured' -> textured printString.
 		'Zoom' -> (zoom printShowingDecimalPlaces: 2).
 		'Remark' -> remark }
 ]
@@ -145,6 +150,36 @@ MeshView >> wireFragment [
 ]
 
 { #category : 'building' }
+MeshView >> skinDrawable [
+	| drawable |
+	drawable := canvas addDrawable.
+	drawable
+		attribute: 'position' components: 3;
+		attribute: 'uv' components: 2;
+		varying: 'seen' components: 3;
+		varying: 'at' components: 2;
+		uniform: 'modelView' value: (self translation: #(0 0 0));
+		uniform: 'projection' value: (self translation: #(0 0 0));
+		image: 'albedo' form: (Form extent: 1 @ 1 depth: 32);
+		vertexSource: 'void main() {
+			vec4 eye = modelView * vec4(position, 1.0);
+			seen = eye.xyz;
+			at = uv;
+			vec4 clip = projection * eye;
+			clip.x *= u_resolution.y / u_resolution.x;
+			gl_Position = clip;
+		}'
+		fragmentSource: 'void main() {
+			vec3 normal = normalize(cross(dFdx(seen), dFdy(seen)));
+			float lit = 0.45 + 0.55 * abs(dot(normal, normalize(vec3(0.35, 0.55, 0.75))));
+			frag_color = vec4(texture(albedo, at).rgb * lit, 1.0);
+		}'.
+	drawable commit ifFalse: [ self error: LumaCanvas lastError ].
+	drawable hide.
+	^ drawable
+]
+
+{ #category : 'building' }
 MeshView >> pointCloud [
 	| drawable |
 	drawable := canvas addDrawable.
@@ -176,6 +211,7 @@ MeshView >> pointCloud [
 MeshView >> forget [
 	vertexCount := 0.
 	triangleCount := 0.
+	textured := false.
 	title := 'Select a mesh in the table to see it here'.
 	remark := ''.
 	facts := #().
@@ -183,7 +219,7 @@ MeshView >> forget [
 ]
 
 { #category : 'receiving' }
-MeshView >> take: someBytes [
+MeshView >> take: someBytes texture: aTexture [
 	| positions indices |
 	positions := someBytes from: 0 size: vertexCount * 12.
 	self frame: (positions float32Extent: 3).
@@ -192,10 +228,37 @@ MeshView >> take: someBytes [
 	indices := someBytes from: vertexCount * 12 size: triangleCount * 12.
 	(surface vertices: positions indices: indices primitive: #triangles) ifFalse: [ self error: LumaCanvas lastError ].
 	(wire vertices: positions indices: indices primitive: #lines) ifFalse: [ self error: LumaCanvas lastError ].
+	aTexture ifNotNil: [ self dress: indices from: someBytes at: (vertexCount + triangleCount) * 12 texture: aTexture ].
 	positions release.
 	indices release.
 	someBytes release.
-	mode = #points ifTrue: [ mode := #shaded ]
+	mode := self settledMode
+]
+
+{ #category : 'receiving' }
+MeshView >> dress: indices from: someBytes at: anOffset texture: aTexture [
+	| width height vertices pixels |
+	width := aTexture at: 'width'.
+	height := aTexture at: 'height'.
+	vertices := someBytes from: anOffset size: vertexCount * 20.
+	pixels := someBytes from: anOffset + (vertexCount * 20) size: width * height * 4.
+	(skin vertices: vertices indices: indices primitive: #triangles) ifFalse: [ self error: LumaCanvas lastError ].
+	pixels read: pixels size at: 0 doing: [ :staged |
+		LumaHost invoke: 'luma_drawable_set_image'
+			parameters: { TFBasicType sint. TFBasicType sint. TFBasicType pointer.
+			              TFBasicType pointer. TFBasicType sint. TFBasicType sint }
+			return: TFBasicType void
+			with: { skin scene. skin handle. 'albedo'. staged. width. height } ].
+	vertices release.
+	pixels release.
+	textured := true
+]
+
+{ #category : 'receiving' }
+MeshView >> settledMode [
+	textured ifTrue: [ ^ #textured ].
+	(mode = #points or: [ mode = #textured ]) ifTrue: [ ^ #shaded ].
+	^ mode
 ]
 
 { #category : 'framing' }
@@ -247,6 +310,7 @@ MeshView >> zoomBy: aFactor [
 
 { #category : 'steering' }
 MeshView >> type: aKey [
+	aKey = $t asInteger ifTrue: [ ^ self pick: #textured ].
 	aKey = $s asInteger ifTrue: [ ^ self pick: #shaded ].
 	aKey = $w asInteger ifTrue: [ ^ self pick: #wire ].
 	aKey = $p asInteger ifTrue: [ ^ self pick: #points ].
@@ -268,7 +332,7 @@ MeshView >> pick: aMode [
 	aMode = #reset ifTrue: [
 		self reset.
 		^ self show ].
-	(triangleCount = 0 and: [ aMode ~= #points ]) ifTrue: [ ^ self ].
+	(self availableModes includes: aMode) ifFalse: [ ^ self ].
 	mode := aMode.
 	context send: { 'mode' -> mode } asDictionary.
 	self show
@@ -277,6 +341,7 @@ MeshView >> pick: aMode [
 { #category : 'drawing' }
 MeshView >> show [
 	surface hide.
+	skin hide.
 	wire hide.
 	points hide.
 	vertexCount > 0 ifTrue: [ (self drawableShowing: mode) show ].
@@ -286,6 +351,7 @@ MeshView >> show [
 
 { #category : 'drawing' }
 MeshView >> drawableShowing: aMode [
+	aMode = #textured ifTrue: [ ^ skin ].
 	aMode = #wire ifTrue: [ ^ wire ].
 	aMode = #points ifTrue: [ ^ points ].
 	^ surface
@@ -297,7 +363,7 @@ MeshView >> aim [
 	center ifNil: [ ^ self ].
 	view := self orbit.
 	lens := self lens.
-	{ surface. wire. points } do: [ :each |
+	{ surface. skin. wire. points } do: [ :each |
 		each
 			uniform: 'modelView' value: view;
 			uniform: 'projection' value: lens ].
@@ -372,12 +438,13 @@ MeshView >> buttonSpans [
 { #category : 'drawing' }
 MeshView >> availableModes [
 	triangleCount = 0 ifTrue: [ ^ #(points reset) ].
+	textured ifFalse: [ ^ self modes copyWithout: #textured ].
 	^ self modes
 ]
 
 { #category : 'drawing' }
 MeshView >> modes [
-	^ #(shaded wire points reset)
+	^ #(textured shaded wire points reset)
 ]
 
 { #category : 'drawing' }
