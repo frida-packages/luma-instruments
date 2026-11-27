@@ -159,17 +159,20 @@ those are expected with their contents:
 | Mesh | Vulkan |
 | --- | --- |
 | cube | interleaved position, normal and uv in host-visible memory, 16-bit indices; mapped, written and unmapped |
-| sphere | positions alone at an offset, normals in a second binding, 32-bit indices at an offset; all staged into device-local memory |
+| sphere | positions alone at an offset, normals and uvs in a second binding, 32-bit indices at an offset; all staged into device-local memory; an R8G8B8A8 `albedo` staged with `vkCmdCopyBufferToImage`, and a `normalMap` in a linear image, mapped, written and unmapped, where the driver samples those |
 | torus | `vkCmdSetVertexInputEXT` where the driver has it; persistently mapped, 32-bit indices |
-| ribbon | triangle strip, `vkCmdDraw`, staged into device-local memory |
+| ribbon | triangle strip, `vkCmdDraw`, staged into device-local memory; a BC1 `albedo`, or R8G8B8A8 where the driver has no BC1, staged with `vkCmdCopyBufferToImage` and written through a descriptor update template |
 | octahedron | not indexed, four floats per position, stride from `vkCmdBindVertexBuffers2` |
 | pyramid | `vkCmdDraw` from vertex 24 of the octahedron's buffer |
 | torus | persistently mapped before attach, never drawn |
 | sphere | staged into device-local memory after `SIGUSR1`, never drawn |
 
 The sphere's and the ribbon's pipelines are made again every two seconds,
-with their shader modules, so their vertex input and SPIR-V input names are
-seen; the others keep pipelines made before attach.
+with their shader modules, so their vertex input, SPIR-V input names and
+sampled textures are seen; the others keep pipelines made before attach. The
+textures are made with the scene, so those of the reloaded sphere and ribbon
+are expected with their contents and UVs, and those made before attach are
+listed with none.
 
 Vulkan's headers are not part of every system; any checkout of
 [Vulkan-Headers](https://github.com/KhronosGroup/Vulkan-Headers) does. With
