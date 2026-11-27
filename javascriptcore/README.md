@@ -33,13 +33,14 @@ without WebCore, and as Other in one with it.
 
 ## The page
 
-A status line says how many contexts are live in how many VMs, and what the
-last scan searched. **Contexts** has a row per context: its kind, the name the
-app gave it, its class, its VM, where it is evaluated, whether Web Inspector
-may attach, and whether it is live, made since the instrument started, or
-destroyed. The last eight destroyed contexts are kept. **Show** opens its
-page; **Allow Web Inspector** and **Disallow Web Inspector** change whether
-Safari's Develop menu offers it; **Scan** searches the heap again.
+A status line says how many contexts are live in how many VMs, and what the last
+scan searched. **Contexts** has a row per context: its kind, the name the app
+gave it, its class, its VM, where it is evaluated, whether Web Inspector may
+attach, and whether it is live, made since the instrument started, or destroyed.
+The last eight destroyed contexts are kept. Double-clicking a row, or selecting
+it and pressing Return, opens its page; **Allow Web Inspector** and **Disallow
+Web Inspector** change whether Safari's Develop menu offers it; **Scan**
+searches the heap again.
 
 **VMs** has a row per VM: how many live contexts it has, its heap, the cells
 in it, its global objects, and its profiler. **Heap Counts** counts the cells

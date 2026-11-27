@@ -3,7 +3,7 @@
   "displayName": "JavaScriptCore",
   "version": "1.0.2",
   "main": "main.ts",
-  "engines": { "luma": ">=4.0.0" },
+  "engines": { "luma": ">=4.1.0" },
   "luma": {
     "icon": { "kind": "file", "value": "icon.png" },
     "compatibility": { "platforms": ["darwin"], "archs": ["arm64"] },
@@ -46,10 +46,10 @@
             { "id": "status", "name": "Status", "alignment": "leading" }
           ],
           "rowActions": [
-            { "id": "show", "name": "Show" },
             { "id": "inspect", "name": "Allow Web Inspector" },
             { "id": "uninspect", "name": "Disallow Web Inspector" }
           ],
+          "rowActivation": { "id": "show", "name": "Show" },
           "maxRows": 512
         },
         "actions": [{ "id": "scan", "name": "Scan" }],
