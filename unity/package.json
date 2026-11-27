@@ -1,7 +1,7 @@
 {
   "name": "unity",
   "displayName": "Unity",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "main": "main.ts",
   "engines": { "luma": ">=4.0.0" },
   "dependencies": { "frida-il2cpp-bridge": "0.14.0" },
