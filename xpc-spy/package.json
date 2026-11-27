@@ -1,7 +1,7 @@
 {
   "name": "xpc-spy",
   "displayName": "XPC Spy",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "main": "main.ts",
   "engines": { "luma": ">=4.0.0" },
   "luma": {
@@ -71,7 +71,12 @@
         "persistence": "none"
       }
     ],
-    "layout": { "column": [{ "widget": "services", "maxRows": 8 }, { "widget": "messages", "share": 1 }] },
+    "layout": {
+      "column": [
+        { "widget": "services", "maxRows": 8 },
+        { "widget": "messages", "share": 1 }
+      ]
+    },
     "store": {
       "summary": "The XPC messages a process sends and receives, per service, also on connections made before Luma attached: requests, replies and events as expandable values, with NSXPC selectors and backtraces.",
       "category": "ipc",
