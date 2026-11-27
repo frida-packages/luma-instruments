@@ -1,7 +1,7 @@
 {
   "name": "tls-plaintext",
   "displayName": "TLS Plaintext",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "main": "main.ts",
   "engines": { "luma": ">=4.0.0" },
   "luma": {
@@ -92,12 +92,14 @@
         "persistence": "none"
       }
     ],
-    "layout": { "column": [
-      { "row": ["sent", "received"], "foldBelow": 240 },
-      { "widget": "libraries", "maxRows": 3 },
-      { "widget": "connections", "share": 55, "maxRows": 10 },
-      { "widget": "payload", "share": 45 }
-    ] },
+    "layout": {
+      "column": [
+        { "row": ["sent", "received"], "foldBelow": 240 },
+        { "widget": "libraries", "maxRows": 3 },
+        { "widget": "connections", "share": 55, "maxRows": 10 },
+        { "widget": "payload", "share": 45 }
+      ]
+    },
     "store": {
       "summary": "See a process's TLS traffic in plaintext: every OpenSSL and BoringSSL connection, also BoringSSL linked statically as in Flutter, with its host, protocol, ALPN and cipher, and the bytes it carries.",
       "category": "networking",
